@@ -34,10 +34,11 @@ function Assert-PathExists {
     }
 }
 
-function Copy-Artifact {
+function Invoke-Robocopy {
     param(
         [string]$Source,
-        [string]$Target
+        [string]$Target,
+        [string[]]$AdditionalArgs = @()
     )
 
     if (-not (Test-Path $Source)) {
@@ -48,13 +49,13 @@ function Copy-Artifact {
     $robocopyArgs = @(
         $Source,
         $Target,
-        "/MIR",
         "/R:2",
         "/W:2",
         "/NFL",
         "/NDL",
         "/NP"
     )
+    $robocopyArgs += $AdditionalArgs
 
     & robocopy @robocopyArgs | Out-Null
     $exitCode = $LASTEXITCODE
@@ -63,6 +64,25 @@ function Copy-Artifact {
     }
 
     $global:LASTEXITCODE = 0
+}
+
+function Copy-ArtifactToRelease {
+    param(
+        [string]$Source,
+        [string]$Target
+    )
+
+    Invoke-Robocopy -Source $Source -Target $Target -AdditionalArgs @("/MIR")
+}
+
+function Deploy-Artifact {
+    param(
+        [string]$Source,
+        [string]$Target
+    )
+
+    # Copy new and changed files, but do not delete server-only files.
+    Invoke-Robocopy -Source $Source -Target $Target -AdditionalArgs @("/E")
 }
 
 function Write-AppOffline {
@@ -158,12 +178,12 @@ $backendReleasePath = Join-Path $releaseRoot "backend-$releaseName"
 New-Item -ItemType Directory -Path $frontendReleasePath -Force | Out-Null
 New-Item -ItemType Directory -Path $backendReleasePath -Force | Out-Null
 
-Copy-Artifact -Source $FrontendArtifactPath -Target $frontendReleasePath
-Copy-Artifact -Source $BackendArtifactPath -Target $backendReleasePath
+Copy-ArtifactToRelease -Source $FrontendArtifactPath -Target $frontendReleasePath
+Copy-ArtifactToRelease -Source $BackendArtifactPath -Target $backendReleasePath
 
 $offlineFile = Write-AppOffline -Target $BackendTargetPath
 try {
-    Copy-Artifact -Source $frontendReleasePath -Target $FrontendTargetPath
+    Deploy-Artifact -Source $frontendReleasePath -Target $FrontendTargetPath
     Write-FrontendRuntimeConfig `
         -TargetPath $FrontendTargetPath `
         -ApiBase $FrontendApiBase `
@@ -171,7 +191,7 @@ try {
         -WabaEmbeddedConfigId $FrontendWabaEmbeddedConfigId
     Stop-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
     Start-Sleep -Seconds 5
-    Copy-Artifact -Source $backendReleasePath -Target $BackendTargetPath
+    Deploy-Artifact -Source $backendReleasePath -Target $BackendTargetPath
 }
 finally {
     if (Test-Path $offlineFile) {
