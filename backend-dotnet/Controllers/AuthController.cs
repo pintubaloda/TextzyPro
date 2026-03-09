@@ -16,7 +16,7 @@ public class AuthController(
     ControlDbContext db,
     PasswordHasher hasher,
     SessionService sessions,
-    EmailService emailService,
+    IEmailService emailService,
     BillingGuardService billingGuard,
     TenancyContext tenancy,
     AuthContext auth,
@@ -110,30 +110,11 @@ public class AuthController(
             await db.SaveChangesAsync(ct);
         }
 
-        Guid tenantId;
-        if (tenancy.IsSet)
-        {
-            var hasAccess = db.TenantUsers.Any(tu => tu.UserId == user.Id && tu.TenantId == tenancy.TenantId);
-            if (!user.IsSuperAdmin && !hasAccess) return Forbid();
-            tenantId = tenancy.TenantId;
-        }
-        else
-        {
-            if (user.IsSuperAdmin)
-            {
-                tenantId = db.Tenants.OrderBy(t => t.CreatedAtUtc).Select(t => t.Id).FirstOrDefault();
-                if (tenantId == Guid.Empty) return BadRequest("No tenant available for super admin.");
-            }
-            else
-            {
-                tenantId = db.TenantUsers
-                    .Where(tu => tu.UserId == user.Id)
-                    .OrderByDescending(tu => tu.CreatedAtUtc)
-                    .Select(tu => tu.TenantId)
-                    .FirstOrDefault();
-                if (tenantId == Guid.Empty) return Forbid();
-            }
-        }
+        var tenantId = await ResolveLoginTenantAsync(user, request.TenantSlug, ct);
+        if (tenantId == Guid.Empty)
+            return user.IsSuperAdmin
+                ? BadRequest("No tenant available for this account.")
+                : Forbid();
 
         if (UserRequiresAuthenticator(user))
         {
@@ -156,7 +137,19 @@ public class AuthController(
             });
         }
 
-        var token = await sessions.CreateSessionAsync(user.Id, tenantId, ct);
+        string token;
+        try
+        {
+            token = await sessions.CreateSessionAsync(
+                user.Id,
+                tenantId,
+                ct,
+                allowlistBypassEnabled: requireOtp);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+        }
         authCookie.SetToken(HttpContext, token);
         authCookie.EnsureCsrfToken(HttpContext);
         WriteAuthHeaders(token);
@@ -185,7 +178,21 @@ public class AuthController(
         var now = DateTime.UtcNow;
         challenge.VerifiedAtUtc = now;
         challenge.ConsumedAtUtc = now;
-        var token = await sessions.CreateSessionAsync(user.Id, challenge.TenantId, ct, now, now);
+        string token;
+        try
+        {
+            token = await sessions.CreateSessionAsync(
+                user.Id,
+                challenge.TenantId,
+                ct,
+                now,
+                now,
+                allowlistBypassEnabled: true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+        }
         await db.SaveChangesAsync(ct);
 
         authCookie.SetToken(HttpContext, token);
@@ -490,14 +497,27 @@ public class AuthController(
             : string.Empty;
         var cookieToken = authCookie.ReadToken(HttpContext) ?? string.Empty;
 
-        string? rotated = null;
+        SessionRotationResult? rotation = null;
         if (!string.IsNullOrWhiteSpace(bearerToken))
-            rotated = await sessions.RotateAsync(bearerToken, ct);
+            rotation = await sessions.RotateDetailedAsync(bearerToken, ct);
         // Fallback to cookie token when bearer is stale/missing.
-        if (rotated is null && !string.IsNullOrWhiteSpace(cookieToken))
-            rotated = await sessions.RotateAsync(cookieToken, ct);
+        if ((rotation is null || !rotation.Succeeded) && !string.IsNullOrWhiteSpace(cookieToken))
+            rotation = await sessions.RotateDetailedAsync(cookieToken, ct);
 
-        if (rotated is null) return Unauthorized("Invalid or expired session.");
+        if (rotation is null || !rotation.Succeeded)
+        {
+            authCookie.Clear(HttpContext);
+            Response.Headers["X-Auth-Reason"] = rotation?.Failure switch
+            {
+                SessionValidationFailure.IpChanged => "ip_changed",
+                SessionValidationFailure.IdleTimeout => "idle_timeout",
+                SessionValidationFailure.IpRejected => "ip_rejected",
+                _ => "session_invalid"
+            };
+            return Unauthorized(rotation?.Message ?? "Invalid or expired session.");
+        }
+
+        var rotated = rotation.Token!;
         authCookie.SetToken(HttpContext, rotated);
         authCookie.EnsureCsrfToken(HttpContext);
         WriteAuthHeaders(rotated);
@@ -562,12 +582,20 @@ public class AuthController(
         var memberCount = await db.TenantUsers.CountAsync(tu => tu.TenantId == invite.TenantId, ct);
         await billingGuard.SetAbsoluteUsageAsync(invite.TenantId, "teamMembers", memberCount, ct);
 
-        var sessionToken = await sessions.CreateSessionAsync(
-            user.Id,
-            invite.TenantId,
-            ct,
-            auth.TwoFactorVerifiedAtUtc,
-            auth.StepUpVerifiedAtUtc);
+        string sessionToken;
+        try
+        {
+            sessionToken = await sessions.CreateSessionAsync(
+                user.Id,
+                invite.TenantId,
+                ct,
+                auth.TwoFactorVerifiedAtUtc,
+                auth.StepUpVerifiedAtUtc);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+        }
         authCookie.SetToken(HttpContext, sessionToken);
         authCookie.EnsureCsrfToken(HttpContext);
         WriteAuthHeaders(sessionToken);
@@ -682,11 +710,18 @@ public class AuthController(
         if (!auth.IsAuthenticated) return Unauthorized();
 
         var entries = await db.PlatformSettings
-            .Where(x => x.Scope == "mobile-app")
+            .Where(x => x.Scope == "mobile-app" || x.Scope == "auth-security")
             .ToListAsync(ct);
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var authSecurityValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var e in entries)
-            values[e.Key] = crypto.Decrypt(e.ValueEncrypted);
+        {
+            var decrypted = crypto.Decrypt(e.ValueEncrypted);
+            if (string.Equals(e.Scope, "auth-security", StringComparison.OrdinalIgnoreCase))
+                authSecurityValues[e.Key] = decrypted;
+            else
+                values[e.Key] = decrypted;
+        }
 
         var appName = GetSetting(values, "appName", "Textzy");
         var baseDomain = GetSetting(values, "baseDomain", string.Empty);
@@ -710,6 +745,26 @@ public class AuthController(
         var pairCodeTtlSeconds = ParseInt(GetSetting(values, "pairCodeTtlSeconds", "180"), 180, 60, 600);
         var minSupportedAppVersion = GetSetting(values, "minSupportedAppVersion", string.Empty);
         var pairSchemaVersion = GetSetting(values, "pairSchemaVersion", "1");
+        var sessionIdleTimeoutMinutes = ParseInt(
+            GetSetting(
+                authSecurityValues,
+                "sessionIdleTimeoutMinutes",
+                config["Auth:SessionIdleTimeoutMinutes"],
+                config["SESSION_IDLE_TIMEOUT_MINUTES"],
+                "30"),
+            30,
+            1,
+            1440);
+        var sessionIdleWarningSeconds = ParseInt(
+            GetSetting(
+                authSecurityValues,
+                "sessionIdleWarningSeconds",
+                config["Auth:SessionIdleWarningSeconds"],
+                config["SESSION_IDLE_WARNING_SECONDS"],
+                "60"),
+            60,
+            10,
+            600);
 
         return Ok(new
         {
@@ -737,6 +792,11 @@ public class AuthController(
                 pairCodeTtlSeconds,
                 minSupportedAppVersion,
                 pairSchemaVersion
+            },
+            session = new
+            {
+                idleTimeoutMinutes = sessionIdleTimeoutMinutes,
+                idleWarningSeconds = sessionIdleWarningSeconds
             },
             auth = new
             {
@@ -955,12 +1015,22 @@ public class AuthController(
         });
         await db.SaveChangesAsync(ct);
 
-        var token = await sessions.CreateSessionAsync(
-            auth.UserId,
-            tenant.Id,
-            ct,
-            auth.TwoFactorVerifiedAtUtc,
-            auth.StepUpVerifiedAtUtc);
+        var allowlistBypassEnabled = await sessions.GetAllowlistBypassEnabledAsync(auth.SessionId, ct);
+        string token;
+        try
+        {
+            token = await sessions.CreateSessionAsync(
+                auth.UserId,
+                tenant.Id,
+                ct,
+                auth.TwoFactorVerifiedAtUtc,
+                auth.StepUpVerifiedAtUtc,
+                allowlistBypassEnabled);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+        }
         authCookie.SetToken(HttpContext, token);
         authCookie.EnsureCsrfToken(HttpContext);
         WriteAuthHeaders(token);
@@ -982,12 +1052,22 @@ public class AuthController(
             .FirstOrDefaultAsync(tu => tu.UserId == auth.UserId && tu.TenantId == tenant.Id, ct);
         if (membership is null) return Forbid();
 
-        var token = await sessions.CreateSessionAsync(
-            auth.UserId,
-            tenant.Id,
-            ct,
-            auth.TwoFactorVerifiedAtUtc,
-            auth.StepUpVerifiedAtUtc);
+        var allowlistBypassEnabled = await sessions.GetAllowlistBypassEnabledAsync(auth.SessionId, ct);
+        string token;
+        try
+        {
+            token = await sessions.CreateSessionAsync(
+                auth.UserId,
+                tenant.Id,
+                ct,
+                auth.TwoFactorVerifiedAtUtc,
+                auth.StepUpVerifiedAtUtc,
+                allowlistBypassEnabled);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+        }
         authCookie.SetToken(HttpContext, token);
         authCookie.EnsureCsrfToken(HttpContext);
         WriteAuthHeaders(token);
@@ -1072,6 +1152,20 @@ public class AuthController(
             : fallback;
     }
 
+    private static string GetSetting(Dictionary<string, string> values, string key, params string?[] fallbacks)
+    {
+        if (values.TryGetValue(key, out var raw) && !string.IsNullOrWhiteSpace(raw))
+            return raw.Trim();
+
+        foreach (var fallback in fallbacks)
+        {
+            if (!string.IsNullOrWhiteSpace(fallback))
+                return fallback.Trim();
+        }
+
+        return string.Empty;
+    }
+
     private static string[] ParseApiCatalog(Dictionary<string, string> values, string[] fallback)
     {
         var raw = GetSetting(values, "apiCatalog", string.Empty);
@@ -1142,6 +1236,60 @@ public class AuthController(
         if (value < min) value = min;
         if (value > max) value = max;
         return value;
+    }
+
+    private async Task<Guid> ResolveLoginTenantAsync(User user, string? requestedTenantSlug, CancellationToken ct)
+    {
+        if (tenancy.IsSet)
+        {
+            var hasAccess = await db.TenantUsers
+                .AnyAsync(tu => tu.UserId == user.Id && tu.TenantId == tenancy.TenantId, ct);
+            if (hasAccess || user.IsSuperAdmin)
+                return tenancy.TenantId;
+        }
+
+        var preferredSlug = (requestedTenantSlug ?? string.Empty).Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(preferredSlug))
+        {
+            var preferredMembershipTenantId = await db.TenantUsers
+                .Where(tu => tu.UserId == user.Id)
+                .Join(
+                    db.Tenants,
+                    tu => tu.TenantId,
+                    t => t.Id,
+                    (tu, t) => new { tu.TenantId, t.Slug })
+                .Where(x => x.Slug == preferredSlug)
+                .Select(x => x.TenantId)
+                .FirstOrDefaultAsync(ct);
+            if (preferredMembershipTenantId != Guid.Empty)
+                return preferredMembershipTenantId;
+        }
+
+        var latestMembershipTenantId = await db.TenantUsers
+            .Where(tu => tu.UserId == user.Id)
+            .OrderByDescending(tu => tu.CreatedAtUtc)
+            .Select(tu => tu.TenantId)
+            .FirstOrDefaultAsync(ct);
+        if (latestMembershipTenantId != Guid.Empty)
+            return latestMembershipTenantId;
+
+        if (!user.IsSuperAdmin)
+            return Guid.Empty;
+
+        if (!string.IsNullOrWhiteSpace(preferredSlug))
+        {
+            var explicitTenantId = await db.Tenants
+                .Where(t => t.Slug == preferredSlug)
+                .Select(t => t.Id)
+                .FirstOrDefaultAsync(ct);
+            if (explicitTenantId != Guid.Empty)
+                return explicitTenantId;
+        }
+
+        return await db.Tenants
+            .OrderBy(t => t.CreatedAtUtc)
+            .Select(t => t.Id)
+            .FirstOrDefaultAsync(ct);
     }
 
     private async Task<Guid> EnsureOwnerGroupForUserAsync(Guid userId, string projectName, CancellationToken ct)

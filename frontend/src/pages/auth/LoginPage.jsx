@@ -1,16 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MessageSquare, Eye, EyeOff, ArrowRight, Download, ShieldCheck, Smartphone } from "lucide-react";
 import { toast } from "sonner";
-import { authLogin, authRequestEmailOtp, authEmailOtpStatus, authVerifyEmailOtp, checkApiHealth, getLastTenantSlug, getPublicMobileDownloadInfo, initializeMe, verifyLoginTwoFactor } from "@/lib/api";
+import { authLogin, authRequestEmailOtp, authEmailOtpStatus, authVerifyEmailOtp, checkApiHealth, consumeAuthRedirectReason, getLastTenantSlug, getPublicMobileDownloadInfo, initializeMe, verifyLoginTwoFactor } from "@/lib/api";
+
+const formatTwoFactorProvider = (value) => {
+  const normalized = String(value || "authenticator")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+  return normalized.replace(/\b\w/g, (match) => match.toUpperCase());
+};
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [storedAuthReason] = useState(() => consumeAuthRedirectReason());
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [otpRequestBusy, setOtpRequestBusy] = useState(false);
@@ -31,6 +42,14 @@ const LoginPage = () => {
     password: "",
     rememberMe: false,
   });
+  const authReason = (searchParams.get("reason") || storedAuthReason || "").trim().toLowerCase();
+  const authReasonMessage = authReason === "ip_changed"
+    ? "Your IP changed. Please login again."
+    : authReason === "idle_timeout"
+      ? "Your session expired due to inactivity. Please login again."
+      : authReason === "ip_rejected"
+        ? "Your current IP is not allowed. Please login again."
+        : "";
 
   const completeLogin = async (emailVerificationId = "") => {
     const preferredTenantSlug = getLastTenantSlug();
@@ -196,6 +215,14 @@ const LoginPage = () => {
       .catch(() => {});
   }, [healthChecked]);
 
+  useEffect(() => {
+    if (!authReasonMessage) return;
+    toast.error(authReasonMessage);
+    const next = new URLSearchParams(searchParams);
+    next.delete("reason");
+    setSearchParams(next, { replace: true });
+  }, [authReasonMessage, searchParams, setSearchParams]);
+
   return (
     <div className="min-h-screen bg-slate-50 flex" data-testid="login-page">
       {/* Left Side - Form */}
@@ -216,6 +243,11 @@ const LoginPage = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {authReasonMessage ? (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {authReasonMessage}
+                </div>
+              ) : null}
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
@@ -309,43 +341,64 @@ const LoginPage = () => {
                         </Button>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-orange-100 bg-gradient-to-br from-orange-50 via-white to-amber-50 p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-sm">
+                      <div className="mx-auto flex w-full max-w-2xl justify-center">
+                        <div className="w-full rounded-3xl border border-orange-100 bg-[linear-gradient(145deg,rgba(255,247,237,0.98),rgba(255,255,255,1))] p-5 shadow-[0_20px_60px_rgba(249,115,22,0.12)]">
+                        <div className="flex flex-col items-center gap-4 text-center">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-sm">
                             <ShieldCheck className="h-5 w-5" />
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-semibold text-slate-900">Confirm sign-in</p>
-                              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-orange-600 shadow-sm">
-                                {String(twoFactor.provider || "authenticator").replace(/_/g, " ")}
+                          <div className="flex min-w-0 w-full flex-col items-center">
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                              <p className="text-xl font-semibold text-slate-900">Confirm sign-in</p>
+                              <span className="rounded-full border border-orange-100 bg-white px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-orange-600 shadow-sm">
+                                {formatTwoFactorProvider(twoFactor.provider)}
                               </span>
                             </div>
-                            <p className="mt-1 text-sm text-slate-600">
-                              Open your authenticator app and enter the current 6-digit code to continue.
+                            <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
+                              Use the current 6-digit code from your authenticator app to finish signing in.
                             </p>
-                            {twoFactor.expiresAtUtc ? (
-                              <p className="mt-1 text-xs text-slate-500">
-                                Challenge expires at {new Date(twoFactor.expiresAtUtc).toLocaleTimeString()}
-                              </p>
-                            ) : null}
-                            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
-                              <div className="relative">
-                                <Smartphone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                <Input
-                                  inputMode="numeric"
-                                  maxLength={6}
-                                  className="pl-10"
-                                  placeholder="Enter 6-digit code"
-                                  value={twoFactor.code}
-                                  onChange={(e) => setTwoFactor((prev) => ({ ...prev, code: e.target.value }))}
-                                />
+                            <div className="mt-4 grid w-full max-w-md gap-3 rounded-2xl border border-orange-100/80 bg-white/90 p-4">
+                              <div className="flex flex-col items-center justify-center gap-2">
+                                <div className="flex items-center justify-center gap-2 text-sm font-medium text-slate-700">
+                                  <Smartphone className="h-4 w-4 text-orange-500" />
+                                  6-digit authenticator code
+                                </div>
+                                {twoFactor.expiresAtUtc ? (
+                                  <p className="text-xs text-slate-500">
+                                    Expires at {new Date(twoFactor.expiresAtUtc).toLocaleTimeString()}
+                                  </p>
+                                ) : null}
                               </div>
-                              <Button type="button" onClick={verifyAuthenticatorLogin} disabled={twoFactor.busy} className="bg-orange-500 hover:bg-orange-600">
+                              <div className="flex w-full justify-center">
+                                <InputOTP
+                                  maxLength={6}
+                                  value={twoFactor.code}
+                                  onChange={(value) => setTwoFactor((prev) => ({ ...prev, code: value.replace(/\D/g, "").slice(0, 6) }))}
+                                  className="w-full"
+                                  containerClassName="w-full justify-center"
+                                >
+                                  <InputOTPGroup className="grid w-full max-w-[320px] grid-cols-6 gap-2">
+                                    {[0, 1, 2, 3, 4, 5].map((index) => (
+                                      <InputOTPSlot
+                                        key={index}
+                                        index={index}
+                                        className="h-11 w-full min-w-0 rounded-2xl border border-orange-200 bg-orange-50 text-base font-semibold text-slate-900 shadow-none first:rounded-2xl first:border last:rounded-2xl sm:h-12"
+                                      />
+                                    ))}
+                                  </InputOTPGroup>
+                                </InputOTP>
+                              </div>
+                              <Button
+                                type="button"
+                                onClick={verifyAuthenticatorLogin}
+                                disabled={twoFactor.busy || twoFactor.code.trim().length !== 6}
+                                className="mx-auto h-11 w-full bg-orange-500 px-5 text-white hover:bg-orange-600 sm:w-auto sm:min-w-[220px]"
+                              >
                                 {twoFactor.busy ? "Verifying..." : "Verify & Continue"}
                               </Button>
                             </div>
                           </div>
+                        </div>
                         </div>
                       </div>
                     )}

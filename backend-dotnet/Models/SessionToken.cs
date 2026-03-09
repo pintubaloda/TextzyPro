@@ -16,5 +16,6 @@ public class SessionToken
     public DateTime? RevokedAtUtc { get; set; }
     public DateTime? TwoFactorVerifiedAtUtc { get; set; }
     public DateTime? StepUpVerifiedAtUtc { get; set; }
+    public bool AllowlistBypassEnabled { get; set; }
     public bool IsRevoked => RevokedAtUtc.HasValue;
 }

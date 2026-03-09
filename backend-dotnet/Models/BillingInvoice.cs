@@ -9,6 +9,7 @@ public class BillingInvoice
     public string BillingCycle { get; set; } = "monthly";
     public string TaxMode { get; set; } = "exclusive";
     public string ReferenceNo { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
     public DateTime PeriodStartUtc { get; set; }
     public DateTime PeriodEndUtc { get; set; }
     public decimal Subtotal { get; set; }

@@ -114,7 +114,15 @@ public class MobilePairingController(
         var membership = await db.TenantUsers
             .FirstOrDefaultAsync(x => x.UserId == pair.UserId && x.TenantId == pair.TenantId, ct);
         var role = user.IsSuperAdmin ? "super_admin" : (membership?.Role ?? "agent");
-        var accessToken = await sessions.CreateSessionAsync(pair.UserId, pair.TenantId, ct);
+        string accessToken;
+        try
+        {
+            accessToken = await sessions.CreateSessionAsync(pair.UserId, pair.TenantId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+        }
         authCookie.SetToken(HttpContext, accessToken);
         var csrf = authCookie.EnsureCsrfToken(HttpContext);
 

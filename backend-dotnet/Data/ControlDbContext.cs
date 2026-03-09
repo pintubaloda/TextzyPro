@@ -22,12 +22,15 @@ public class ControlDbContext(DbContextOptions<ControlDbContext> options) : DbCo
     public DbSet<BillingInvoice> BillingInvoices => Set<BillingInvoice>();
     public DbSet<BillingPaymentAttempt> BillingPaymentAttempts => Set<BillingPaymentAttempt>();
     public DbSet<TenantUsageCreditBalance> TenantUsageCreditBalances => Set<TenantUsageCreditBalance>();
+    public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
+    public DbSet<SupportTicketMessage> SupportTicketMessages => Set<SupportTicketMessage>();
     public DbSet<WebhookEvent> WebhookEvents => Set<WebhookEvent>();
     public DbSet<WabaErrorPolicy> WabaErrorPolicies => Set<WabaErrorPolicy>();
     public DbSet<PlatformRequestLog> PlatformRequestLogs => Set<PlatformRequestLog>();
     public DbSet<SmsGatewayRequestLog> SmsGatewayRequestLogs => Set<SmsGatewayRequestLog>();
     public DbSet<WebhookReplayGuard> WebhookReplayGuards => Set<WebhookReplayGuard>();
     public DbSet<SecuritySignal> SecuritySignals => Set<SecuritySignal>();
+    public DbSet<SecurityIpRule> SecurityIpRules => Set<SecurityIpRule>();
     public DbSet<TenantSecurityControl> TenantSecurityControls => Set<TenantSecurityControl>();
     public DbSet<UserPushSubscription> UserPushSubscriptions => Set<UserPushSubscription>();
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();

@@ -128,28 +128,13 @@ Create frontend env values:
 
 WABA setup card now triggers embedded signup and code exchange via backend.
 
-## Render Blueprint Deploy
+## Windows Server Deployment
 
-Blueprint file:
-- `/Volumes/Rakesh/RBproject/Textzy/render.yaml`
+This production repo is intended for Windows Server deployment only.
 
-Services provisioned:
-- `textzy-postgres` (managed Postgres)
-- `textzy-backend` (.NET 8 web service via Docker)
-- `textzy-frontend` (Vite static site)
+Use:
+- `WINDOWS_SERVER_GITHUB_DEPLOY.md`
+- `.github/workflows/deploy-windows-artifacts.yml`
+- `scripts/deploy-windows-artifact.ps1`
 
-Important Render env values (set `sync: false` values manually in Render):
-- Backend:
-  - `WhatsApp__AppId`
-  - `WhatsApp__AppSecret`
-  - `WhatsApp__VerifyToken`
-  - `WhatsApp__EmbeddedSignupConfigId`
-  - `AllowedOrigins` (frontend URL)
-- Frontend:
-  - `VITE_API_BASE` (backend public URL)
-  - `VITE_FACEBOOK_APP_ID`
-  - `VITE_WABA_EMBEDDED_CONFIG_ID`
-
-Notes:
-- Backend CORS is enabled from `AllowedOrigins` (comma-separated if multiple).
-- SPA routing is handled by Render rewrite `/* -> /index.html` in blueprint.
+Cloud-specific deployment files are intentionally excluded from this repository.

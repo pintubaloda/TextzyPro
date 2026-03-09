@@ -38,7 +38,7 @@ public class BillingLifecycleWorker(
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ControlDbContext>();
-        var email = scope.ServiceProvider.GetRequiredService<EmailService>();
+        var email = scope.ServiceProvider.GetRequiredService<IEmailService>();
 
         var now = DateTime.UtcNow;
         var graceDays = ResolveGraceDays(config);

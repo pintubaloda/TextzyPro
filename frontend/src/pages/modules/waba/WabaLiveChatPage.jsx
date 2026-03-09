@@ -46,7 +46,12 @@ export default function WabaLiveChatPage() {
       .build()
 
     connection.start()
-      .then(() => connection.invoke('JoinTenantRoom', session.tenantSlug || 'demo-retail'))
+      .then(() => {
+        if (session.tenantSlug) {
+          return connection.invoke('JoinTenantRoom', session.tenantSlug)
+        }
+        return null
+      })
       .catch(() => {})
 
     connection.on('message.queued', () => loadInbox().catch(() => {}))
@@ -57,7 +62,9 @@ export default function WabaLiveChatPage() {
     })
 
     return () => {
-      connection.invoke('LeaveTenantRoom', session.tenantSlug || 'demo-retail').catch(() => {})
+      if (session.tenantSlug) {
+        connection.invoke('LeaveTenantRoom', session.tenantSlug).catch(() => {})
+      }
       connection.stop().catch(() => {})
     }
   }, [session.tenantSlug, activeId])

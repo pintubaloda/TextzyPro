@@ -18,7 +18,11 @@ public class WabaOnboardingHealthWorker(
         int.TryParse(configuration["WabaHealth:IntervalMinutes"], out var minutes) ? minutes : 30,
         5,
         240));
+    private readonly TimeSpan _tenantCacheTtl = TimeSpan.FromMinutes(15);
     private readonly WhatsAppOptions _options = configuration.GetSection("WhatsApp").Get<WhatsAppOptions>() ?? new WhatsAppOptions();
+    private readonly SemaphoreSlim _tenantCacheLock = new(1, 1);
+    private List<TenantScanTarget> _tenantCache = [];
+    private DateTime _tenantCacheExpiresUtc = DateTime.MinValue;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -41,7 +45,7 @@ public class WabaOnboardingHealthWorker(
     {
         using var scope = scopeFactory.CreateScope();
         var controlDb = scope.ServiceProvider.GetRequiredService<ControlDbContext>();
-        var tenants = await controlDb.Tenants.AsNoTracking().ToListAsync(ct);
+        var tenants = await GetTenantsAsync(controlDb, ct);
         var client = httpClientFactory.CreateClient();
 
         foreach (var tenant in tenants)
@@ -126,5 +130,43 @@ public class WabaOnboardingHealthWorker(
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         var res = await client.SendAsync(req, ct);
         return (res.IsSuccessStatusCode, (int)res.StatusCode);
+    }
+
+    private async Task<List<TenantScanTarget>> GetTenantsAsync(ControlDbContext controlDb, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        if (_tenantCache.Count == 0 || now >= _tenantCacheExpiresUtc)
+        {
+            await _tenantCacheLock.WaitAsync(ct);
+            try
+            {
+                if (_tenantCache.Count == 0 || now >= _tenantCacheExpiresUtc)
+                {
+                    _tenantCache = await controlDb.Tenants.AsNoTracking()
+                        .OrderBy(x => x.CreatedAtUtc)
+                        .Select(x => new TenantScanTarget
+                        {
+                            Id = x.Id,
+                            Slug = x.Slug,
+                            DataConnectionString = x.DataConnectionString
+                        })
+                        .ToListAsync(ct);
+                    _tenantCacheExpiresUtc = now.Add(_tenantCacheTtl);
+                }
+            }
+            finally
+            {
+                _tenantCacheLock.Release();
+            }
+        }
+
+        return _tenantCache;
+    }
+
+    private sealed class TenantScanTarget
+    {
+        public Guid Id { get; init; }
+        public string Slug { get; init; } = string.Empty;
+        public string DataConnectionString { get; init; } = string.Empty;
     }
 }

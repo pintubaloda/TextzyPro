@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
@@ -13,7 +14,8 @@ public class IntegrationCatalogController(
     ControlDbContext db,
     AuthContext auth,
     RbacService rbac,
-    SecretCryptoService crypto) : ControllerBase
+    SecretCryptoService crypto,
+    TenancyContext tenancy) : ControllerBase
 {
     private static readonly TimeSpan StepUpFreshWindow = TimeSpan.FromMinutes(10);
     private const string Scope = "integration-catalog";
@@ -23,8 +25,50 @@ public class IntegrationCatalogController(
     public async Task<IActionResult> TenantCatalog(CancellationToken ct)
     {
         if (!auth.IsAuthenticated) return Unauthorized();
+        if (!tenancy.IsSet) return Unauthorized();
         var items = await ReadCatalogAsync(ct);
-        return Ok(items.Where(x => x.IsVisible && x.IsActive).OrderBy(x => x.SortOrder).ThenBy(x => x.Name));
+        var entitlementTokens = await ResolveTenantEntitlementTokensAsync(ct);
+        var rows = items
+            .Where(x => x.IsVisible)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .Select(x =>
+            {
+                var globallyActive = x.IsActive;
+                var entitled = globallyActive && IsEntitled(x, entitlementTokens);
+                var isPaid = string.Equals(x.PricingType, "paid", StringComparison.OrdinalIgnoreCase);
+                var activationStatus = !globallyActive
+                    ? "unavailable"
+                    : entitled
+                        ? "active"
+                        : isPaid
+                            ? "not_purchased"
+                            : "available";
+
+                return new
+                {
+                    x.Slug,
+                    x.Name,
+                    x.Category,
+                    x.Description,
+                    x.PricingType,
+                    x.BillingFrequency,
+                    x.Price,
+                    x.Currency,
+                    x.TaxMode,
+                    isActive = entitled,
+                    isVisible = x.IsVisible,
+                    x.SortOrder,
+                    isPaid,
+                    isGloballyActive = globallyActive,
+                    isEntitled = entitled,
+                    activationStatus,
+                    canRequestPurchase = globallyActive && isPaid && !entitled
+                };
+            })
+            .ToList();
+
+        return Ok(rows);
     }
 
     [HttpGet("api/platform/integrations/catalog")]
@@ -139,6 +183,115 @@ public class IntegrationCatalogController(
         new() { Slug = "google-authenticator", Name = "Google Authenticator", Category = "security", Description = "QR-based TOTP for secure account sign-in.", PricingType = "free", BillingFrequency = "monthly", Price = 0m, Currency = "INR", TaxMode = "exclusive", IsActive = true, IsVisible = true, SortOrder = 5 },
         new() { Slug = "microsoft-authenticator", Name = "Microsoft Authenticator", Category = "security", Description = "QR-based TOTP enrollment for Microsoft Authenticator.", PricingType = "free", BillingFrequency = "monthly", Price = 0m, Currency = "INR", TaxMode = "exclusive", IsActive = true, IsVisible = true, SortOrder = 6 }
     ];
+
+    private async Task<HashSet<string>> ResolveTenantEntitlementTokensAsync(CancellationToken ct)
+    {
+        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var activeStatuses = new[] { "active", "trial", "trialing" };
+        var subscription = await db.TenantSubscriptions
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenancy.TenantId && activeStatuses.Contains(x.Status))
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        if (subscription is null) return tokens;
+
+        var plan = await db.BillingPlans
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == subscription.PlanId, ct);
+
+        foreach (var token in ExpandEntitlementTokens(subscription.BillingCycle))
+            tokens.Add(token);
+
+        if (plan is not null)
+        {
+            foreach (var token in ExpandEntitlementTokens(plan.Code))
+                tokens.Add(token);
+            foreach (var token in ExpandEntitlementTokens(plan.Name))
+                tokens.Add(token);
+            foreach (var feature in ParseStringList(plan.FeaturesJson))
+            {
+                foreach (var token in ExpandEntitlementTokens(feature))
+                    tokens.Add(token);
+            }
+        }
+
+        var featureFlags = await db.TenantFeatureFlags.AsNoTracking()
+            .Where(x => x.TenantId == tenancy.TenantId && x.IsEnabled)
+            .Select(x => x.FeatureKey)
+            .ToListAsync(ct);
+        foreach (var featureKey in featureFlags)
+        {
+            foreach (var token in ExpandEntitlementTokens(featureKey))
+                tokens.Add(token);
+        }
+
+        return tokens;
+    }
+
+    private static bool IsEntitled(IntegrationCatalogItem item, HashSet<string> entitlementTokens)
+    {
+        if (entitlementTokens.Count == 0) return false;
+
+        var itemTokens = ExpandEntitlementTokens(item.Slug)
+            .Concat(ExpandEntitlementTokens(item.Name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (itemTokens.Any(entitlementTokens.Contains)) return true;
+
+        return itemTokens.Any(token =>
+            entitlementTokens.Contains($"integration:{token}") ||
+            entitlementTokens.Contains($"plugin:{token}") ||
+            entitlementTokens.Contains($"addon:{token}"));
+    }
+
+    private static IEnumerable<string> ExpandEntitlementTokens(string? raw)
+    {
+        var original = (raw ?? string.Empty).Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(original))
+            yield return original;
+
+        var normalized = NormalizeToken(raw);
+        if (string.IsNullOrWhiteSpace(normalized)) yield break;
+
+        yield return normalized;
+
+        if (normalized.Contains('-'))
+            yield return normalized.Replace("-", string.Empty, StringComparison.Ordinal);
+        if (normalized.Contains('_'))
+            yield return normalized.Replace("_", string.Empty, StringComparison.Ordinal);
+
+        if (normalized is "google-authenticator" or "googleauthenticator")
+            yield return "google_authenticator";
+        else if (normalized is "google_authenticator")
+        {
+            yield return "google-authenticator";
+            yield return "googleauthenticator";
+        }
+
+        if (normalized is "microsoft-authenticator" or "microsoftauthenticator")
+            yield return "microsoft_authenticator";
+        else if (normalized is "microsoft_authenticator")
+        {
+            yield return "microsoft-authenticator";
+            yield return "microsoftauthenticator";
+        }
+
+    }
+
+    private static string NormalizeToken(string? raw)
+    {
+        var value = (raw ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        value = value.Replace("&", " and ", StringComparison.Ordinal);
+        value = Regex.Replace(value, @"[^a-z0-9]+", "-").Trim('-');
+        return value;
+    }
+
+    private static List<string> ParseStringList(string json)
+    {
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; } catch { return []; }
+    }
 
     public sealed class IntegrationCatalogItem
     {

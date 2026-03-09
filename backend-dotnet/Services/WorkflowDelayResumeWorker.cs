@@ -12,6 +12,13 @@ public class WorkflowDelayResumeWorker(
     SensitiveDataRedactor redactor,
     ILogger<WorkflowDelayResumeWorker> logger) : BackgroundService
 {
+    private const int TenantBatchSize = 25;
+    private static readonly TimeSpan TenantCacheTtl = TimeSpan.FromMinutes(2);
+    private readonly SemaphoreSlim _tenantCacheLock = new(1, 1);
+    private List<TenantScanTarget> _tenantCache = [];
+    private DateTime _tenantCacheExpiresUtc = DateTime.MinValue;
+    private int _tenantCursor;
+
     private sealed class DelayResumePayload
     {
         public Guid RunId { get; init; }
@@ -48,7 +55,7 @@ public class WorkflowDelayResumeWorker(
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyContext>();
         var now = DateTime.UtcNow;
 
-        var tenants = await controlDb.Tenants.AsNoTracking().ToListAsync(ct);
+        var tenants = await GetTenantBatchAsync(controlDb, ct);
         foreach (var tenant in tenants)
         {
             try
@@ -201,5 +208,53 @@ public class WorkflowDelayResumeWorker(
     {
         if (string.IsNullOrWhiteSpace(input)) return string.Empty;
         return input.Length <= 500 ? input : $"{input[..500]}...";
+    }
+
+    private async Task<List<TenantScanTarget>> GetTenantBatchAsync(ControlDbContext controlDb, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        if (_tenantCache.Count == 0 || now >= _tenantCacheExpiresUtc)
+        {
+            await _tenantCacheLock.WaitAsync(ct);
+            try
+            {
+                if (_tenantCache.Count == 0 || now >= _tenantCacheExpiresUtc)
+                {
+                    _tenantCache = await controlDb.Tenants.AsNoTracking()
+                        .OrderBy(x => x.CreatedAtUtc)
+                        .Select(x => new TenantScanTarget
+                        {
+                            Id = x.Id,
+                            Slug = x.Slug,
+                            DataConnectionString = x.DataConnectionString
+                        })
+                        .ToListAsync(ct);
+                    _tenantCacheExpiresUtc = now.Add(TenantCacheTtl);
+                    _tenantCursor = 0;
+                }
+            }
+            finally
+            {
+                _tenantCacheLock.Release();
+            }
+        }
+
+        if (_tenantCache.Count <= TenantBatchSize)
+            return _tenantCache;
+
+        var batch = new List<TenantScanTarget>(TenantBatchSize);
+        for (var i = 0; i < TenantBatchSize; i++)
+        {
+            batch.Add(_tenantCache[_tenantCursor]);
+            _tenantCursor = (_tenantCursor + 1) % _tenantCache.Count;
+        }
+        return batch;
+    }
+
+    private sealed class TenantScanTarget
+    {
+        public Guid Id { get; init; }
+        public string Slug { get; init; } = string.Empty;
+        public string DataConnectionString { get; init; } = string.Empty;
     }
 }

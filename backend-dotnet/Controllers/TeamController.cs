@@ -16,7 +16,7 @@ public class TeamController(
     AuthContext auth,
     TenancyContext tenancy,
     PasswordHasher hasher,
-    EmailService emailService,
+    IEmailService emailService,
     BillingGuardService billingGuard,
     SecretCryptoService crypto,
     IConfiguration config,

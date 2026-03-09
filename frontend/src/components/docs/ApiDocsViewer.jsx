@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 const DOCS = {
   sms: {
     title: "SMS API Reference",
-    description: "Tenant-facing SMS integration reference with public URL mode, DLT rules, Tata mapping, sender registry, and delivery reporting.",
+    description: "Public SMS integration reference with tenant-scoped credentials, DLT rules, sender registry, and delivery reporting.",
     html: "/docs/sms-api-reference.html",
     markdown: "/docs/SMS_API_REFERENCE.md",
     tone: "from-orange-50 via-white to-amber-50",
@@ -16,7 +16,7 @@ const DOCS = {
   },
   whatsapp: {
     title: "WhatsApp API Reference",
-    description: "Tenant-facing WhatsApp messaging reference with login flow, project selection, templates, media, webhooks, flows, and analytics.",
+    description: "Public and tenant-authenticated WhatsApp messaging reference with send samples, templates, media, webhooks, and flows.",
     html: "/docs/whatsapp-api-reference.html",
     markdown: "/docs/WHATSAPP_API_REFERENCE.md",
     tone: "from-cyan-50 via-white to-emerald-50",

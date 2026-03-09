@@ -11,6 +11,9 @@ const CSRF_STORAGE_KEY = 'textzy.csrf'
 const LAST_TENANT_KEY = 'textzy.lastTenantSlug'
 const WABA_STATUS_CACHE_PREFIX = 'textzy.wabaStatus'
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
+const DEFAULT_SESSION_IDLE_TIMEOUT_MINUTES = 30
+const DEFAULT_SESSION_IDLE_WARNING_SECONDS = 60
+const AUTH_REDIRECT_REASON_KEY = 'textzy.authRedirectReason'
 let refreshPromise = null
 let authRedirected = false
 let stepUpUiHandler = null
@@ -89,6 +92,76 @@ export function setSession(next) {
 export function clearSession() {
   localStorage.removeItem(STORAGE_KEY)
   localStorage.removeItem(CSRF_STORAGE_KEY)
+}
+
+function getAuthRedirectMessage(reason) {
+  const normalized = String(reason || '').trim().toLowerCase()
+  if (normalized === 'ip_changed') return 'Your IP changed. Please login again.'
+  if (normalized === 'idle_timeout') return 'Your session expired due to inactivity. Please login again.'
+  if (normalized === 'ip_rejected') return 'Your current IP is not allowed. Please login again.'
+  return ''
+}
+
+function persistAuthRedirectReason(reason) {
+  if (!reason) return
+  try {
+    localStorage.setItem(AUTH_REDIRECT_REASON_KEY, String(reason).trim().toLowerCase())
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function consumeAuthRedirectReason() {
+  try {
+    const reason = (localStorage.getItem(AUTH_REDIRECT_REASON_KEY) || '').trim().toLowerCase()
+    if (reason) localStorage.removeItem(AUTH_REDIRECT_REASON_KEY)
+    return reason
+  } catch {
+    return ''
+  }
+}
+
+function redirectToLogin(reason = '') {
+  clearSession()
+  if (!authRedirected && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    authRedirected = true
+    const normalizedReason = String(reason || '').trim().toLowerCase()
+    if (normalizedReason) persistAuthRedirectReason(normalizedReason)
+    const nextUrl = normalizedReason ? `/login?reason=${encodeURIComponent(normalizedReason)}` : '/login'
+    window.location.assign(nextUrl)
+  }
+}
+
+export function getSessionIdleTimeoutMs() {
+  const raw =
+    runtimeConfig.SESSION_IDLE_TIMEOUT_MINUTES ||
+    process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MINUTES ||
+    process.env.VITE_SESSION_IDLE_TIMEOUT_MINUTES ||
+    String(DEFAULT_SESSION_IDLE_TIMEOUT_MINUTES)
+  const parsed = Number.parseInt(String(raw || '').trim(), 10)
+  const minutes = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SESSION_IDLE_TIMEOUT_MINUTES
+  return minutes * 60 * 1000
+}
+
+export function getSessionIdleWarningMs() {
+  const raw =
+    runtimeConfig.SESSION_IDLE_WARNING_SECONDS ||
+    process.env.REACT_APP_SESSION_IDLE_WARNING_SECONDS ||
+    process.env.VITE_SESSION_IDLE_WARNING_SECONDS ||
+    String(DEFAULT_SESSION_IDLE_WARNING_SECONDS)
+  const parsed = Number.parseInt(String(raw || '').trim(), 10)
+  const seconds = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SESSION_IDLE_WARNING_SECONDS
+  return seconds * 1000
+}
+
+export async function authLogout() {
+  try {
+    await baseFetch('/api/auth/logout', { method: 'POST' }, true)
+  } catch {
+    // Local cleanup still needs to happen when the server session is already gone.
+  } finally {
+    clearSession()
+  }
 }
 
 export function registerStepUpUiHandler(handler) {
@@ -306,7 +379,11 @@ async function refresh() {
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
     const res = await baseFetch('/api/auth/refresh', { method: 'POST' }, true)
-    if (!res.ok) return false
+    if (!res.ok) {
+      const reason = (res.headers.get('x-auth-reason') || '').trim().toLowerCase()
+      if (res.status === 401) redirectToLogin(reason)
+      return false
+    }
     await res.json().catch(() => ({}))
     return true
   })()
@@ -317,25 +394,23 @@ async function refresh() {
   }
 }
 
+export async function refreshSession() {
+  return refresh()
+}
+
 export async function apiRequest(path, options = {}) {
   let res = await baseFetch(path, options, true)
   if (res.status !== 401) return res
+  const firstFailureReason = (res.headers.get('x-auth-reason') || '').trim().toLowerCase()
   const ok = await refresh()
   if (!ok) {
-    clearSession()
-    if (!authRedirected && typeof window !== 'undefined' && window.location.pathname !== '/login') {
-      authRedirected = true
-      window.location.assign('/login')
-    }
+    redirectToLogin(firstFailureReason)
     return res
   }
   res = await baseFetch(path, options, true)
   if (res.status === 401) {
-    clearSession()
-    if (!authRedirected && typeof window !== 'undefined' && window.location.pathname !== '/login') {
-      authRedirected = true
-      window.location.assign('/login')
-    }
+    const secondFailureReason = (res.headers.get('x-auth-reason') || '').trim().toLowerCase()
+    redirectToLogin(secondFailureReason || firstFailureReason)
   }
   return res
 }
@@ -446,7 +521,7 @@ export async function authLogin({ email, password, tenantSlug, emailVerification
     method: 'POST',
     headers,
     credentials: 'include',
-    body: JSON.stringify({ email, password, emailVerificationId: emailVerificationId || '' })
+    body: JSON.stringify({ email, password, tenantSlug: tenantSlug || '', emailVerificationId: emailVerificationId || '' })
   })
   persistCsrfFromResponse(res)
   if (!res.ok) {
@@ -750,6 +825,36 @@ export async function savePlatformSettings(scope, values) {
   return apiPut(`/api/platform/settings/${scope}`, values)
 }
 
+export async function getSupportContext() {
+  return apiGet('/api/support/context')
+}
+
+export async function getSupportTickets(filters = {}) {
+  const q = new URLSearchParams()
+  if (filters.status) q.set('status', filters.status)
+  if (filters.service) q.set('service', filters.service)
+  if (filters.q) q.set('q', filters.q)
+  if (filters.page) q.set('page', String(filters.page))
+  if (filters.pageSize) q.set('pageSize', String(filters.pageSize))
+  return apiGet(`/api/support/tickets${q.toString() ? `?${q.toString()}` : ''}`)
+}
+
+export async function getSupportTicketDetails(ticketId) {
+  return apiGet(`/api/support/tickets/${encodeURIComponent(ticketId)}`)
+}
+
+export async function createSupportTicket(payload) {
+  return apiPost('/api/support/tickets', payload || {})
+}
+
+export async function replySupportTicket(ticketId, payload) {
+  return apiPost(`/api/support/tickets/${encodeURIComponent(ticketId)}/reply`, payload || {})
+}
+
+export async function reopenSupportTicket(ticketId, payload = {}) {
+  return apiPost(`/api/support/tickets/${encodeURIComponent(ticketId)}/reopen`, payload || {})
+}
+
 export async function testPlatformSmtp(email) {
   return apiPost('/api/platform/settings/smtp/test', { email })
 }
@@ -982,6 +1087,58 @@ export async function getPlatformSecurityControls(tenantId) {
   return apiGet(`/api/platform/security/controls?${q.toString()}`)
 }
 
+export async function getPlatformSecurityReport({
+  tenantId = "",
+  userId = "",
+  actionContains = "",
+  sessionStatus = "all",
+  fromUtc = "",
+  toUtc = "",
+  limit = 200
+} = {}) {
+  const q = new URLSearchParams()
+  if (tenantId) q.set("tenantId", tenantId)
+  if (userId) q.set("userId", userId)
+  if (actionContains) q.set("actionContains", actionContains)
+  if (sessionStatus) q.set("sessionStatus", sessionStatus)
+  if (fromUtc) q.set("fromUtc", fromUtc)
+  if (toUtc) q.set("toUtc", toUtc)
+  q.set("limit", String(limit))
+  return apiGet(`/api/platform/security/report?${q.toString()}`)
+}
+
+export async function exportPlatformSecurityReport(filters = {}) {
+  const q = new URLSearchParams()
+  if (filters.tenantId) q.set("tenantId", filters.tenantId)
+  if (filters.userId) q.set("userId", filters.userId)
+  if (filters.actionContains) q.set("actionContains", filters.actionContains)
+  if (filters.sessionStatus) q.set("sessionStatus", filters.sessionStatus)
+  if (filters.fromUtc) q.set("fromUtc", filters.fromUtc)
+  if (filters.toUtc) q.set("toUtc", filters.toUtc)
+  q.set("limit", String(filters.limit || 1000))
+  return apiGetBlob(`/api/platform/security/report/export?${q.toString()}`)
+}
+
+export async function revokePlatformSession(sessionId) {
+  return apiPost(`/api/platform/security/sessions/${sessionId}/revoke`, {})
+}
+
+export async function blockPlatformSessionIp(sessionId) {
+  return apiPost(`/api/platform/security/sessions/${sessionId}/block-ip`, {})
+}
+
+export async function getPlatformSecurityIpRules() {
+  return apiGet("/api/platform/security/ip-rules")
+}
+
+export async function createPlatformSecurityIpRule(payload) {
+  return apiPost("/api/platform/security/ip-rules", payload)
+}
+
+export async function deletePlatformSecurityIpRule(ruleId) {
+  return apiDelete(`/api/platform/security/ip-rules/${ruleId}`)
+}
+
 export async function upsertPlatformSecurityControls(payload) {
   return apiPut("/api/platform/security/controls", payload)
 }
@@ -1109,7 +1266,8 @@ export async function updatePlatformBillingPlan(id, payload) {
 export async function getPlatformCustomers(q = '') {
   const qs = new URLSearchParams()
   if (q) qs.set('q', q)
-  return apiGet(`/api/platform/customers${qs.toString() ? `?${qs.toString()}` : ''}`)
+  const data = await apiGet(`/api/platform/customers${qs.toString() ? `?${qs.toString()}` : ''}`)
+  return Array.isArray(data) ? data : (data?.items || [])
 }
 
 export async function getPlatformUsers(q = '') {
@@ -1168,6 +1326,49 @@ export async function assignPlatformCustomerPlan(tenantId, payload) {
   return apiPost(`/api/platform/customers/${tenantId}/assign-plan`, payload)
 }
 
+export async function getPlatformPurchaseReport(filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.fromUtc) qs.set('fromUtc', filters.fromUtc)
+  if (filters.toUtc) qs.set('toUtc', filters.toUtc)
+  if (filters.service) qs.set('service', filters.service)
+  if (filters.q) qs.set('q', filters.q)
+  if (filters.status) qs.set('status', filters.status)
+  if (filters.page) qs.set('page', String(filters.page))
+  if (filters.pageSize) qs.set('pageSize', String(filters.pageSize))
+  return apiGet(`/api/platform/purchases${qs.toString() ? `?${qs.toString()}` : ''}`)
+}
+
+export async function viewPlatformPurchaseInvoice(invoiceId) {
+  return apiGetBlob(`/api/platform/purchases/${encodeURIComponent(invoiceId)}/view`)
+}
+
+export async function sendPlatformPurchaseInvoice(invoiceId) {
+  return apiPost(`/api/platform/purchases/${encodeURIComponent(invoiceId)}/send`, {})
+}
+
+export async function getPlatformSupportTickets(filters = {}) {
+  const q = new URLSearchParams()
+  if (filters.status) q.set('status', filters.status)
+  if (filters.service) q.set('service', filters.service)
+  if (filters.q) q.set('q', filters.q)
+  if (filters.tenantId) q.set('tenantId', filters.tenantId)
+  if (filters.page) q.set('page', String(filters.page))
+  if (filters.pageSize) q.set('pageSize', String(filters.pageSize))
+  return apiGet(`/api/platform/support/tickets${q.toString() ? `?${q.toString()}` : ''}`)
+}
+
+export async function getPlatformSupportTicketDetails(ticketId) {
+  return apiGet(`/api/platform/support/tickets/${encodeURIComponent(ticketId)}`)
+}
+
+export async function replyPlatformSupportTicket(ticketId, payload) {
+  return apiPost(`/api/platform/support/tickets/${encodeURIComponent(ticketId)}/reply`, payload || {})
+}
+
+export async function updatePlatformSupportTicketStatus(ticketId, payload) {
+  return apiPost(`/api/platform/support/tickets/${encodeURIComponent(ticketId)}/status`, payload || {})
+}
+
 export async function archivePlatformBillingPlan(id) {
   return apiDelete(`/api/platform/billing/plans/${id}`)
 }
@@ -1206,6 +1407,10 @@ export async function getBillingPaymentConfig() {
 
 export async function createRazorpayOrder(planCode, billingCycle = 'monthly') {
   return apiPost('/api/billing/razorpay/create-order', { planCode, billingCycle })
+}
+
+export async function createIntegrationRazorpayOrder(slug) {
+  return apiPost('/api/billing/razorpay/create-integration-order', { slug })
 }
 
 export async function verifyRazorpayPayment(payload) {

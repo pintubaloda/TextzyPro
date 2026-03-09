@@ -81,7 +81,8 @@ public class TenantMiddleware(RequestDelegate next)
         // Ignore X-Tenant-Slug to avoid stale/mismatched tenant context.
         if (!string.IsNullOrWhiteSpace(opaqueToken))
         {
-            var session = sessions.Validate(opaqueToken);
+            var validation = sessions.ValidateDetailed(opaqueToken);
+            var session = validation.Session;
             if (session is not null)
             {
                 var sessionTenant = db.Tenants.FirstOrDefault(t => t.Id == session.TenantId);
@@ -107,6 +108,12 @@ public class TenantMiddleware(RequestDelegate next)
                 await _next(context);
                 return;
             }
+
+            authCookie.Clear(context);
+            WriteAuthFailure(context, validation);
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsync(validation.Message);
+            return;
         }
 
         if (!context.Request.Headers.TryGetValue("X-Tenant-Slug", out var tenantSlug))
@@ -136,5 +143,17 @@ public class TenantMiddleware(RequestDelegate next)
             return;
         }
         await _next(context);
+    }
+
+    private static void WriteAuthFailure(HttpContext context, SessionValidationResult validation)
+    {
+        var reason = validation.Failure switch
+        {
+            SessionValidationFailure.IpChanged => "ip_changed",
+            SessionValidationFailure.IdleTimeout => "idle_timeout",
+            SessionValidationFailure.IpRejected => "ip_rejected",
+            _ => "session_invalid"
+        };
+        context.Response.Headers["X-Auth-Reason"] = reason;
     }
 }

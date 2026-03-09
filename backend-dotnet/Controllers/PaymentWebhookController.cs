@@ -15,7 +15,8 @@ namespace Textzy.Api.Controllers;
 public class PaymentWebhookController(
     ControlDbContext db,
     SecretCryptoService crypto,
-    EmailService emailService,
+    IEmailService emailService,
+    InvoiceAttachmentService invoiceAttachmentService,
     BillingGuardService billingGuard,
     AuditLogService audit,
     SensitiveDataRedactor redactor,
@@ -421,6 +422,7 @@ public class PaymentWebhookController(
                 BillingCycle = normalizedCycle,
                 TaxMode = plan.TaxMode,
                 ReferenceNo = attempt.OrderId,
+                Description = ResolveInvoiceDescription(plan.Name, normalizedCycle, plan.PricingModel),
                 PeriodStartUtc = periodStart,
                 PeriodEndUtc = periodEnd,
                 Subtotal = invoiceBreakdown.Subtotal,
@@ -442,13 +444,15 @@ public class PaymentWebhookController(
                 new Dictionary<string, string>
                 {
                     ["Invoice No"] = invoiceNo,
+                    ["Service"] = invoice.Description,
                     ["Subtotal"] = $"{invoiceBreakdown.Subtotal:0.00} {attempt.Currency}",
                     ["Tax"] = $"{invoiceBreakdown.TaxAmount:0.00} {attempt.Currency}",
                     ["Tax Rate"] = $"{taxRate:0.##}%",
                     ["Total"] = $"{invoiceBreakdown.Total:0.00} {attempt.Currency}",
                     ["Invoice Type"] = "Tax Invoice"
                 },
-                ct);
+                ct,
+                invoice);
         }
 
         if (string.Equals(plan.PricingModel, "usage_pack", StringComparison.OrdinalIgnoreCase))
@@ -493,26 +497,10 @@ public class PaymentWebhookController(
         return (Math.Clamp(profile.TaxRatePercent, 0m, 100m), profile.IsTaxExempt, profile.IsReverseCharge);
     }
 
-    private static string ComputeInvoiceIntegrityHash(BillingInvoice invoice)
-    {
-        var canonical = string.Join("|",
-            invoice.InvoiceNo,
-            invoice.TenantId.ToString("D"),
-            invoice.InvoiceKind,
-            invoice.BillingCycle,
-            invoice.TaxMode,
-            invoice.ReferenceNo,
-            invoice.PeriodStartUtc.ToUniversalTime().ToString("O"),
-            invoice.PeriodEndUtc.ToUniversalTime().ToString("O"),
-            invoice.Subtotal.ToString("0.00"),
-            invoice.TaxAmount.ToString("0.00"),
-            invoice.Total.ToString("0.00"),
-            (invoice.PaidAtUtc ?? DateTime.MinValue).ToUniversalTime().ToString("O"),
-            invoice.Status,
-            invoice.IssuedAtUtc.ToUniversalTime().ToString("O"));
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
+    private static string ResolveInvoiceDescription(string? planName, string? billingCycle, string? pricingModel)
+        => BillingComputation.ResolveInvoiceDescription(planName, billingCycle, pricingModel);
+
+    private static string ComputeInvoiceIntegrityHash(BillingInvoice invoice) => InvoiceIntegrityHasher.Compute(invoice);
 
     private readonly record struct InvoiceAmounts(decimal Subtotal, decimal TaxAmount, decimal Total);
 
@@ -523,20 +511,8 @@ public class PaymentWebhookController(
         bool isTaxExempt,
         bool isReverseCharge)
     {
-        var normalizedTaxMode = string.Equals(taxMode, "inclusive", StringComparison.OrdinalIgnoreCase) ? "inclusive" : "exclusive";
-        if (isTaxExempt || isReverseCharge || taxRatePercent <= 0m)
-            return new InvoiceAmounts(totalCharged, 0m, totalCharged);
-
-        if (normalizedTaxMode == "inclusive")
-        {
-            var subtotal = Math.Round(totalCharged / (1m + (taxRatePercent / 100m)), 2, MidpointRounding.AwayFromZero);
-            var tax = Math.Round(totalCharged - subtotal, 2, MidpointRounding.AwayFromZero);
-            return new InvoiceAmounts(subtotal, tax, totalCharged);
-        }
-
-        var subtotalExclusive = Math.Round(totalCharged / (1m + (taxRatePercent / 100m)), 2, MidpointRounding.AwayFromZero);
-        var taxExclusive = Math.Round(totalCharged - subtotalExclusive, 2, MidpointRounding.AwayFromZero);
-        return new InvoiceAmounts(subtotalExclusive, taxExclusive, totalCharged);
+        var amounts = BillingComputation.ComputeInvoiceAmounts(totalCharged, taxRatePercent, taxMode, isTaxExempt, isReverseCharge, amountIsGross: true);
+        return new InvoiceAmounts(amounts.Subtotal, amounts.TaxAmount, amounts.Total);
     }
 
     private static int ResolvePackUnitsFromLimits(string json, string? usageUnitName)
@@ -566,13 +542,16 @@ public class PaymentWebhookController(
         };
     }
 
-    private async Task TrySendBillingEventAsync(Guid tenantId, string title, string description, Dictionary<string, string> details, CancellationToken ct)
+    private async Task TrySendBillingEventAsync(Guid tenantId, string title, string description, Dictionary<string, string> details, CancellationToken ct, BillingInvoice? invoice = null)
     {
         try
         {
             var recipient = await ResolveBillingRecipientAsync(tenantId, ct);
             if (string.IsNullOrWhiteSpace(recipient.email)) return;
-            await emailService.SendBillingEventAsync(recipient.email, recipient.name, recipient.companyName, title, description, details, ct);
+            var attachments = invoice is null
+                ? null
+                : new[] { await invoiceAttachmentService.BuildPdfAttachmentAsync(invoice, Request, ct) };
+            await emailService.SendBillingEventAsync(recipient.email, recipient.name, recipient.companyName, title, description, details, ct, attachments);
         }
         catch (Exception ex)
         {

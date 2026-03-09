@@ -38,3 +38,5 @@ frontend/dist/
 # .NET build outputs
 backend-dotnet/bin/
 backend-dotnet/obj/
+backend-dotnet-tests/bin/
+backend-dotnet-tests/obj/

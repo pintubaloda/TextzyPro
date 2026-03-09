@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import {
   getPlatformCustomers,
+  getPlatformPurchaseReport,
   getPlatformQueueHealth,
   getPlatformSecuritySignals,
   getPlatformWebhookAnalytics,
@@ -18,17 +19,16 @@ import {
 import { toast } from "sonner";
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
   Building2,
   CreditCard,
   Database,
   Layers3,
   RefreshCcw,
+  ReceiptText,
   Rocket,
   ServerCog,
   ShieldAlert,
-  Smartphone,
   Users,
   Wifi,
 } from "lucide-react";
@@ -89,6 +89,7 @@ export default function PlatformOwnerDashboard() {
   const [webhookAnalytics, setWebhookAnalytics] = useState(null);
   const [onboardingSummary, setOnboardingSummary] = useState(null);
   const [mobileTelemetry, setMobileTelemetry] = useState([]);
+  const [purchaseReport, setPurchaseReport] = useState(null);
 
   const load = async (query = "") => {
     const isFirstLoad = !customers.length && !refreshing;
@@ -97,6 +98,7 @@ export default function PlatformOwnerDashboard() {
     try {
       const [
         customerRows,
+        purchases,
         billingPlans,
         queue,
         security,
@@ -105,6 +107,7 @@ export default function PlatformOwnerDashboard() {
         mobile,
       ] = await Promise.all([
         getPlatformCustomers(query).catch(() => []),
+        getPlatformPurchaseReport({ page: 1, pageSize: 6 }).catch(() => null),
         listPlatformBillingPlans().catch(() => []),
         getPlatformQueueHealth().catch(() => null),
         getPlatformSecuritySignals({ status: "open", limit: 50 }).catch(() => []),
@@ -114,6 +117,7 @@ export default function PlatformOwnerDashboard() {
       ]);
 
       setCustomers(Array.isArray(customerRows) ? customerRows : []);
+      setPurchaseReport(purchases || null);
       setPlans(Array.isArray(billingPlans) ? billingPlans : []);
       setQueueHealth(queue || null);
       setSecuritySignals(Array.isArray(security) ? security : []);
@@ -157,6 +161,7 @@ export default function PlatformOwnerDashboard() {
     const activePlans = plans.filter((plan) => plan?.isActive).length;
     const openSignals = securitySignals.filter((signal) => String(signal.status || "").toLowerCase() !== "resolved").length;
     const mobileDevices = mobileTelemetry.length;
+    const purchaseSummary = purchaseReport?.summary || {};
     return {
       totalTenants,
       activeTenants,
@@ -168,8 +173,10 @@ export default function PlatformOwnerDashboard() {
       activePlans,
       openSignals,
       mobileDevices,
+      totalPurchases: Number(purchaseSummary.totalPurchases || 0),
+      totalInvoiceValue: Number(purchaseSummary.totalInvoiceValue || 0),
     };
-  }, [customers, plans, securitySignals, mobileTelemetry]);
+  }, [customers, plans, securitySignals, mobileTelemetry, purchaseReport]);
 
   const onboardingCounts = useMemo(() => onboardingSummary?.counts || {}, [onboardingSummary]);
   const onboardingRows = useMemo(() => {
@@ -217,6 +224,10 @@ export default function PlatformOwnerDashboard() {
       .slice(0, 8);
   }, [filteredCustomers]);
 
+  const recentPurchases = useMemo(() => {
+    return Array.isArray(purchaseReport?.items) ? purchaseReport.items.slice(0, 6) : [];
+  }, [purchaseReport]);
+
   const securityBreakdown = useMemo(() => {
     const map = new Map();
     for (const signal of securitySignals) {
@@ -250,6 +261,15 @@ export default function PlatformOwnerDashboard() {
               <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate("/dashboard/platform-settings?tab=security-ops")}>
                 Security ops
               </Button>
+              <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate("/dashboard/platform-security-report")}>
+                Security report
+              </Button>
+              <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate("/dashboard/platform-purchases")}>
+                Purchase report
+              </Button>
+              <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={() => navigate("/dashboard/platform-support")}>
+                Support desk
+              </Button>
             </div>
           </div>
           <div className="grid min-w-full grid-cols-2 gap-3 xl:min-w-[420px]">
@@ -272,7 +292,7 @@ export default function PlatformOwnerDashboard() {
         <MiniKpi title="Platform Users" value={number(summary.totalUsers)} hint={`${number(summary.activeUsers)} active users`} icon={Users} tone="blue" />
         <MiniKpi title="Active Plans" value={number(summary.activePlans)} hint={money(summary.totalRevenue)} icon={CreditCard} tone="emerald" />
         <MiniKpi title="Open Signals" value={number(summary.openSignals)} hint="Security items awaiting review" icon={ShieldAlert} tone="rose" />
-        <MiniKpi title="Mobile Devices" value={number(summary.mobileDevices)} hint="Recent device telemetry seen" icon={Smartphone} tone="violet" />
+        <MiniKpi title="Purchases" value={number(summary.totalPurchases)} hint={money(summary.totalInvoiceValue)} icon={ReceiptText} tone="violet" />
       </div>
 
       <div className="grid gap-6 2xl:grid-cols-[1.35fr_0.95fr]">
@@ -470,6 +490,8 @@ export default function PlatformOwnerDashboard() {
           <CardContent className="grid gap-3 sm:grid-cols-2">
             {[
               { label: "Customer admin", hint: "Plans, invoices, tenant users", icon: Users, href: "/dashboard/admin" },
+              { label: "Purchase report", hint: "Date and service filtered billing ledger", icon: ReceiptText, href: "/dashboard/platform-purchases" },
+              { label: "Support desk", hint: "Customer tickets, replies, close and reopen", icon: Users, href: "/dashboard/platform-support" },
               { label: "WABA master", hint: "Meta app, tokens, onboarding", icon: Rocket, href: "/dashboard/platform-settings?tab=waba-master" },
               { label: "SMTP and email", hint: "Delivery, sender, reports", icon: Wifi, href: "/dashboard/platform-settings?tab=smtp-settings" },
               { label: "SMS gateway", hint: "Tata config and request logs", icon: ServerCog, href: "/dashboard/platform-settings?tab=sms-gateway" },
@@ -526,6 +548,58 @@ export default function PlatformOwnerDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <CardTitle>Recent purchases</CardTitle>
+            <CardDescription>Latest invoice-backed purchases visible to the platform owner.</CardDescription>
+          </div>
+          <Button variant="outline" onClick={() => navigate("/dashboard/platform-purchases")}>
+            Open full purchase report
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-2xl border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Customer</th>
+                  <th className="px-4 py-3 text-left font-semibold">Service</th>
+                  <th className="px-4 py-3 text-left font-semibold">Date</th>
+                  <th className="px-4 py-3 text-left font-semibold">Amount</th>
+                  <th className="px-4 py-3 text-left font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentPurchases.map((row) => (
+                  <tr key={row.invoiceId} className="border-t border-slate-100">
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="font-semibold text-slate-950">{row.companyName || "-"}</p>
+                        <p className="text-xs text-slate-500">{row.userName || "-"}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{row.serviceName || "-"}</td>
+                    <td className="px-4 py-3 text-slate-700">{row.purchaseDateUtc ? new Date(row.purchaseDateUtc).toLocaleDateString() : "-"}</td>
+                    <td className="px-4 py-3 text-slate-900">{money(row.totalAmount, row.currency)}</td>
+                    <td className="px-4 py-3">
+                      <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">{row.invoiceStatus || "-"}</Badge>
+                    </td>
+                  </tr>
+                ))}
+                {!recentPurchases.length ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">
+                      {loading ? "Loading recent purchases..." : "No purchase history found yet."}
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

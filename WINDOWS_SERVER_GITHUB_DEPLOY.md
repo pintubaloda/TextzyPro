@@ -5,7 +5,7 @@ This deployment model uses:
 - GitHub-hosted runners to build backend and frontend artifacts
 - a self-hosted GitHub Actions runner on your Windows Server to deploy those artifacts into IIS
 
-It gives you Railway-style auto-deploy behavior without building on the production server.
+It gives you GitHub-driven auto-deploy behavior without building on the production server.
 
 ## 1. Target topology
 

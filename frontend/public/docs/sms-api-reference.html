@@ -1,141 +1,39 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Textzy SMS API Reference</title>
   <style>
-    :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --text: #0f172a;
-      --muted: #475569;
-      --border: #e2e8f0;
-      --brand: #f97316;
-      --brand-deep: #ea580c;
-      --brand-soft: #fff7ed;
-      --ok: #16a34a;
-      --code: #0f172a;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: radial-gradient(circle at top left, rgba(249,115,22,.16), transparent 22%), linear-gradient(180deg, #fff7ed 0%, var(--bg) 320px);
-      color: var(--text);
-      font-family: "Segoe UI", Arial, sans-serif;
-    }
-    .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 18px 42px; }
-    .hero {
-      background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
-      color: #fff;
-      border-radius: 24px;
-      padding: 28px;
-      box-shadow: 0 16px 40px rgba(234,88,12,.18);
-      margin-bottom: 18px;
-    }
-    .hero h1 { margin: 0 0 10px; font-size: 34px; }
-    .hero p { margin: 0; max-width: 760px; line-height: 1.6; opacity: .96; }
-    .hero-grid { display: grid; grid-template-columns: 1.3fr .9fr; gap: 16px; margin-top: 18px; }
-    .hero-pillbox, .hero-side {
-      background: rgba(255,255,255,.13);
-      border: 1px solid rgba(255,255,255,.22);
-      border-radius: 18px;
-      padding: 16px;
-    }
-    .pillrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .pill {
-      display: inline-flex; align-items: center; gap: 6px;
-      border-radius: 999px; padding: 8px 12px; background: rgba(255,255,255,.18);
-      font-size: 12px; font-weight: 600;
-    }
-    .grid { display: grid; gap: 16px; grid-template-columns: 1.2fr .8fr; }
-    @media (max-width: 980px) { .hero-grid, .grid { grid-template-columns: 1fr; } }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 20px;
-      box-shadow: 0 8px 24px rgba(15,23,42,.04);
-      margin-bottom: 16px;
-    }
-    h2 { margin: 0 0 12px; font-size: 22px; }
-    h3 { margin: 18px 0 10px; font-size: 16px; }
-    p, li { color: var(--muted); line-height: 1.65; }
-    ul { margin: 8px 0 0 18px; padding: 0; }
-    code {
-      background: #fff7ed;
-      color: #9a3412;
-      border: 1px solid #fed7aa;
-      padding: 2px 6px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-family: Consolas, monospace;
-    }
-    pre {
-      margin: 10px 0 0;
-      background: var(--code);
-      color: #e2e8f0;
-      border-radius: 14px;
-      padding: 14px;
-      overflow: auto;
-      border: 1px solid #1e293b;
-      font-size: 12px;
-      line-height: 1.55;
-    }
-    .tag {
-      display: inline-flex; align-items: center;
-      background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;
-      padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
-      margin-left: 8px;
-    }
-    .note, .warn {
-      border-radius: 14px; padding: 12px 14px; margin-top: 12px; font-size: 13px;
-    }
-    .note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
-    .warn { background: var(--brand-soft); border: 1px solid #fdba74; color: #9a3412; }
-    .mini-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
-    @media (max-width: 860px) { .mini-grid { grid-template-columns: 1fr; } }
-    .metric { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: #fff; }
-    .metric b { display: block; color: var(--text); font-size: 18px; margin-bottom: 4px; }
-    .links a { color: var(--brand-deep); text-decoration: none; font-weight: 700; margin-right: 12px; }
-    .links a:hover { text-decoration: underline; }
-    .tableish { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    .tableish th, .tableish td { border-bottom: 1px solid var(--border); padding: 10px 0; text-align: left; font-size: 14px; }
-    .tableish th { color: var(--text); }
-    .tableish td { color: var(--muted); }
+    :root { --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#475569; --border:#e2e8f0; --brand:#f97316; --brand2:#ea580c; --soft:#fff7ed; --code:#0f172a; }
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#fff7ed 0,#f8fafc 340px);font-family:"Segoe UI",Arial,sans-serif;color:var(--text)}
+    .wrap{max-width:1120px;margin:0 auto;padding:28px 18px 42px}.hero{background:linear-gradient(135deg,#fb923c,#ea580c);color:#fff;border-radius:24px;padding:28px;box-shadow:0 16px 40px rgba(234,88,12,.18);margin-bottom:18px}
+    .hero h1{margin:0 0 10px;font-size:34px}.hero p{margin:0;max-width:780px;line-height:1.65;opacity:.96}.grid{display:grid;gap:16px;grid-template-columns:1.2fr .8fr}@media(max-width:980px){.grid{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:20px;box-shadow:0 8px 24px rgba(15,23,42,.04);margin-bottom:16px}
+    h2{margin:0 0 12px;font-size:22px} h3{margin:18px 0 10px;font-size:16px} p,li{color:var(--muted);line-height:1.65} ul{margin:8px 0 0 18px;padding:0}
+    code{background:var(--soft);color:#9a3412;border:1px solid #fdba74;padding:2px 6px;border-radius:8px;font-size:12px;font-family:Consolas,monospace}
+    pre{margin:10px 0 0;background:var(--code);color:#e2e8f0;border-radius:14px;padding:14px;overflow:auto;border:1px solid #1e293b;font-size:12px;line-height:1.55;white-space:pre-wrap}
+    .tag{display:inline-flex;align-items:center;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-left:8px}
+    .note,.warn{border-radius:14px;padding:12px 14px;margin-top:12px;font-size:13px}.note{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}.warn{background:var(--soft);border:1px solid #fdba74;color:#9a3412}
+    .tableish{width:100%;border-collapse:collapse;margin-top:10px}.tableish th,.tableish td{border-bottom:1px solid var(--border);padding:10px 0;text-align:left;font-size:14px}.tableish th{color:var(--text)}.tableish td{color:var(--muted)}
+    .links a{color:var(--brand2);text-decoration:none;font-weight:700;margin-right:12px}.links a:hover{text-decoration:underline}
   </style>
 </head>
 <body>
   <div class="wrap">
     <section class="hero">
       <h1>Textzy SMS API Reference</h1>
-      <p>Production-grade tenant-facing reference for Textzy SMS integrations covering simple public URL mode, Textzy app SMS send, DLT compliance, Tata gateway mapping, sender and template registries, tenant delivery reporting, and rollout controls. Platform-only operator APIs are intentionally excluded.</p>
-      <div class="hero-grid">
-        <div class="hero-pillbox">
-          <strong>Integration modes</strong>
-          <div class="pillrow">
-            <span class="pill">Simple URL API</span>
-            <span class="pill">Textzy App API</span>
-            <span class="pill">DLT-ready</span>
-            <span class="pill">Tata-compatible</span>
-          </div>
-        </div>
-        <div class="hero-side">
-          <strong>Base URL</strong>
-          <div class="pillrow"><span class="pill">https://textzy-backend-production.up.railway.app</span></div>
-        </div>
-      </div>
+      <p>Professional public SMS integration reference for tenant credentials, DLT-compliant sends, sender and template registries, delivery reporting, and production request formats.</p>
     </section>
-
     <div class="grid">
       <div>
         <section class="card">
-          <h2>1. Public SMS API <span class="tag">No bearer token</span></h2>
-          <p>Use this for ERP, CRM, admin-panel, or lightweight partner integrations where you want a browser-friendly or server-friendly request model without session login, while still keeping each tenant on its own credential set.</p>
-          <h3>GET Request</h3>
+          <h2>1. Public SMS API <span class="tag">GET and POST</span></h2>
+          <p>Use the public SMS API when an ERP, CRM, website, or backend service needs to send SMS directly through Textzy using tenant-specific API credentials.</p>
+          <h3>GET Example</h3>
           <pre>GET https://textzy-backend-production.up.railway.app/api/public/messages/send
   ?recipient=919999999999
-  &amp;msg=Your%20approved%20DLT%20message%20text
+  &amp;msg=Your approved DLT message text
   &amp;user=MONEYART
   &amp;pswd=YOUR_PASSWORD
   &amp;apikey=YOUR_API_KEY
@@ -144,7 +42,7 @@
   &amp;PE_ID=1601100000000006533
   &amp;Template_ID=1207171593687982329
   &amp;tenantSlug=moneyart</pre>
-          <h3>POST Request</h3>
+          <h3>POST Example</h3>
           <pre>{
   "recipient": "919999999999",
   "message": "Your approved DLT message text",
@@ -158,108 +56,28 @@
   "templateId": "1207171593687982329",
   "idempotencyKey": "sms-20260308-0001"
 }</pre>
-          <div class="warn">Use the backend URL only. For India DLT, <code>sender</code>, <code>PE_ID</code>, <code>Template_ID</code>, and message text must match approved policy.</div>
+          <div class="warn">For India DLT traffic, the sender ID, PE_ID, template ID, and final SMS text must match approved records.</div>
         </section>
 
         <section class="card">
-          <h2>2. Required and Optional Fields</h2>
+          <h2>2. Required Fields</h2>
           <table class="tableish">
-            <tr><th>Field</th><th>Type</th><th>Use</th></tr>
-            <tr><td><code>recipient</code></td><td>string</td><td>Mobile number with country code</td></tr>
-            <tr><td><code>message</code> / <code>msg</code></td><td>string</td><td>SMS text</td></tr>
-            <tr><td><code>tenantSlug</code></td><td>string</td><td>Required target tenant slug</td></tr>
-            <tr><td><code>user</code></td><td>string</td><td>Tenant-scoped API username</td></tr>
-            <tr><td><code>password</code> / <code>pswd</code></td><td>string</td><td>API password</td></tr>
-            <tr><td><code>apiKey</code> / <code>apikey</code></td><td>string</td><td>API key</td></tr>
-            <tr><td><code>sender</code></td><td>string</td><td>DLT-approved sender ID</td></tr>
-            <tr><td><code>peId</code> / <code>PE_ID</code></td><td>string</td><td>DLT entity ID</td></tr>
-            <tr><td><code>templateId</code> / <code>Template_ID</code></td><td>string</td><td>DLT template ID</td></tr>
-            <tr><td><code>idempotencyKey</code></td><td>string</td><td>Optional request de-duplication key</td></tr>
+            <tr><th>Field</th><th>Use</th></tr>
+            <tr><td><code>recipient</code></td><td>Mobile number with country code</td></tr>
+            <tr><td><code>message</code> / <code>msg</code></td><td>Final approved SMS text</td></tr>
+            <tr><td><code>tenantSlug</code></td><td>Tenant slug</td></tr>
+            <tr><td><code>user</code></td><td>Tenant API username</td></tr>
+            <tr><td><code>password</code> / <code>pswd</code></td><td>Tenant API password</td></tr>
+            <tr><td><code>apiKey</code> / <code>apikey</code></td><td>Tenant API key</td></tr>
+            <tr><td><code>sender</code></td><td>Approved sender ID</td></tr>
+            <tr><td><code>peId</code> / <code>PE_ID</code></td><td>Approved entity ID</td></tr>
+            <tr><td><code>templateId</code> / <code>Template_ID</code></td><td>Approved template ID</td></tr>
           </table>
-          <div class="note">Platform owner provisions public API credentials per tenant. Requests are validated against the selected <code>tenantSlug</code> only, and optional IP whitelist rules can be enforced per tenant. This document shows only the tenant-facing integration contract.</div>
+          <div class="note">Each tenant has its own API username, password, and API key. Optional IP whitelist rules can also be enforced per tenant.</div>
         </section>
 
         <section class="card">
-          <h2>3. Textzy App SMS Send</h2>
-          <p>Use this when SMS is sent from inside Textzy web, mobile, desktop, workflow, OTP, or automation flows. This is not the external partner API.</p>
-          <pre>{
-  "recipient": "919999999999",
-  "channel": "Sms",
-  "body": "Your OTP is 123456",
-  "smsSenderId": "MNYART",
-  "smsPeId": "1601100000000006533",
-  "smsTemplateId": "1207171593687982329"
-}</pre>
-          <div class="note">Textzy handles tenant login, billing, credits, Tata gateway credentials, audit logging, and delivery reporting. Tenant users only send the business payload.</div>
-        </section>
-
-        <section class="card">
-          <h2>4. Tata Gateway Mapping</h2>
-          <pre>https://smsgw.tatatel.co.in:9095/campaignService/campaigns/qs
-  ?recipient=&lt;MobileNo&gt;
-  &amp;dr=false
-  &amp;msg=&lt;Message&gt;
-  &amp;user=&lt;Username&gt;
-  &amp;pswd=&lt;Password&gt;
-  &amp;sender=&lt;SenderAddress&gt;
-  &amp;PE_ID=&lt;PEID&gt;
-  &amp;Template_ID=&lt;TemplateID&gt;</pre>
-          <p>Textzy keeps Tata credentials at platform level. Your request only supplies recipient, sender, message, PE_ID, and template ID.</p>
-        </section>
-
-        <section class="card">
-          <h2>5. Sender and Template Registry</h2>
-          <h3>Template Registry Endpoints</h3>
-          <ul>
-            <li><code>GET /api/sms/templates</code></li>
-            <li><code>POST /api/sms/templates</code></li>
-            <li><code>PUT /api/sms/templates/{id}</code></li>
-            <li><code>DELETE /api/sms/templates/{id}</code></li>
-            <li><code>POST /api/sms/templates/{id}/status</code></li>
-            <li><code>POST /api/sms/templates/import-approved-csv</code></li>
-          </ul>
-          <h3>Sender Registry Endpoints</h3>
-          <ul>
-            <li><code>GET /api/sms/senders</code></li>
-            <li><code>GET /api/sms/senders/stats</code></li>
-            <li><code>POST /api/sms/senders</code></li>
-            <li><code>PUT /api/sms/senders/{id}</code></li>
-            <li><code>DELETE /api/sms/senders/{id}</code></li>
-          </ul>
-        </section>
-      </div>
-
-      <div>
-        <section class="card">
-          <h2>6. DLT and Segment Rules</h2>
-          <div class="mini-grid">
-            <div class="metric"><b>Sender</b> DLT-approved sender ID required.</div>
-            <div class="metric"><b>PE_ID</b> DLT-approved entity ID required.</div>
-            <div class="metric"><b>Template_ID</b> DLT-approved template ID required.</div>
-          </div>
-          <h3>Segment Logic</h3>
-          <ul>
-            <li>English GSM: <code>1-160</code> chars = 1 SMS, multipart uses <code>153</code> chars/segment</li>
-            <li>Unicode / Regional: <code>1-70</code> chars = 1 SMS, multipart uses <code>67</code> chars/segment</li>
-          </ul>
-        </section>
-
-        <section class="card">
-          <h2>7. Delivery and Status Reporting</h2>
-          <p>After Textzy accepts the SMS request, provider job IDs and delivery updates are recorded in tenant SMS reports automatically.</p>
-          <ul>
-            <li><code>accepted</code></li>
-            <li><code>queued</code></li>
-            <li><code>sent</code></li>
-            <li><code>delivered</code></li>
-            <li><code>failed</code></li>
-            <li><code>rejected</code></li>
-          </ul>
-          <p>STOP and unsubscribe handling is managed internally by Textzy and is not part of the normal tenant integration document.</p>
-        </section>
-
-        <section class="card">
-          <h2>8. Response Patterns</h2>
+          <h2>3. Responses</h2>
           <h3>Success</h3>
           <pre>{
   "jobId": "5d64f8bf-4c1f-4e59-92a9-4a0f5a8c992e",
@@ -270,20 +88,62 @@
   "message": "Invalid authorization.",
   "code": "401"
 }</pre>
-          <ul>
-            <li><code>400</code> request rejected</li>
-            <li><code>401</code> invalid authorization</li>
-            <li><code>403</code> access denied</li>
-            <li><code>422</code> DLT validation issue</li>
-            <li><code>429</code> rate limit exceeded</li>
-            <li><code>503</code> gateway temporarily unavailable</li>
-          </ul>
+          <p>Common codes: <code>400</code>, <code>401</code>, <code>403</code>, <code>422</code>, <code>429</code>, <code>503</code>.</p>
         </section>
 
         <section class="card">
-          <h2>9. Testing and Rollout</h2>
-          <div class="warn">Recommended production flow: secure credentials, use HTTPS only, validate DLT identifiers, verify delivery status in Textzy reports, and test every sender/template pair before routing customer traffic.</div>
-          <div class="links" style="margin-top:14px;">
+          <h2>4. Registry APIs</h2>
+          <h3>Template Registry</h3>
+          <ul>
+            <li><code>GET /api/sms/templates</code></li>
+            <li><code>POST /api/sms/templates</code></li>
+            <li><code>PUT /api/sms/templates/{id}</code></li>
+            <li><code>DELETE /api/sms/templates/{id}</code></li>
+            <li><code>POST /api/sms/templates/{id}/status</code></li>
+            <li><code>POST /api/sms/templates/import-approved-csv</code></li>
+          </ul>
+          <h3>Sender Registry</h3>
+          <ul>
+            <li><code>GET /api/sms/senders</code></li>
+            <li><code>GET /api/sms/senders/stats</code></li>
+            <li><code>POST /api/sms/senders</code></li>
+            <li><code>PUT /api/sms/senders/{id}</code></li>
+            <li><code>DELETE /api/sms/senders/{id}</code></li>
+          </ul>
+        </section>
+      </div>
+      <div>
+        <section class="card">
+          <h2>5. DLT Compliance</h2>
+          <ul>
+            <li>Use only approved sender IDs</li>
+            <li>Use only approved entity IDs</li>
+            <li>Use only approved template IDs</li>
+            <li>Final text must follow the approved template</li>
+          </ul>
+        </section>
+        <section class="card">
+          <h2>6. Delivery Reporting</h2>
+          <p>Tenant SMS reports and delivery ledgers can show statuses such as:</p>
+          <ul>
+            <li><code>accepted</code></li>
+            <li><code>queued</code></li>
+            <li><code>sent</code></li>
+            <li><code>delivered</code></li>
+            <li><code>failed</code></li>
+            <li><code>rejected</code></li>
+          </ul>
+        </section>
+        <section class="card">
+          <h2>7. Segment Logic</h2>
+          <ul>
+            <li>English GSM: <code>1-160</code> chars = 1 SMS, multipart uses <code>153</code> chars per segment</li>
+            <li>Unicode / Regional: <code>1-70</code> chars = 1 SMS, multipart uses <code>67</code> chars per segment</li>
+          </ul>
+        </section>
+        <section class="card">
+          <h2>8. Resources</h2>
+          <div class="links">
             <a href="/docs/SMS_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown Source</a>
             <a href="/docs/index.html" target="_blank" rel="noopener noreferrer">Documentation Index</a>
           </div>

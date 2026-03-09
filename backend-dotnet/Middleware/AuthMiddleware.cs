@@ -38,8 +38,7 @@ public class AuthMiddleware(RequestDelegate next)
         var isAuthRefreshPath = path.StartsWith("/api/auth/refresh", StringComparison.OrdinalIgnoreCase);
         var isProjectPath = path.StartsWith("/api/auth/projects", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/auth/switch-project", StringComparison.OrdinalIgnoreCase);
-        var isPublicTenantPath = path.StartsWith("/api/tenants", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/api/public", StringComparison.OrdinalIgnoreCase);
+        var isPublicTenantPath = path.StartsWith("/api/public", StringComparison.OrdinalIgnoreCase);
         var isSwaggerPath = path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase);
         var isHubPath = path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase);
         var isWabaWebhookPath = path.StartsWith("/api/waba/webhook", StringComparison.OrdinalIgnoreCase);
@@ -122,11 +121,14 @@ public class AuthMiddleware(RequestDelegate next)
             await context.Response.WriteAsync("Missing bearer token.");
             return;
         }
-        var session = sessions.Validate(opaqueToken);
+        var validation = sessions.ValidateDetailed(opaqueToken);
+        var session = validation.Session;
         if (session is null)
         {
+            authCookie.Clear(context);
+            WriteAuthFailure(context, validation);
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsync("Invalid or expired session.");
+            await context.Response.WriteAsync(validation.Message);
             return;
         }
 
@@ -458,5 +460,17 @@ public class AuthMiddleware(RequestDelegate next)
         }
 
         return parsed;
+    }
+
+    private static void WriteAuthFailure(HttpContext context, SessionValidationResult validation)
+    {
+        var reason = validation.Failure switch
+        {
+            SessionValidationFailure.IpChanged => "ip_changed",
+            SessionValidationFailure.IdleTimeout => "idle_timeout",
+            SessionValidationFailure.IpRejected => "ip_rejected",
+            _ => "session_invalid"
+        };
+        context.Response.Headers["X-Auth-Reason"] = reason;
     }
 }

@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import SupportContactCard from "@/components/support/SupportContactCard";
 import {
   CreditCard,
   Download,
@@ -39,6 +40,7 @@ import {
   getSession,
   getCompanySettings,
   getCurrentBillingPlan,
+  getSupportContext,
   verifyRazorpayPayment
 } from "@/lib/api";
 import { toast } from "sonner";
@@ -54,6 +56,7 @@ const BillingPage = () => {
   const [dunningStatus, setDunningStatus] = useState(null);
   const [paymentConfig, setPaymentConfig] = useState(null);
   const [company, setCompany] = useState(null);
+  const [supportContext, setSupportContext] = useState(null);
   const [payingCode, setPayingCode] = useState("");
   const session = useMemo(() => getSession() || {}, []);
   const isSuperAdmin = String(session?.role || "").toLowerCase() === "super_admin";
@@ -78,6 +81,7 @@ const BillingPage = () => {
         ]);
         const companyCfg = await getCompanySettings().catch(() => null);
         const paymentCfg = await getBillingPaymentConfig().catch(() => null);
+        const supportCfg = await getSupportContext().catch(() => null);
         setPlans(Array.isArray(p) ? p : []);
         setSub(c || null);
         setUsageValues(u?.values || {});
@@ -86,6 +90,7 @@ const BillingPage = () => {
         setDunningStatus(d || null);
         setCompany(companyCfg || null);
         setPaymentConfig(paymentCfg);
+        setSupportContext(supportCfg || null);
       } catch (e) {
         toast.error(e.message || "Failed to load billing");
       }
@@ -117,7 +122,10 @@ const BillingPage = () => {
   const pan = String(company?.pan || "").trim();
   const pct = (used, limit) => !limit ? 0 : Math.min(100, Math.round((used / limit) * 100));
   const formatMoneyValue = (value, currency = "INR") =>
-    `${String(currency || "INR").toUpperCase() === "INR" ? "\u20B9" : `${String(currency || "INR").toUpperCase()} `}${Number(value || 0).toLocaleString()}`;
+    `${String(currency || "INR").toUpperCase() === "INR" ? "\u20B9" : `${String(currency || "INR").toUpperCase()} `}${Number(value || 0).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   const describePlanPrice = (plan, cycle = "monthly") => {
     if (!plan) return "-";
     const currency = String(plan.currency || "INR").toUpperCase();
@@ -142,6 +150,12 @@ const BillingPage = () => {
       apiCalls: { used: usageValues.apiCalls || 0, limit: limits.apiCalls || 0, percentage: pct(usageValues.apiCalls || 0, limits.apiCalls || 0) }
     };
   }, [currentPlan, creditBalances, usageValues]);
+  const invoiceStats = useMemo(() => {
+    const totalInvoices = invoices.length;
+    const paidInvoices = invoices.filter((invoice) => String(invoice.status || "").toLowerCase() === "paid").length;
+    const totalBilled = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+    return { totalInvoices, paidInvoices, totalBilled };
+  }, [invoices]);
 
   const dunningBadgeClass = useMemo(() => {
     const status = String(dunningStatus?.subscription?.status || "").toLowerCase();
@@ -242,14 +256,6 @@ const BillingPage = () => {
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
-  };
-
-  const openPaymentSetup = () => {
-    if (!isSuperAdmin) return;
-    try {
-      localStorage.setItem("textzy_owner_mode", "platform");
-    } catch {}
-    navigate("/dashboard/platform-settings?tab=payment-gateway");
   };
 
   const openCompanySettings = () => {
@@ -375,12 +381,51 @@ const BillingPage = () => {
         </Dialog>
       </div>
 
+      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(249,115,22,0.16),_transparent_28%),linear-gradient(135deg,#fff7ed_0%,#ffffff_42%,#f8fafc_100%)] p-6 shadow-sm">
+        <div className="grid gap-4 lg:grid-cols-[1.35fr_0.95fr]">
+          <div>
+            <Badge className="bg-white text-orange-700 hover:bg-white">Billing Overview</Badge>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-950">
+              {currentPlan?.name || "No active"} plan for {companyName}
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Track your commercial plan, invoice history, usage posture, and support options from one billing workspace.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Button className="bg-orange-500 text-white hover:bg-orange-600" onClick={() => setShowUpgradeDialog(true)}>
+                Upgrade or change plan
+              </Button>
+              <Button variant="outline" onClick={() => navigate("/dashboard/support")}>
+                Create billing ticket
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            <div className="rounded-2xl border border-orange-100 bg-white/90 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current plan</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{currentPlan?.name || "Not assigned"}</p>
+              <p className="mt-1 text-sm text-slate-500">{describePlanPrice(currentPlan, sub?.subscription?.billingCycle || "monthly")}</p>
+            </div>
+            <div className="rounded-2xl border border-orange-100 bg-white/90 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Invoices</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{Number(invoiceStats.totalInvoices || 0).toLocaleString("en-IN")}</p>
+              <p className="mt-1 text-sm text-slate-500">{Number(invoiceStats.paidInvoices || 0).toLocaleString("en-IN")} paid invoices</p>
+            </div>
+            <div className="rounded-2xl border border-orange-100 bg-white/90 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Lifetime billed</p>
+              <p className="mt-2 text-2xl font-bold text-slate-950">{formatMoneyValue(invoiceStats.totalBilled)}</p>
+              <p className="mt-1 text-sm text-slate-500">Across recorded billing invoices</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Current Plan Card */}
-      <Card className="border-slate-200 border-l-4 border-l-orange-500">
+      <Card className="border-slate-200 shadow-sm">
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-orange-100 rounded-xl flex items-center justify-center">
+              <div className="w-14 h-14 bg-orange-100 rounded-2xl flex items-center justify-center">
                 <CreditCard className="w-7 h-7 text-orange-600" />
               </div>
               <div>
@@ -412,7 +457,7 @@ const BillingPage = () => {
       </Card>
 
       {/* Dunning Status */}
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle>Billing Health</CardTitle>
           <CardDescription>Renewal and grace timeline</CardDescription>
@@ -456,7 +501,7 @@ const BillingPage = () => {
       </Card>
 
       {/* Usage Section */}
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <CardTitle>Current Usage</CardTitle>
           <CardDescription>Your usage for this billing period</CardDescription>
@@ -513,47 +558,18 @@ const BillingPage = () => {
         </CardContent>
       </Card>
 
-      {/* Payment Method & Invoices */}
+      {/* Support, Billing Address & Invoices */}
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Payment Method */}
-        <Card className="border-slate-200">
-          <CardHeader>
-            <CardTitle>Payment Method</CardTitle>
-            <CardDescription>Your default payment method</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="p-4 bg-slate-50 rounded-lg flex items-center gap-4">
-              <div className="w-12 h-8 bg-gradient-to-r from-blue-600 to-blue-800 rounded flex items-center justify-center text-white text-xs font-bold uppercase">
-                {isSuperAdmin ? (paymentConfig?.provider || "na").slice(0, 4) : "BILL"}
-              </div>
-              <div>
-                <p className="font-medium text-slate-900">
-                  {isSuperAdmin
-                    ? `${(paymentConfig?.provider || "Not configured").toUpperCase()}${paymentConfig?.razorpay?.keyId ? " | Key configured" : " | Key missing"}`
-                    : "Managed by platform owner"}
-                </p>
-                <p className="text-sm text-slate-500">
-                  {isSuperAdmin
-                    ? `Mode: ${(paymentConfig?.mode || "test").toUpperCase()}`
-                    : "Checkout is available, but gateway credentials remain hidden from tenant users."}
-                </p>
-              </div>
-            </div>
-            {isSuperAdmin ? (
-              <Button
-                variant="outline"
-                className="w-full"
-                data-testid="update-payment-btn"
-                onClick={openPaymentSetup}
-              >
-                Open Payment Setup
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
+        <SupportContactCard
+          support={supportContext?.support}
+          project={supportContext?.project}
+          onCreateTicket={() => navigate("/dashboard/support")}
+          onOpenSupportDesk={() => navigate("/dashboard/support")}
+          compact
+        />
 
         {/* Billing Address */}
-        <Card className="border-slate-200">
+        <Card className="border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle>Billing Address</CardTitle>
             <CardDescription>Your billing information</CardDescription>
@@ -579,7 +595,7 @@ const BillingPage = () => {
           </CardContent>
         </Card>
         {/* Quick Stats */}
-        <Card className="border-slate-200">
+        <Card className="border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle>This Month</CardTitle>
             <CardDescription>Current billing period stats</CardDescription>
@@ -613,7 +629,7 @@ const BillingPage = () => {
       </div>
 
       {/* Invoices */}
-      <Card className="border-slate-200">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -627,11 +643,13 @@ const BillingPage = () => {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="overflow-hidden rounded-2xl border border-slate-200">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Invoice</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead>Service</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -642,9 +660,10 @@ const BillingPage = () => {
                 <TableRow key={invoice.id || invoice.invoiceNo}>
                   <TableCell className="font-medium">{invoice.invoiceNo || invoice.id}</TableCell>
                   <TableCell className="text-slate-600">{invoice.createdAtUtc ? new Date(invoice.createdAtUtc).toLocaleDateString() : "-"}</TableCell>
-                  <TableCell className="text-slate-900">â‚¹{Number(invoice.total || 0).toLocaleString()}</TableCell>
+                  <TableCell className="text-slate-600">{invoice.description || invoice.billingCycle || "-"}</TableCell>
+                  <TableCell className="text-slate-900">{formatMoneyValue(invoice.total || 0)}</TableCell>
                   <TableCell>
-                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                    <Badge className={String(invoice.status || "").toLowerCase() === "paid" ? "bg-green-100 text-green-700 hover:bg-green-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"}>
                       {invoice.status}
                     </Badge>
                   </TableCell>
@@ -656,8 +675,16 @@ const BillingPage = () => {
                   </TableCell>
                 </TableRow>
               ))}
+              {!invoices.length ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-slate-500">
+                    No invoice history available yet.
+                  </TableCell>
+                </TableRow>
+              ) : null}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

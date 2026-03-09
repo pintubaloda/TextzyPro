@@ -232,6 +232,7 @@ const PlatformSettingsPage = () => {
   const [securitySignals, setSecuritySignals] = useState([]);
   const [securityTenantId, setSecurityTenantId] = useState("");
   const [securityControls, setSecurityControls] = useState({ circuitBreakerEnabled: false, ratePerMinuteOverride: 0, reason: "" });
+  const [authSecurity, setAuthSecurity] = useState({ sessionIdleTimeoutMinutes: "30", sessionIdleWarningSeconds: "60" });
   const [securityStatusFilter, setSecurityStatusFilter] = useState("open");
   const [requestLogs, setRequestLogs] = useState([]);
   const [wabaWebhookHealth, setWabaWebhookHealth] = useState(null);
@@ -557,9 +558,10 @@ const PlatformSettingsPage = () => {
             setTenants(list);
             const selected = securityTenantId || list[0]?.tenantId || "";
             setSecurityTenantId(selected);
-            const [signals, controls] = await Promise.all([
+            const [signals, controls, authSettings] = await Promise.all([
               getPlatformSecuritySignals({ status: securityStatusFilter, limit: 200 }).catch(() => []),
-              selected ? getPlatformSecurityControls(selected).catch(() => null) : Promise.resolve(null)
+              selected ? getPlatformSecurityControls(selected).catch(() => null) : Promise.resolve(null),
+              getPlatformSettings("auth-security").catch(() => ({ values: {} }))
             ]);
             if (!active) return;
             setSecuritySignals(signals || []);
@@ -567,6 +569,11 @@ const PlatformSettingsPage = () => {
               circuitBreakerEnabled: !!controls?.circuitBreakerEnabled,
               ratePerMinuteOverride: Number(controls?.ratePerMinuteOverride || 0),
               reason: controls?.reason || ""
+            });
+            const authValues = authSettings?.values || {};
+            setAuthSecurity({
+              sessionIdleTimeoutMinutes: authValues.sessionIdleTimeoutMinutes || "30",
+              sessionIdleWarningSeconds: authValues.sessionIdleWarningSeconds || "60",
             });
           } else if (tab === "waba-policies") {
             const rows = await listWabaErrorPolicies();
@@ -2881,10 +2888,88 @@ const PlatformSettingsPage = () => {
           <CardHeader>
             <CardTitle>Security Operations</CardTitle>
             <CardDescription>
-              Manage circuit breaker, queue purge, and platform security signals.
+              Manage tenant circuit-breaker controls, queue operations, and open platform security signals. Use the dedicated security report for full login and action audit analysis.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Open Signals</div>
+                <div className="mt-2 text-2xl font-bold text-slate-950">{(securitySignals || []).filter((x) => String(x.status || "").toLowerCase() !== "resolved").length}</div>
+                <div className="mt-1 text-xs text-slate-500">Current filtered signal queue</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Resolved</div>
+                <div className="mt-2 text-2xl font-bold text-slate-950">{(securitySignals || []).filter((x) => String(x.status || "").toLowerCase() === "resolved").length}</div>
+                <div className="mt-1 text-xs text-slate-500">Signals already acknowledged</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Tenant Control</div>
+                <div className="mt-2 text-2xl font-bold text-slate-950">{securityTenantId ? "Ready" : "Select"}</div>
+                <div className="mt-1 text-xs text-slate-500">Pick a tenant before saving circuit-breaker controls</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Deep Audit</div>
+                <div className="mt-2 text-2xl font-bold text-slate-950">Report</div>
+                <div className="mt-3">
+                  <Button variant="outline" size="sm" onClick={() => window.location.assign("/dashboard/platform-security-report")}>
+                    Open Security Report
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-950">Session Timeout Policy</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Control idle logout timing for web sessions and the warning popup shown before automatic sign-out.
+                  </p>
+                </div>
+                <Button
+                  className="bg-orange-500 hover:bg-orange-600"
+                  onClick={async () => {
+                    try {
+                      await savePlatformSettings("auth-security", {
+                        sessionIdleTimeoutMinutes: authSecurity.sessionIdleTimeoutMinutes || "30",
+                        sessionIdleWarningSeconds: authSecurity.sessionIdleWarningSeconds || "60",
+                      });
+                      toast.success("Session timeout policy saved.");
+                    } catch {
+                      toast.error("Failed to save session timeout policy.");
+                    }
+                  }}
+                >
+                  Save Session Policy
+                </Button>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Idle timeout (minutes)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={authSecurity.sessionIdleTimeoutMinutes}
+                    onChange={(e) => setAuthSecurity((p) => ({ ...p, sessionIdleTimeoutMinutes: e.target.value }))}
+                  />
+                  <p className="text-xs text-slate-500">After this much inactivity, the web session expires.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Warning popup before logout (seconds)</Label>
+                  <Input
+                    type="number"
+                    min="10"
+                    max="600"
+                    value={authSecurity.sessionIdleWarningSeconds}
+                    onChange={(e) => setAuthSecurity((p) => ({ ...p, sessionIdleWarningSeconds: e.target.value }))}
+                  />
+                  <p className="text-xs text-slate-500">Users can click Continue to refresh and extend the session.</p>
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-3 md:grid-cols-5">
               <Select value={securityStatusFilter} onValueChange={setSecurityStatusFilter}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -3040,7 +3125,9 @@ const PlatformSettingsPage = () => {
                   ))}
                   {(securitySignals || []).length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-3 py-6 text-center text-slate-500">No security signals.</td>
+                      <td colSpan={6} className="px-3 py-8 text-center text-slate-500">
+                        No security signals for the current filter. This tab only shows operational signals and tenant controls. Use the Security Report page for login history, per-user session drill-down, and full audit export.
+                      </td>
                     </tr>
                   )}
                 </tbody>

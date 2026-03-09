@@ -12,15 +12,16 @@ import { getPlatformSettings, savePlatformSettings } from "@/lib/api";
 const DEFAULTS = {
   platformName: "Textzy",
   logoUrl: "",
-  legalName: "",
-  gstin: "",
-  pan: "",
+  legalName: "TEXTZY DIGITAL SOLUTIONS PRIVATE LIMITED",
+  gstin: "27AAFCU5055K1ZO",
+  pan: "AAFCU5055K",
+  cin: "U74900MH2020PTC345678",
   billingEmail: "",
   billingPhone: "",
   supportEmail: "",
   supportPhone: "",
   website: "",
-  address: "",
+  address: "Plot No. 456, Tech Park Building, Bandra Kurla Complex\nMumbai, Maharashtra 400051, India",
   invoiceFooter: "",
 };
 
@@ -49,6 +50,7 @@ export default function PlatformBrandingPage() {
           legalName: values.legalName || "",
           gstin: values.gstin || "",
           pan: values.pan || "",
+          cin: values.cin || "",
           billingEmail: values.billingEmail || "",
           billingPhone: values.billingPhone || "",
           supportEmail: values.supportEmail || "",
@@ -79,6 +81,7 @@ export default function PlatformBrandingPage() {
         legalName: form.legalName,
         gstin: form.gstin,
         pan: form.pan,
+        cin: form.cin,
         billingEmail: form.billingEmail,
         billingPhone: form.billingPhone,
         supportEmail: form.supportEmail,
@@ -157,6 +160,10 @@ export default function PlatformBrandingPage() {
             <Input value={form.pan} onChange={(e) => update("pan", e.target.value)} placeholder="AAAAA0000A" />
           </div>
           <div className="space-y-2">
+            <Label>CIN</Label>
+            <Input value={form.cin} onChange={(e) => update("cin", e.target.value)} placeholder="U74900MH2020PTC345678" />
+          </div>
+          <div className="space-y-2">
             <Label>Billing Email</Label>
             <Input value={form.billingEmail} onChange={(e) => update("billingEmail", e.target.value)} placeholder="billing@domain.com" />
           </div>
@@ -169,7 +176,7 @@ export default function PlatformBrandingPage() {
             <Input value={form.supportEmail} onChange={(e) => update("supportEmail", e.target.value)} placeholder="support@domain.com" />
           </div>
           <div className="space-y-2">
-            <Label>Support Phone</Label>
+            <Label>Support WhatsApp No.</Label>
             <Input value={form.supportPhone} onChange={(e) => update("supportPhone", e.target.value)} placeholder="+91..." />
           </div>
           <div className="space-y-2 md:col-span-2">

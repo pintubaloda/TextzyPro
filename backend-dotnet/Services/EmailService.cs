@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
 
@@ -12,7 +13,7 @@ public class EmailService(
     IConfiguration config,
     ControlDbContext db,
     SecretCryptoService crypto,
-    IHttpClientFactory httpClientFactory)
+    IHttpClientFactory httpClientFactory) : IEmailService
 {
     private sealed class EmailRuntimeSettings
     {
@@ -126,12 +127,13 @@ public class EmailService(
         string subject,
         string htmlBody,
         string plainBody,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyCollection<EmailAttachment>? attachments = null)
     {
         if (string.IsNullOrWhiteSpace(settings.Host) || string.IsNullOrWhiteSpace(settings.FromEmail))
             throw new InvalidOperationException("SMTP is not configured. Set SMTP_HOST and SMTP_FROM_EMAIL.");
 
-        var msg = new MailMessage
+        using var msg = new MailMessage
         {
             From = new MailAddress(settings.FromEmail, settings.FromName),
             Subject = subject,
@@ -141,6 +143,13 @@ public class EmailService(
         msg.To.Add(new MailAddress(toEmail));
         if (!string.IsNullOrWhiteSpace(plainBody))
             msg.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(plainBody, null, "text/plain"));
+        if (attachments is not null)
+        {
+            foreach (var attachment in attachments.Where(x => x.ContentBytes.Length > 0))
+            {
+                msg.Attachments.Add(new Attachment(new MemoryStream(attachment.ContentBytes, writable: false), attachment.FileName, attachment.ContentType));
+            }
+        }
 
         using var client = new SmtpClient(settings.Host, settings.Port)
         {
@@ -161,7 +170,8 @@ public class EmailService(
         string subject,
         string htmlBody,
         string plainBody,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyCollection<EmailAttachment>? attachments = null)
     {
         if (string.IsNullOrWhiteSpace(settings.ResendApiKey) || string.IsNullOrWhiteSpace(settings.FromEmail))
             throw new InvalidOperationException("Resend is not configured. Set resendApiKey and resendFromEmail.");
@@ -170,18 +180,35 @@ public class EmailService(
             ? settings.FromEmail
             : $"{settings.FromName} <{settings.FromEmail}>";
 
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            from,
-            to = new[] { toEmail },
-            subject,
-            html = htmlBody,
-            text = plainBody
+            ["from"] = from,
+            ["to"] = new[] { toEmail },
+            ["subject"] = subject,
+            ["html"] = htmlBody,
+            ["text"] = plainBody
         };
+        if (attachments is not null && attachments.Count > 0)
+        {
+            payload["attachments"] = attachments
+                .Where(x => x.ContentBytes.Length > 0)
+                .Select(x => new
+                {
+                    filename = x.FileName,
+                    content = Convert.ToBase64String(x.ContentBytes)
+                })
+                .ToArray();
+        }
 
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ResendApiKey);
-        req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        req.Content = new StringContent(
+            JsonSerializer.Serialize(payload, new JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            }),
+            Encoding.UTF8,
+            "application/json");
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(settings.TimeoutMs);
@@ -201,16 +228,17 @@ public class EmailService(
         string subject,
         string htmlBody,
         string plainBody,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyCollection<EmailAttachment>? attachments = null)
     {
         var settings = await GetRuntimeSettingsAsync(ct);
         if (settings.Provider == "resend")
         {
-            await SendViaResendAsync(settings, toEmail, subject, htmlBody, plainBody, ct);
+            await SendViaResendAsync(settings, toEmail, subject, htmlBody, plainBody, ct, attachments);
             return;
         }
 
-        await SendViaSmtpAsync(settings, toEmail, subject, htmlBody, plainBody, ct);
+        await SendViaSmtpAsync(settings, toEmail, subject, htmlBody, plainBody, ct, attachments);
     }
 
     public async Task SendInviteAsync(string toEmail, string toName, string inviteUrl, CancellationToken ct = default)
@@ -389,7 +417,8 @@ public class EmailService(
         string eventTitle,
         string eventDescription,
         Dictionary<string, string>? details = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IReadOnlyCollection<EmailAttachment>? attachments = null)
     {
         if (string.IsNullOrWhiteSpace(toEmail)) return;
         var safeName = string.IsNullOrWhiteSpace(displayName) ? "there" : WebUtility.HtmlEncode(displayName);
@@ -445,6 +474,6 @@ public class EmailService(
             {(string.IsNullOrWhiteSpace(detailsPlain) ? "" : "\n" + detailsPlain)}
             """;
 
-        await SendEmailAsync(toEmail, $"Textzy Billing: {eventTitle}", html, plain, ct);
+        await SendEmailAsync(toEmail, $"Textzy Billing: {eventTitle}", html, plain, ct, attachments);
     }
 }

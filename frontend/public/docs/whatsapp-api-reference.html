@@ -1,140 +1,87 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Textzy WhatsApp API Reference</title>
   <style>
-    :root {
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --text: #0f172a;
-      --muted: #475569;
-      --border: #e2e8f0;
-      --brand: #0f766e;
-      --brand-2: #0369a1;
-      --brand-soft: #ecfeff;
-      --code: #0f172a;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: radial-gradient(circle at top left, rgba(14,165,233,.12), transparent 20%), linear-gradient(180deg, #f0fdfa 0%, var(--bg) 320px);
-      color: var(--text);
-      font-family: "Segoe UI", Arial, sans-serif;
-    }
-    .wrap { max-width: 1140px; margin: 0 auto; padding: 28px 18px 42px; }
-    .hero {
-      background: linear-gradient(135deg, #0ea5e9 0%, #0f766e 100%);
-      color: #fff;
-      border-radius: 24px;
-      padding: 28px;
-      box-shadow: 0 16px 40px rgba(8,145,178,.18);
-      margin-bottom: 18px;
-    }
-    .hero h1 { margin: 0 0 10px; font-size: 34px; }
-    .hero p { margin: 0; max-width: 780px; line-height: 1.6; opacity: .96; }
-    .hero-grid { display: grid; grid-template-columns: 1.35fr .85fr; gap: 16px; margin-top: 18px; }
-    .hero-box { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2); border-radius: 18px; padding: 16px; }
-    .pillrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 8px 12px; background: rgba(255,255,255,.18); font-size: 12px; font-weight: 700; }
-    .layout { display: grid; gap: 16px; grid-template-columns: 1.2fr .8fr; }
-    @media (max-width: 980px) { .hero-grid, .layout { grid-template-columns: 1fr; } }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 20px; box-shadow: 0 8px 24px rgba(15,23,42,.04); margin-bottom: 16px; }
-    h2 { margin: 0 0 12px; font-size: 22px; }
-    h3 { margin: 18px 0 10px; font-size: 16px; }
-    p, li { color: var(--muted); line-height: 1.65; }
-    ul { margin: 8px 0 0 18px; padding: 0; }
-    code { background: #ecfeff; color: #155e75; border: 1px solid #a5f3fc; padding: 2px 6px; border-radius: 8px; font-size: 12px; font-family: Consolas, monospace; }
-    pre { margin: 10px 0 0; background: var(--code); color: #e2e8f0; border-radius: 14px; padding: 14px; overflow: auto; border: 1px solid #1e293b; font-size: 12px; line-height: 1.55; }
-    .tag { display: inline-flex; align-items: center; background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; margin-left: 8px; }
-    .note, .warn { border-radius: 14px; padding: 12px 14px; margin-top: 12px; font-size: 13px; }
-    .note { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
-    .warn { background: #ecfeff; border: 1px solid #a5f3fc; color: #155e75; }
-    .mini-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
-    @media (max-width: 860px) { .mini-grid { grid-template-columns: 1fr; } }
-    .metric { border: 1px solid var(--border); border-radius: 16px; padding: 14px; background: #fff; }
-    .metric b { display: block; color: var(--text); font-size: 18px; margin-bottom: 4px; }
-    .links a { color: var(--brand); text-decoration: none; font-weight: 700; margin-right: 12px; }
-    .links a:hover { text-decoration: underline; }
-    .tableish { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    .tableish th, .tableish td { border-bottom: 1px solid var(--border); padding: 10px 0; text-align: left; font-size: 14px; }
-    .tableish th { color: var(--text); }
-    .tableish td { color: var(--muted); }
+    :root { --bg:#f8fafc; --card:#fff; --text:#0f172a; --muted:#475569; --border:#e2e8f0; --brand:#0f766e; --brand2:#0369a1; --soft:#ecfeff; --code:#0f172a; }
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#ecfeff 0,#f8fafc 340px);font-family:"Segoe UI",Arial,sans-serif;color:var(--text)}
+    .wrap{max-width:1140px;margin:0 auto;padding:28px 18px 42px}.hero{background:linear-gradient(135deg,#0ea5e9,#0f766e);color:#fff;border-radius:24px;padding:28px;box-shadow:0 16px 40px rgba(8,145,178,.18);margin-bottom:18px}
+    .hero h1{margin:0 0 10px;font-size:34px}.hero p{margin:0;max-width:780px;line-height:1.65;opacity:.96}.layout{display:grid;gap:16px;grid-template-columns:1.2fr .8fr}@media(max-width:980px){.layout{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:20px;box-shadow:0 8px 24px rgba(15,23,42,.04);margin-bottom:16px}
+    h2{margin:0 0 12px;font-size:22px} h3{margin:18px 0 10px;font-size:16px} p,li{color:var(--muted);line-height:1.65} ul{margin:8px 0 0 18px;padding:0}
+    code{background:var(--soft);color:#155e75;border:1px solid #a5f3fc;padding:2px 6px;border-radius:8px;font-size:12px;font-family:Consolas,monospace}
+    pre{margin:10px 0 0;background:var(--code);color:#e2e8f0;border-radius:14px;padding:14px;overflow:auto;border:1px solid #1e293b;font-size:12px;line-height:1.55;white-space:pre-wrap}
+    .tag{display:inline-flex;align-items:center;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-left:8px}
+    .note,.warn{border-radius:14px;padding:12px 14px;margin-top:12px;font-size:13px}.note{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}.warn{background:#ecfeff;border:1px solid #a5f3fc;color:#155e75}
+    .links a{color:var(--brand);text-decoration:none;font-weight:700;margin-right:12px}.links a:hover{text-decoration:underline}
   </style>
 </head>
 <body>
   <div class="wrap">
     <section class="hero">
       <h1>Textzy WhatsApp API Reference</h1>
-      <p>Professional tenant-facing reference for Textzy WhatsApp Business messaging, approved templates, media upload, webhook processing, automation flows, Meta flow management, customer request examples, and tenant analytics. Platform-only operator APIs are intentionally excluded.</p>
-      <div class="hero-grid">
-        <div class="hero-box">
-          <strong>Coverage</strong>
-          <div class="pillrow">
-            <span class="pill">Session Messaging</span>
-            <span class="pill">Template Messaging</span>
-            <span class="pill">Interactive Messages</span>
-            <span class="pill">Flows + Meta</span>
-            <span class="pill">Webhook + Analytics</span>
-          </div>
-        </div>
-        <div class="hero-box">
-          <strong>Base URL</strong>
-          <div class="pillrow"><span class="pill">https://textzy-backend-production.up.railway.app</span></div>
-        </div>
-      </div>
+      <p>Professional public and tenant-authenticated WhatsApp messaging reference covering plain public sends, templates, media, flows, webhooks, and operational API examples.</p>
     </section>
-
     <div class="layout">
       <div>
         <section class="card">
-          <h2>1. Authentication and Tenant Context <span class="tag">Tenant session</span></h2>
-          <p>WhatsApp operational APIs are tenant-scoped and intended for authenticated Textzy sessions using httpOnly cookie transport. Login can include authenticator verification when 2FA is enabled.</p>
+          <h2>1. Public WhatsApp API <span class="tag">GET and POST</span></h2>
+          <p>Use the public WhatsApp API when an external system needs to send a plain WhatsApp text message through Textzy using tenant-specific API credentials.</p>
+          <h3>GET Example</h3>
+          <pre>GET https://textzy-backend-production.up.railway.app/api/public/messages/send
+  ?recipient=919999999999
+  &amp;msg=Hello from Textzy WhatsApp API
+  &amp;user=MONEYART
+  &amp;pswd=YOUR_PASSWORD
+  &amp;apikey=YOUR_API_KEY
+  &amp;channel=whatsapp
+  &amp;tenantSlug=moneyart</pre>
+          <h3>POST Example</h3>
+          <pre>{
+  "recipient": "919999999999",
+  "message": "Hello from Textzy WhatsApp API",
+  "user": "MONEYART",
+  "password": "YOUR_PASSWORD",
+  "apiKey": "YOUR_API_KEY",
+  "tenantSlug": "moneyart",
+  "channel": "whatsapp",
+  "idempotencyKey": "wa-20260308-0001"
+}</pre>
+          <div class="note">Public WhatsApp API examples are intended for plain text sends. Richer capabilities such as templates, interactive messages, media, and flow execution use authenticated tenant APIs.</div>
+        </section>
+
+        <section class="card">
+          <h2>2. Required Fields</h2>
           <ul>
-            <li><code>POST /api/auth/login</code></li>
-            <li><code>POST /api/auth/two-factor/verify-login</code></li>
-            <li><code>GET /api/auth/projects</code></li>
-            <li><code>POST /api/auth/switch-project</code></li>
-            <li><code>GET /api/auth/me</code></li>
-            <li><code>POST /api/auth/refresh</code></li>
+            <li><code>recipient</code>: mobile number with country code</li>
+            <li><code>message</code> or <code>msg</code>: plain text message</li>
+            <li><code>tenantSlug</code>: tenant slug</li>
+            <li><code>user</code>: tenant API username</li>
+            <li><code>password</code> or <code>pswd</code>: tenant API password</li>
+            <li><code>apiKey</code> or <code>apikey</code>: tenant API key</li>
+            <li><code>channel</code>: <code>whatsapp</code></li>
           </ul>
-          <div class="note">Use authenticated tenant APIs for WhatsApp send, templates, inbox, analytics, and automation. Tenant context comes from the selected project, not from caller-supplied public credentials. Public simple URL mode is intended for SMS only, and platform-only operator endpoints are not part of this reference.</div>
         </section>
 
         <section class="card">
-          <h2>2. Complete Working Flow</h2>
-          <ol style="color:var(--muted); line-height:1.7; padding-left:18px; margin:0;">
-            <li>Login to Textzy</li>
-            <li>If enabled, complete authenticator verification</li>
-            <li>Load projects and switch to the target tenant</li>
-            <li>Check WABA readiness</li>
-            <li>Send session, template, interactive, or flow message</li>
-            <li>Monitor inbox, webhook status, and analytics</li>
-          </ol>
+          <h2>3. Responses</h2>
+          <h3>Success</h3>
+          <pre>{
+  "jobId": "5d64f8bf-4c1f-4e59-92a9-4a0f5a8c992e",
+  "message": "Accepted"
+}</pre>
+          <h3>Error</h3>
+          <pre>{
+  "message": "Invalid authorization.",
+  "code": "401"
+}</pre>
         </section>
 
         <section class="card">
-          <h2>3. Login and Project Selection</h2>
-          <h3>Login</h3>
-          <pre>{
-  "email": "owner@company.com",
-  "password": "StrongPassword"
-}</pre>
-          <h3>Two-Factor Verify</h3>
-          <pre>{
-  "challengeToken": "LOGIN_CHALLENGE_TOKEN",
-  "code": "123456"
-}</pre>
-          <h3>Switch Project</h3>
-          <pre>{
-  "slug": "moneyart"
-}</pre>
-          <div class="note">WhatsApp tenant context comes from the selected project. This is not a public URL-style API.</div>
-        </section>
-
-        <section class="card">
-          <h2>4. Session and Template Messaging</h2>
+          <h2>4. Authenticated Tenant WhatsApp API</h2>
+          <p>Use authenticated tenant APIs when messages originate from Textzy web, mobile, desktop, inbox, or workflow execution.</p>
           <h3>Session Message</h3>
           <pre>{
   "recipient": "919999999999",
@@ -151,12 +98,7 @@
   "templateLanguageCode": "en",
   "templateParameters": ["John", "#1234"]
 }</pre>
-          <div class="warn">Session sends work only inside the active 24-hour WhatsApp customer window. Outside that window, use an approved template. These writes depend on authenticated tenant session and CSRF protection in first-party clients.</div>
-        </section>
-
-        <section class="card">
-          <h2>5. Interactive Messaging</h2>
-          <h3>Buttons</h3>
+          <h3>Interactive Buttons</h3>
           <pre>{
   "recipient": "919999999999",
   "channel": "WhatsApp",
@@ -165,7 +107,7 @@
   "body": "How can we help you?",
   "interactiveButtons": ["Support", "Sales", "Accounts"]
 }</pre>
-          <h3>Flow</h3>
+          <h3>Interactive Flow</h3>
           <pre>{
   "recipient": "919999999999",
   "channel": "WhatsApp",
@@ -179,20 +121,20 @@
   "interactiveFlowDataJson": "{}",
   "interactiveFlowMessageVersion": 3
 }</pre>
+          <div class="warn">Session messaging is subject to WhatsApp conversation-window rules. Use approved templates when a session message is not allowed.</div>
         </section>
-
+      </div>
+      <div>
         <section class="card">
-          <h2>6. Media and Template Assets</h2>
+          <h2>5. Media APIs</h2>
           <ul>
             <li><code>POST /api/messages/upload-whatsapp-media</code></li>
             <li><code>POST /api/messages/upload-whatsapp-asset</code></li>
             <li><code>GET /api/messages/media/{mediaId}</code></li>
           </ul>
-          <p>Use these endpoints to send image/video/audio/document messages, upload template header assets, and fetch inbound media into inbox previews.</p>
         </section>
-
         <section class="card">
-          <h2>7. WhatsApp Template Management</h2>
+          <h2>6. Template APIs</h2>
           <ul>
             <li><code>GET /api/templates</code></li>
             <li><code>POST /api/templates</code></li>
@@ -201,34 +143,22 @@
             <li><code>GET /api/templates/{id}/presets</code></li>
             <li><code>GET /api/templates/project-list</code></li>
           </ul>
-          <table class="tableish">
-            <tr><th>Category</th><th>Purpose</th></tr>
-            <tr><td><code>MARKETING</code></td><td>Promotions, offers, outbound engagement</td></tr>
-            <tr><td><code>UTILITY</code></td><td>Transactional and service communications</td></tr>
-            <tr><td><code>AUTHENTICATION</code></td><td>OTP or secure auth flows</td></tr>
-          </table>
         </section>
-      </div>
-
-      <div>
         <section class="card">
-          <h2>8. Webhooks</h2>
-          <h3>Verification</h3>
-          <p><code>GET /api/waba/webhook</code></p>
-          <h3>Event Receiver</h3>
-          <p><code>POST /api/waba/webhook</code></p>
-          <p>Used for inbound messages, status events, interactive replies, template behavior, and downstream automation triggers.</p>
+          <h2>7. Webhook APIs</h2>
+          <ul>
+            <li><code>GET /api/waba/webhook</code></li>
+            <li><code>POST /api/waba/webhook</code></li>
+          </ul>
         </section>
-
         <section class="card">
-          <h2>9. Flow Builder and Automation</h2>
+          <h2>8. Flow and Automation APIs</h2>
           <ul>
             <li><code>GET /api/automation/flows</code></li>
             <li><code>POST /api/automation/flows</code></li>
             <li><code>GET /api/automation/flows/{flowId}</code></li>
             <li><code>PUT /api/automation/flows/{flowId}</code></li>
             <li><code>GET /api/automation/flows/{flowId}/versions</code></li>
-            <li><code>POST /api/automation/flows/{flowId}/versions</code></li>
             <li><code>POST /api/automation/flows/{flowId}/versions/{versionId}/publish</code></li>
             <li><code>POST /api/automation/flows/{flowId}/simulate</code></li>
             <li><code>POST /api/automation/flows/{flowId}/run</code></li>
@@ -236,47 +166,9 @@
             <li><code>POST /api/automation/flows/{flowId}/data-exchange</code></li>
           </ul>
         </section>
-
         <section class="card">
-          <h2>10. Meta Flow Management</h2>
-          <ul>
-            <li><code>GET /api/automation/meta/flows</code></li>
-            <li><code>POST /api/automation/meta/flows</code></li>
-            <li><code>GET /api/automation/meta/flows/{metaFlowId}</code></li>
-            <li><code>PUT /api/automation/meta/flows/{metaFlowId}</code></li>
-            <li><code>DELETE /api/automation/meta/flows/{metaFlowId}</code></li>
-            <li><code>POST /api/automation/meta/flows/{metaFlowId}/publish</code></li>
-            <li><code>POST /api/automation/flows/{flowId}/import-meta</code></li>
-          </ul>
-        </section>
-
-        <section class="card">
-          <h2>11. Readiness and Smoke</h2>
-          <p><code>GET /api/waba/smoke/readiness</code></p>
-          <pre>{
-  "recipient": "919999999999",
-  "sendSessionMessage": true,
-  "sessionMessageText": "Smoke test from Textzy",
-  "sendTemplateMessage": false
-}</pre>
-          <p><code>POST /api/waba/smoke/run</code></p>
-          <div class="mini-grid">
-            <div class="metric"><b>Readiness</b> WABA config, webhook, template sync, runtime counters</div>
-            <div class="metric"><b>Smoke Run</b> Session send, template send, session-open validation</div>
-            <div class="metric"><b>Analytics</b> Tenant overview, webhook status, flow metrics</div>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>12. Analytics and Operations</h2>
-          <ul>
-            <li><code>GET /api/analytics/overview</code></li>
-            <li><code>GET /api/analytics/webhook-status</code></li>
-            <li><code>GET /api/automation/metrics/flows</code></li>
-            <li><code>GET /api/automation/metrics/flows/events</code></li>
-          </ul>
-          <div class="warn">Before production rollout, confirm WABA is connected, webhook is verified, templates are approved, smoke tests pass, live event analytics match expected conversation behavior, and operational users can complete login plus project selection cleanly.</div>
-          <div class="links" style="margin-top:14px;">
+          <h2>9. Resources</h2>
+          <div class="links">
             <a href="/docs/WHATSAPP_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown Source</a>
             <a href="/docs/index.html" target="_blank" rel="noopener noreferrer">Documentation Index</a>
           </div>

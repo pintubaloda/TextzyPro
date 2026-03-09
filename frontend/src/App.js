@@ -25,12 +25,16 @@ const AutomationsPage = lazy(() => import("@/pages/dashboard/AutomationsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/dashboard/AnalyticsPage"));
 const IntegrationsPage = lazy(() => import("@/pages/dashboard/IntegrationsPage"));
 const BillingPage = lazy(() => import("@/pages/dashboard/BillingPage"));
+const SupportPage = lazy(() => import("@/pages/dashboard/SupportPage"));
 const SettingsPage = lazy(() => import("@/pages/dashboard/SettingsPage"));
 const AdminPage = lazy(() => import("@/pages/dashboard/AdminPage"));
 const TeamPage = lazy(() => import("@/pages/dashboard/TeamPage"));
 const PlatformSettingsPage = lazy(() => import("@/pages/dashboard/PlatformSettingsPage"));
 const PlatformBrandingPage = lazy(() => import("@/pages/dashboard/PlatformBrandingPage"));
 const PlatformOwnerDashboard = lazy(() => import("@/pages/dashboard/PlatformOwnerDashboard"));
+const PlatformSecurityReportPage = lazy(() => import("@/pages/dashboard/PlatformSecurityReportPage"));
+const PlatformPurchaseReportPage = lazy(() => import("@/pages/dashboard/PlatformPurchaseReportPage"));
+const PlatformSupportDeskPage = lazy(() => import("@/pages/dashboard/PlatformSupportDeskPage"));
 const SmsSetupPage = lazy(() => import("@/pages/dashboard/SmsSetupPage"));
 const MobileDevicesPage = lazy(() => import("@/pages/dashboard/MobileDevicesPage"));
 const WhatsAppOnboardingPage = lazy(() => import("@/pages/dashboard/WhatsAppOnboardingPage"));
@@ -101,10 +105,14 @@ function App() {
                     : <Navigate to={isPlatformView ? "/dashboard/platform-settings?tab=billing-plans" : firstTenantPath} replace />
                 }
               />
+              <Route path="support" element={!isPlatformView && authed ? <SupportPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="settings" element={!isPlatformView && canSettings ? <SettingsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="mobile-devices" element={!isPlatformView && can("inbox.read") ? <MobileDevicesPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="team" element={!isPlatformView && canManageTeam ? <TeamPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="admin" element={isPlatformView ? <AdminPage /> : <Navigate to={firstTenantPath} replace />} />
+              <Route path="platform-purchases" element={isPlatformView ? <PlatformPurchaseReportPage /> : <Navigate to={firstTenantPath} replace />} />
+              <Route path="platform-support" element={isPlatformView ? <PlatformSupportDeskPage /> : <Navigate to={firstTenantPath} replace />} />
+              <Route path="platform-security-report" element={isPlatformView ? <PlatformSecurityReportPage /> : <Navigate to={firstTenantPath} replace />} />
               <Route path="platform-settings" element={isPlatformView ? <PlatformSettingsPage /> : <Navigate to={firstTenantPath} replace />} />
               <Route path="platform-branding" element={isPlatformView ? <PlatformBrandingPage /> : <Navigate to={firstTenantPath} replace />} />
             </Route>
