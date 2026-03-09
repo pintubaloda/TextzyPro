@@ -37,7 +37,7 @@ jobs:
         run: dotnet restore Textzy.Api.csproj
 
       - name: Publish
-        shell: pwsh
+        shell: powershell
         run: dotnet publish Textzy.Api.csproj -c Release -o "$env:GITHUB_WORKSPACE\\artifacts\\backend"
 
       - name: Upload backend artifact
@@ -76,7 +76,7 @@ jobs:
         run: npm run build
 
       - name: Verify frontend output
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "Frontend workspace:"
           Get-ChildItem -Path "$env:GITHUB_WORKSPACE\frontend"
@@ -117,7 +117,7 @@ jobs:
           path: artifacts/frontend
 
       - name: Deploy artifacts to IIS
-        shell: pwsh
+        shell: powershell
         env:
           TEXTZY_FRONTEND_FACEBOOK_APP_ID: ${{ vars.REACT_APP_FACEBOOK_APP_ID || '' }}
           TEXTZY_FRONTEND_WABA_EMBEDDED_CONFIG_ID: ${{ vars.REACT_APP_WABA_EMBEDDED_CONFIG_ID || '' }}
