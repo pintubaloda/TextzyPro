@@ -96,7 +96,7 @@ jobs:
 
   deploy:
     name: Deploy To Windows IIS
-    runs-on: [self-hosted, windows, textzy-deploy]
+    runs-on: [self-hosted, windows]
     needs:
       - build-backend
       - build-frontend
