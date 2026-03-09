@@ -1,0 +1,8 @@
+[System.Environment]::SetEnvironmentVariable("PGHOST", "YOUR_DB_HOST", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGPORT", "5432", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGDATABASE", "YOUR_DB_NAME", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGUSER", "YOUR_DB_USER", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGPASSWORD", "YOUR_DB_PASSWORD", "Machine")
+[System.Environment]::SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production", "Machine")
+[System.Environment]::SetEnvironmentVariable("AllowedOrigins", "https://textzy.in", "Machine")
+[System.Environment]::SetEnvironmentVariable("Secrets__MasterKey", "YOUR_MASTER_KEY", "Machine")

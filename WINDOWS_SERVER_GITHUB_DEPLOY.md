@@ -54,57 +54,51 @@ Install the runner on the Windows Server and add labels:
 
 - `self-hosted`
 - `windows`
-- `textzy-deploy`
 
-The workflow in `.github/workflows/deploy-windows-artifacts.yml` expects those labels.
+The workflow in `.github/workflows/deploy-windows-artifacts.yml` now matches the default Windows self-hosted runner labels.
 
 ## 5. GitHub repository configuration
 
 ### Repository variables
 
-Add these GitHub repository variables:
+Add these GitHub repository variables if you use them:
 
-- `REACT_APP_API_BASE`
 - `REACT_APP_FACEBOOK_APP_ID`
 - `REACT_APP_WABA_EMBEDDED_CONFIG_ID`
 
-These are used during frontend build.
-
-### Repository secrets
-
-Add these GitHub repository secrets:
-
-- `TEXTZY_FRONTEND_PATH`
-  - example: `C:\inetpub\textzy-frontend`
-- `TEXTZY_BACKEND_PATH`
-  - example: `C:\inetpub\textzy-backend`
-- `TEXTZY_FRONTEND_SITE_NAME`
-  - example: `textzy-frontend`
-- `TEXTZY_BACKEND_SITE_NAME`
-  - example: `textzy-backend`
-- `TEXTZY_FRONTEND_APP_POOL`
-  - optional
-- `TEXTZY_BACKEND_APP_POOL`
-  - example: `textzy-backend`
+Frontend API base and IIS target paths are already committed in the production workflow for the current server layout.
 
 ## 6. Backend environment configuration
 
-Set these on the Windows Server for the backend app pool or machine environment:
+Do not commit backend secrets into the repository. Keep them on the Windows Server in a local script:
 
-- `ASPNETCORE_ENVIRONMENT=Production`
-- `ConnectionStrings__Default=Host=...;Port=5432;Database=...;Username=...;Password=...`
-- `AllowedOrigins=https://app.yourdomain.com`
-- `WhatsApp__AppId=...`
-- `WhatsApp__AppSecret=...`
-- `WhatsApp__VerifyToken=...`
-- `WhatsApp__EmbeddedSignupConfigId=...`
+- target path: `C:\Secure\textzy-backend-env.ps1`
+- template: `scripts/backend-env.template.ps1`
 
-Recommended production additions:
+Example server-local script contents:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("PGHOST", "YOUR_DB_HOST", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGPORT", "5432", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGDATABASE", "YOUR_DB_NAME", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGUSER", "YOUR_DB_USER", "Machine")
+[System.Environment]::SetEnvironmentVariable("PGPASSWORD", "YOUR_DB_PASSWORD", "Machine")
+[System.Environment]::SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production", "Machine")
+[System.Environment]::SetEnvironmentVariable("AllowedOrigins", "https://textzy.in", "Machine")
+[System.Environment]::SetEnvironmentVariable("Secrets__MasterKey", "YOUR_MASTER_KEY", "Machine")
+```
+
+The deploy script now invokes `C:\Secure\textzy-backend-env.ps1` automatically on every deploy before the backend site/app pool is started again.
+
+Recommended production additions in that same server-local script:
 
 - `Redis__ConnectionString=...`
 - queue provider configuration
 - push notification configuration
 - SMTP or Resend outbound config if not fully DB-managed yet
+- WhatsApp credentials
+
+Lock down the `C:\Secure` folder so only administrators can read it.
 
 ## 7. Deployment flow
 
@@ -118,6 +112,7 @@ On push to `main`:
    - stages a release copy
    - writes `app_offline.htm` for backend
    - mirrors frontend/backend into IIS target folders
+   - reapplies backend environment from `C:\Secure\textzy-backend-env.ps1`
    - removes `app_offline.htm`
    - restarts configured IIS sites/app pools
 
@@ -127,10 +122,11 @@ On push to `main`:
 2. Install ASP.NET Core Hosting Bundle
 3. Create IIS sites and app pools
 4. Install GitHub self-hosted runner
-5. Add runner labels: `windows`, `textzy-deploy`
-6. Set repository variables and secrets
-7. Ensure backend environment variables are configured on server
-8. Push to `main`
+5. Confirm the runner is online with `self-hosted` and `Windows` labels
+6. Set optional repository variables
+7. Create `C:\Secure\textzy-backend-env.ps1` from `scripts/backend-env.template.ps1`
+8. Ensure backend environment variables script contains your real server values
+9. Push to `main`
 
 ## 9. Rollback strategy
 

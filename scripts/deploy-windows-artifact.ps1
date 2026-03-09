@@ -16,6 +16,7 @@ param(
     [string]$BackendSiteName,
     [string]$FrontendAppPool,
     [string]$BackendAppPool,
+    [string]$BackendEnvironmentScriptPath = "C:\Secure\textzy-backend-env.ps1",
     [string]$FrontendApiBase = "https://api.textzy.in",
     [string]$FrontendFacebookAppId = "",
     [string]$FrontendWabaEmbeddedConfigId = "",
@@ -145,6 +146,28 @@ window.__APP_CONFIG__ = window.__APP_CONFIG__ || {
     Set-Content -Path $envFilePath -Value $content -Encoding UTF8
 }
 
+function Invoke-BackendEnvironmentScript {
+    param([string]$ScriptPath)
+
+    if ([string]::IsNullOrWhiteSpace($ScriptPath)) {
+        return
+    }
+
+    if (-not (Test-Path $ScriptPath)) {
+        Write-Host "Backend environment script not found at $ScriptPath. Skipping secure backend environment apply."
+        return
+    }
+
+    Write-Host "Applying backend environment from $ScriptPath"
+    & $ScriptPath
+
+    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+        throw "Backend environment script failed with exit code $LASTEXITCODE"
+    }
+
+    $global:LASTEXITCODE = 0
+}
+
 Assert-PathExists -PathValue $FrontendTargetPath -Label "Frontend target path"
 Assert-PathExists -PathValue $BackendTargetPath -Label "Backend target path"
 
@@ -177,11 +200,13 @@ finally {
     if (Test-Path $offlineFile) {
         Remove-Item $offlineFile -Force -ErrorAction SilentlyContinue
     }
+    Invoke-BackendEnvironmentScript -ScriptPath $BackendEnvironmentScriptPath
     Start-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
 }
 
 Restart-IisTarget -SiteName $FrontendSiteName -AppPool $FrontendAppPool
 
 Write-Host "Frontend runtime config written to $(Join-Path $FrontendTargetPath 'env.js')."
+Write-Host "Backend environment script path: $BackendEnvironmentScriptPath"
 Write-Host "Textzy deployment completed."
 $global:LASTEXITCODE = 0
