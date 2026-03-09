@@ -66,11 +66,22 @@ jobs:
           REACT_APP_WABA_EMBEDDED_CONFIG_ID: ${{ vars.REACT_APP_WABA_EMBEDDED_CONFIG_ID }}
         run: npm run build
 
+      - name: Verify frontend output
+        shell: pwsh
+        run: |
+          Write-Host "Frontend workspace:"
+          Get-ChildItem -Path "$env:GITHUB_WORKSPACE\frontend"
+          if (-not (Test-Path "$env:GITHUB_WORKSPACE\frontend\dist")) {
+            throw "frontend/dist was not created by npm run build"
+          }
+          Write-Host "Frontend dist contents:"
+          Get-ChildItem -Path "$env:GITHUB_WORKSPACE\frontend\dist" -Recurse
+
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v4
         with:
           name: textzy-frontend
-          path: frontend/dist
+          path: ${{ github.workspace }}/frontend/dist
           if-no-files-found: error
           retention-days: 14
 
