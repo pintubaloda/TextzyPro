@@ -61,6 +61,8 @@ function Copy-Artifact {
     if ($exitCode -ge 8) {
         throw "Robocopy failed for $Source -> $Target with exit code $exitCode"
     }
+
+    $global:LASTEXITCODE = 0
 }
 
 function Write-AppOffline {
@@ -182,3 +184,4 @@ Restart-IisTarget -SiteName $FrontendSiteName -AppPool $FrontendAppPool
 
 Write-Host "Frontend runtime config written to $(Join-Path $FrontendTargetPath 'env.js')."
 Write-Host "Textzy deployment completed."
+$global:LASTEXITCODE = 0
