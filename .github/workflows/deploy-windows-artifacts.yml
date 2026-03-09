@@ -8,6 +8,15 @@ on:
 permissions:
   contents: read
 
+env:
+  TEXTZY_FRONTEND_PATH: C:\HostingSpaces\admin\textzy.in\wwwroot
+  TEXTZY_BACKEND_PATH: C:\HostingSpaces\admin\api.textzy.in\wwwroot
+  TEXTZY_FRONTEND_SITE_NAME: textzy.in
+  TEXTZY_BACKEND_SITE_NAME: api.textzy.in
+  TEXTZY_FRONTEND_APP_POOL: textzy.in
+  TEXTZY_BACKEND_APP_POOL: api.textzy.in
+  TEXTZY_FRONTEND_API_BASE: https://api.textzy.in
+
 jobs:
   build-backend:
     name: Build Backend Artifact
@@ -61,9 +70,9 @@ jobs:
 
       - name: Build
         env:
-          REACT_APP_API_BASE: ${{ vars.REACT_APP_API_BASE }}
-          REACT_APP_FACEBOOK_APP_ID: ${{ vars.REACT_APP_FACEBOOK_APP_ID }}
-          REACT_APP_WABA_EMBEDDED_CONFIG_ID: ${{ vars.REACT_APP_WABA_EMBEDDED_CONFIG_ID }}
+          REACT_APP_API_BASE: ${{ env.TEXTZY_FRONTEND_API_BASE }}
+          REACT_APP_FACEBOOK_APP_ID: ${{ vars.REACT_APP_FACEBOOK_APP_ID || '' }}
+          REACT_APP_WABA_EMBEDDED_CONFIG_ID: ${{ vars.REACT_APP_WABA_EMBEDDED_CONFIG_ID || '' }}
         run: npm run build
 
       - name: Verify frontend output
@@ -110,12 +119,8 @@ jobs:
       - name: Deploy artifacts to IIS
         shell: pwsh
         env:
-          TEXTZY_FRONTEND_PATH: ${{ secrets.TEXTZY_FRONTEND_PATH }}
-          TEXTZY_BACKEND_PATH: ${{ secrets.TEXTZY_BACKEND_PATH }}
-          TEXTZY_FRONTEND_SITE_NAME: ${{ secrets.TEXTZY_FRONTEND_SITE_NAME }}
-          TEXTZY_BACKEND_SITE_NAME: ${{ secrets.TEXTZY_BACKEND_SITE_NAME }}
-          TEXTZY_FRONTEND_APP_POOL: ${{ secrets.TEXTZY_FRONTEND_APP_POOL }}
-          TEXTZY_BACKEND_APP_POOL: ${{ secrets.TEXTZY_BACKEND_APP_POOL }}
+          TEXTZY_FRONTEND_FACEBOOK_APP_ID: ${{ vars.REACT_APP_FACEBOOK_APP_ID || '' }}
+          TEXTZY_FRONTEND_WABA_EMBEDDED_CONFIG_ID: ${{ vars.REACT_APP_WABA_EMBEDDED_CONFIG_ID || '' }}
         run: >
           .\scripts\deploy-windows-artifact.ps1
           -FrontendArtifactPath "${{ github.workspace }}\artifacts\frontend"
@@ -126,4 +131,7 @@ jobs:
           -BackendSiteName "$env:TEXTZY_BACKEND_SITE_NAME"
           -FrontendAppPool "$env:TEXTZY_FRONTEND_APP_POOL"
           -BackendAppPool "$env:TEXTZY_BACKEND_APP_POOL"
+          -FrontendApiBase "$env:TEXTZY_FRONTEND_API_BASE"
+          -FrontendFacebookAppId "$env:TEXTZY_FRONTEND_FACEBOOK_APP_ID"
+          -FrontendWabaEmbeddedConfigId "$env:TEXTZY_FRONTEND_WABA_EMBEDDED_CONFIG_ID"
           -ReleaseTag "${{ github.run_number }}-${{ github.sha }}"

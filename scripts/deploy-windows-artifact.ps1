@@ -16,6 +16,9 @@ param(
     [string]$BackendSiteName,
     [string]$FrontendAppPool,
     [string]$BackendAppPool,
+    [string]$FrontendApiBase = "https://api.textzy.in",
+    [string]$FrontendFacebookAppId = "",
+    [string]$FrontendWabaEmbeddedConfigId = "",
     [string]$ReleaseTag = ""
 )
 
@@ -89,6 +92,26 @@ function Restart-IisTarget {
     }
 }
 
+function Write-FrontendRuntimeConfig {
+    param(
+        [string]$TargetPath,
+        [string]$ApiBase,
+        [string]$FacebookAppId,
+        [string]$WabaEmbeddedConfigId
+    )
+
+    $envFilePath = Join-Path $TargetPath "env.js"
+    $content = @"
+window.__APP_CONFIG__ = window.__APP_CONFIG__ || {
+  API_BASE: "$ApiBase",
+  FACEBOOK_APP_ID: "$FacebookAppId",
+  WABA_EMBEDDED_CONFIG_ID: "$WabaEmbeddedConfigId"
+};
+"@
+
+    Set-Content -Path $envFilePath -Value $content -Encoding UTF8
+}
+
 Assert-PathExists -PathValue $FrontendTargetPath -Label "Frontend target path"
 Assert-PathExists -PathValue $BackendTargetPath -Label "Backend target path"
 
@@ -108,6 +131,11 @@ Copy-Artifact -Source $BackendArtifactPath -Target $backendReleasePath
 $offlineFile = Write-AppOffline -Target $BackendTargetPath
 try {
     Copy-Artifact -Source $frontendReleasePath -Target $FrontendTargetPath
+    Write-FrontendRuntimeConfig `
+        -TargetPath $FrontendTargetPath `
+        -ApiBase $FrontendApiBase `
+        -FacebookAppId $FrontendFacebookAppId `
+        -WabaEmbeddedConfigId $FrontendWabaEmbeddedConfigId
     Copy-Artifact -Source $backendReleasePath -Target $BackendTargetPath
 }
 finally {
@@ -119,4 +147,5 @@ finally {
 Restart-IisTarget -SiteName $FrontendSiteName -AppPool $FrontendAppPool
 Restart-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
 
+Write-Host "Frontend runtime config written to $(Join-Path $FrontendTargetPath 'env.js')."
 Write-Host "Textzy deployment completed."
