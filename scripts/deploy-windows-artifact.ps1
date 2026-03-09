@@ -70,7 +70,7 @@ function Write-AppOffline {
     return $offlinePath
 }
 
-function Restart-IisTarget {
+function Stop-IisTarget {
     param(
         [string]$SiteName,
         [string]$AppPool
@@ -78,18 +78,49 @@ function Restart-IisTarget {
 
     Import-Module WebAdministration -ErrorAction SilentlyContinue
 
-    if (-not [string]::IsNullOrWhiteSpace($AppPool)) {
-        if (Test-Path "IIS:\AppPools\$AppPool") {
-            Restart-WebAppPool -Name $AppPool
-        }
-    }
-
     if (-not [string]::IsNullOrWhiteSpace($SiteName)) {
         if (Test-Path "IIS:\Sites\$SiteName") {
             Stop-Website -Name $SiteName
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($AppPool)) {
+        if (Test-Path "IIS:\AppPools\$AppPool") {
+            Stop-WebAppPool -Name $AppPool
+        }
+    }
+}
+
+function Start-IisTarget {
+    param(
+        [string]$SiteName,
+        [string]$AppPool
+    )
+
+    Import-Module WebAdministration -ErrorAction SilentlyContinue
+
+    if (-not [string]::IsNullOrWhiteSpace($SiteName)) {
+        if (Test-Path "IIS:\Sites\$SiteName") {
             Start-Website -Name $SiteName
         }
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($AppPool)) {
+        if (Test-Path "IIS:\AppPools\$AppPool") {
+            Start-WebAppPool -Name $AppPool
+        }
+    }
+}
+
+function Restart-IisTarget {
+    param(
+        [string]$SiteName,
+        [string]$AppPool
+    )
+
+    Stop-IisTarget -SiteName $SiteName -AppPool $AppPool
+    Start-Sleep -Seconds 3
+    Start-IisTarget -SiteName $SiteName -AppPool $AppPool
 }
 
 function Write-FrontendRuntimeConfig {
@@ -136,16 +167,18 @@ try {
         -ApiBase $FrontendApiBase `
         -FacebookAppId $FrontendFacebookAppId `
         -WabaEmbeddedConfigId $FrontendWabaEmbeddedConfigId
+    Stop-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
+    Start-Sleep -Seconds 5
     Copy-Artifact -Source $backendReleasePath -Target $BackendTargetPath
 }
 finally {
     if (Test-Path $offlineFile) {
         Remove-Item $offlineFile -Force -ErrorAction SilentlyContinue
     }
+    Start-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
 }
 
 Restart-IisTarget -SiteName $FrontendSiteName -AppPool $FrontendAppPool
-Restart-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
 
 Write-Host "Frontend runtime config written to $(Join-Path $FrontendTargetPath 'env.js')."
 Write-Host "Textzy deployment completed."
