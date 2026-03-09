@@ -2,7 +2,7 @@
 
 This deployment model uses:
 
-- GitHub-hosted runners to build backend and frontend artifacts
+- GitHub-hosted Windows runners to build backend and frontend artifacts
 - a self-hosted GitHub Actions runner on your Windows Server to deploy those artifacts into IIS
 
 It gives you GitHub-driven auto-deploy behavior without building on the production server.
@@ -110,8 +110,8 @@ Recommended production additions:
 
 On push to `main`:
 
-1. GitHub builds backend artifact on Ubuntu runner
-2. GitHub builds frontend artifact on Ubuntu runner
+1. GitHub builds backend artifact on Windows runner
+2. GitHub builds frontend artifact on Windows runner
 3. Artifacts are uploaded inside the workflow
 4. Windows self-hosted runner downloads both artifacts
 5. `scripts/deploy-windows-artifact.ps1`:

@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-backend:
     name: Build Backend Artifact
-    runs-on: self-hosted
+    runs-on: windows-latest
     defaults:
       run:
         working-directory: backend-dotnet
@@ -28,7 +28,8 @@ jobs:
         run: dotnet restore Textzy.Api.csproj
 
       - name: Publish
-        run: dotnet publish Textzy.Api.csproj -c Release -o "${{ github.workspace }}/artifacts/backend"
+        shell: pwsh
+        run: dotnet publish Textzy.Api.csproj -c Release -o "$env:GITHUB_WORKSPACE\\artifacts\\backend"
 
       - name: Upload backend artifact
         uses: actions/upload-artifact@v4
@@ -40,7 +41,7 @@ jobs:
 
   build-frontend:
     name: Build Frontend Artifact
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     defaults:
       run:
         working-directory: frontend
