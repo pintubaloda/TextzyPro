@@ -1,0 +1,360 @@
+﻿{
+  "info": {
+    "name": "Textzy API Integration (SMS + WhatsApp + Sandbox)",
+    "_postman_id": "3f9a2c66-9fc2-4ecf-bb02-9d7b8f0d2a11",
+    "description": "Professional integration collection for Textzy covering tenant-scoped public SMS, cookie-session tenant APIs for WhatsApp and automation, and platform-only diagnostics.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://textzy-backend-production.up.railway.app" },
+    { "key": "email", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "csrfToken", "value": "" },
+    { "key": "tenantSlug", "value": "" },
+    { "key": "recipient", "value": "919999999999" },
+    { "key": "idempotencyKey", "value": "textzy-postman-{{$timestamp}}" },
+    { "key": "templateName", "value": "" },
+    { "key": "templateLanguageCode", "value": "en" },
+    { "key": "metaFlowId", "value": "" },
+    { "key": "flowId", "value": "" },
+    { "key": "apiKey", "value": "" },
+    { "key": "apiUsername", "value": "" },
+    { "key": "apiPassword", "value": "" },
+    { "key": "smsWebhookSecret", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Tenant Session (Cookie + CSRF)",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const csrf = pm.response.headers.get('X-CSRF-Token') || '';",
+                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
+                  "pm.test('login ok', () => pm.expect(pm.response.code).to.eql(200));",
+                  "pm.test('two-factor challenge or session created', () => pm.expect([200]).to.include(pm.response.code));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Login Two-Factor",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/auth/two-factor/verify-login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeToken\": \"\",\n  \"code\": \"000000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const csrf = pm.response.headers.get('X-CSRF-Token') || '';",
+                  "if (csrf) pm.collectionVariables.set('csrfToken', csrf);",
+                  "pm.test('two-factor verified', () => pm.expect(pm.response.code).to.eql(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Projects",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/projects"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const rows = pm.response.json();",
+                  "if (Array.isArray(rows) && rows.length > 0) {",
+                  "  const slug = rows[0].slug || rows[0].Slug || '';",
+                  "  if (slug) pm.collectionVariables.set('tenantSlug', slug);",
+                  "}",
+                  "pm.test('projects ok', () => pm.expect(pm.response.code).to.eql(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Switch Project",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/auth/switch-project",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"{{tenantSlug}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const nextCsrf = pm.response.headers.get('X-CSRF-Token');",
+                  "if (nextCsrf) pm.collectionVariables.set('csrfToken', nextCsrf);",
+                  "if (body.tenantSlug) pm.collectionVariables.set('tenantSlug', body.tenantSlug);",
+                  "pm.test('switch project ok', () => pm.expect(pm.response.code).to.eql(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Public SMS (Tenant Scoped)",
+      "item": [
+        {
+          "name": "Send SMS via GET",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/public/messages/send?recipient={{recipient}}&msg=Your%20approved%20DLT%20message%20text&user={{apiUsername}}&pswd={{apiPassword}}&apikey={{apiKey}}&channel=sms&sender=MNYART&PE_ID=1601100000000006533&Template_ID=1207171593687982329&tenantSlug={{tenantSlug}}"
+          }
+        },
+        {
+          "name": "Send SMS via POST",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/public/messages/send",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"{{recipient}}\",\n  \"message\": \"Your approved DLT message text\",\n  \"tenantSlug\": \"{{tenantSlug}}\",\n  \"user\": \"{{apiUsername}}\",\n  \"password\": \"{{apiPassword}}\",\n  \"apiKey\": \"{{apiKey}}\",\n  \"channel\": \"sms\",\n  \"sender\": \"MNYART\",\n  \"peId\": \"1601100000000006533\",\n  \"templateId\": \"1207171593687982329\",\n  \"idempotencyKey\": \"{{idempotencyKey}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "SMS",
+      "item": [
+        {
+          "name": "Send SMS (Authenticated Tenant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/messages/send",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"{{recipient}}\",\n  \"channel\": \"Sms\",\n  \"body\": \"Your OTP is 123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Test SMS Gateway (TATA)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/platform/settings/sms/test",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{recipient}}\",\n  \"message\": \"Textzy SMS gateway test\",\n  \"templateId\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "SMS Templates List",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" }
+            ],
+            "url": "{{baseUrl}}/api/sms/templates"
+          }
+        }
+      ]
+    },
+    {
+      "name": "WhatsApp",
+      "item": [
+        {
+          "name": "Send WhatsApp Session Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/messages/send",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"{{recipient}}\",\n  \"channel\": \"WhatsApp\",\n  \"body\": \"Hello from Textzy\",\n  \"useTemplate\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Send WhatsApp Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/messages/send",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"{{recipient}}\",\n  \"channel\": \"WhatsApp\",\n  \"useTemplate\": true,\n  \"templateName\": \"{{templateName}}\",\n  \"templateLanguageCode\": \"{{templateLanguageCode}}\",\n  \"templateParameters\": [\"John\", \"#1234\"]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Automation / Meta Flows",
+      "item": [
+        {
+          "name": "List Meta Flows",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" }
+            ],
+            "url": "{{baseUrl}}/api/automation/meta/flows"
+          }
+        },
+        {
+          "name": "Create Meta Flow",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/automation/meta/flows",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Textzy Sample Flow\",\n  \"categories\": [\"OTHER\"],\n  \"flowJson\": \"{\\\"version\\\":\\\"3.0\\\",\\\"screens\\\":[{\\\"id\\\":\\\"customer_info\\\",\\\"components\\\":[{\\\"type\\\":\\\"text_input\\\",\\\"name\\\":\\\"full_name\\\",\\\"label\\\":\\\"Enter your name\\\"}]}]}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Publish Meta Flow",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/automation/meta/flows/{{metaFlowId}}/publish",
+            "body": { "mode": "raw", "raw": "{\n  \"flowJson\": \"\"\n}" }
+          }
+        },
+        {
+          "name": "Flow Metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" }
+            ],
+            "url": "{{baseUrl}}/api/automation/metrics/flows"
+          }
+        },
+        {
+          "name": "Flow Metrics Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" }
+            ],
+            "url": "{{baseUrl}}/api/automation/metrics/flows/events"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sandbox / Diagnostics (Tenant)",
+      "item": [
+        {
+          "name": "WABA Smoke Readiness",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" }
+            ],
+            "url": "{{baseUrl}}/api/waba/smoke/readiness"
+          }
+        },
+        {
+          "name": "WABA Smoke Run",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-CSRF-Token", "value": "{{csrfToken}}" },
+              { "key": "X-Tenant-Slug", "value": "{{tenantSlug}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/waba/smoke/run",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"{{recipient}}\",\n  \"sendSessionMessage\": true,\n  \"sessionMessageText\": \"Textzy smoke test\",\n  \"sendTemplateMessage\": false\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Platform Diagnostics (Owner Only)",
+      "item": [
+        {
+          "name": "WABA Webhook Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/waba/debug/webhook-health"
+          }
+        }
+      ]
+    }
+  ]
+}

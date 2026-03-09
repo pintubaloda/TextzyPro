@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="56" viewBox="0 0 220 56" role="img" aria-label="Textzy">
+  <rect x="0" y="0" width="56" height="56" rx="12" fill="#f97316"/>
+  <path d="M40 16a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H20l-8 8V20a4 4 0 0 1 4-4z" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="68" y="38" fill="#0f172a" font-size="40" font-family="Segoe UI, Arial, sans-serif" font-weight="700">Textzy</text>
+</svg>

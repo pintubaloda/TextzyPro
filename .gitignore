@@ -1,0 +1,40 @@
+
+# Local design source exports (not for runtime)
+design/
+
+frontend/public/design/
+
+# Broken legacy submodule path; keep local files out of git tracking
+ND/app/
+mobile-android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
+
+# Build artifacts - never push
+desktop-windows/dist/
+desktop-windows/dist-*/
+desktop-macos/dist/
+desktop-macos/dist-*/
+mobile-android/.gradle/
+mobile-android/build/
+mobile-android/app/build/
+
+# Android release/debug outputs
+*.apk
+*.aab
+*.ap_
+*.jks
+*.keystore
+
+# Local dependency caches
+desktop-windows/node_modules/
+desktop-windows/.npm-cache/
+desktop-macos/node_modules/
+desktop-macos/.npm-cache/
+frontend/node_modules/
+
+# Frontend build outputs
+frontend/build/
+frontend/dist/
+
+# .NET build outputs
+backend-dotnet/bin/
+backend-dotnet/obj/

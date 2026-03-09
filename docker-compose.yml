@@ -1,0 +1,22 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    container_name: textzy-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: textzy_platform_dev
+      POSTGRES_USER: textzy
+      POSTGRES_PASSWORD: textzy_dev_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - textzy_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U textzy -d textzy_platform_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  textzy_pg_data:

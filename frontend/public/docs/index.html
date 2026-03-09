@@ -1,0 +1,80 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Textzy Documentation Center</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --brand: #ea580c;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: linear-gradient(180deg,#fff7ed 0%, #f8fafc 320px); color: var(--text); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 30px 18px 42px; }
+    .hero { border-radius: 24px; background: linear-gradient(135deg,#f97316,#ea580c); color: #fff; padding: 28px; box-shadow: 0 16px 40px rgba(234,88,12,.18); }
+    .hero h1 { margin: 0 0 10px; font-size: 34px; }
+    .hero p { margin: 0; line-height: 1.6; max-width: 760px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 22px; box-shadow: 0 8px 24px rgba(15,23,42,.04); }
+    h2 { margin: 0 0 10px; font-size: 22px; }
+    p, li { color: var(--muted); line-height: 1.65; }
+    ul { margin: 10px 0 0 18px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; padding: 11px 16px; font-weight: 700; }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Textzy Documentation Center</h1>
+      <p>Professional integration references for SMS and WhatsApp APIs, plus markdown source and Postman import assets for implementation teams.</p>
+    </section>
+
+    <div class="grid">
+      <article class="card">
+        <h2>SMS API Reference</h2>
+        <p>Covers simple URL-based SMS integration, authenticated SMS send, DLT mapping, Tata gateway behavior, template registry, sender registry, webhook callbacks, and rollout checklist.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="/docs/sms-api-reference.html" target="_blank" rel="noopener noreferrer">Open HTML Reference</a>
+          <a class="btn btn-secondary" href="/docs/SMS_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>WhatsApp API Reference</h2>
+        <p>Covers authenticated WhatsApp send, template APIs, media upload, webhook flow, automation and flow builder endpoints, Meta flow management, smoke testing, diagnostics, and analytics.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="/docs/whatsapp-api-reference.html" target="_blank" rel="noopener noreferrer">Open HTML Reference</a>
+          <a class="btn btn-secondary" href="/docs/WHATSAPP_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Postman Assets</h2>
+        <p>Use these import files to accelerate development, smoke testing, and onboarding.</p>
+        <div class="actions">
+          <a class="btn btn-secondary" href="/docs/Textzy_API_Integration_Postman_Collection.json" target="_blank" rel="noopener noreferrer">Collection</a>
+          <a class="btn btn-secondary" href="/docs/Textzy_API_Integration_Postman_Environment.json" target="_blank" rel="noopener noreferrer">Environment</a>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Reference Index</h2>
+        <p>The legacy simple guide now acts as the documentation index and points to the dedicated SMS and WhatsApp references.</p>
+        <div class="actions">
+          <a class="btn btn-secondary" href="/docs/API_INTEGRATION_SIMPLE_GUIDE.md" target="_blank" rel="noopener noreferrer">Open Index Markdown</a>
+          <a class="btn btn-secondary" href="/docs/api-integration.html" target="_blank" rel="noopener noreferrer">Open Legacy Landing</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</body>
+</html>

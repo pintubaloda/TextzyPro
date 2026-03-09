@@ -1,0 +1,15 @@
+node_modules
+build
+dist
+.cache
+coverage
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+.git
+.github
+.DS_Store
+
+README.md
+

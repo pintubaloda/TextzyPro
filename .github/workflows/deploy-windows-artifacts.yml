@@ -1,0 +1,117 @@
+name: Deploy To Windows Server
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-backend:
+    name: Build Backend Artifact
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-dotnet
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore Textzy.Api.csproj
+
+      - name: Publish
+        run: dotnet publish Textzy.Api.csproj -c Release -o "${{ github.workspace }}/artifacts/backend"
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: textzy-backend
+          path: artifacts/backend
+          if-no-files-found: error
+          retention-days: 14
+
+  build-frontend:
+    name: Build Frontend Artifact
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        env:
+          REACT_APP_API_BASE: ${{ vars.REACT_APP_API_BASE }}
+          REACT_APP_FACEBOOK_APP_ID: ${{ vars.REACT_APP_FACEBOOK_APP_ID }}
+          REACT_APP_WABA_EMBEDDED_CONFIG_ID: ${{ vars.REACT_APP_WABA_EMBEDDED_CONFIG_ID }}
+        run: npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: textzy-frontend
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    name: Deploy To Windows IIS
+    runs-on: [self-hosted, windows, textzy-deploy]
+    needs:
+      - build-backend
+      - build-frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: textzy-backend
+          path: artifacts/backend
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: textzy-frontend
+          path: artifacts/frontend
+
+      - name: Deploy artifacts to IIS
+        shell: pwsh
+        env:
+          TEXTZY_FRONTEND_PATH: ${{ secrets.TEXTZY_FRONTEND_PATH }}
+          TEXTZY_BACKEND_PATH: ${{ secrets.TEXTZY_BACKEND_PATH }}
+          TEXTZY_FRONTEND_SITE_NAME: ${{ secrets.TEXTZY_FRONTEND_SITE_NAME }}
+          TEXTZY_BACKEND_SITE_NAME: ${{ secrets.TEXTZY_BACKEND_SITE_NAME }}
+          TEXTZY_FRONTEND_APP_POOL: ${{ secrets.TEXTZY_FRONTEND_APP_POOL }}
+          TEXTZY_BACKEND_APP_POOL: ${{ secrets.TEXTZY_BACKEND_APP_POOL }}
+        run: >
+          .\scripts\deploy-windows-artifact.ps1
+          -FrontendArtifactPath "${{ github.workspace }}\artifacts\frontend"
+          -BackendArtifactPath "${{ github.workspace }}\artifacts\backend"
+          -FrontendTargetPath "$env:TEXTZY_FRONTEND_PATH"
+          -BackendTargetPath "$env:TEXTZY_BACKEND_PATH"
+          -FrontendSiteName "$env:TEXTZY_FRONTEND_SITE_NAME"
+          -BackendSiteName "$env:TEXTZY_BACKEND_SITE_NAME"
+          -FrontendAppPool "$env:TEXTZY_FRONTEND_APP_POOL"
+          -BackendAppPool "$env:TEXTZY_BACKEND_APP_POOL"
+          -ReleaseTag "${{ github.run_number }}-${{ github.sha }}"
