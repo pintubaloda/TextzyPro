@@ -116,6 +116,22 @@ jobs:
           name: textzy-frontend
           path: artifacts/frontend
 
+      - name: Verify downloaded artifacts
+        shell: powershell
+        run: |
+          if (-not (Test-Path "${{ github.workspace }}\artifacts\backend")) {
+            throw "Downloaded backend artifact folder is missing."
+          }
+          if (-not (Test-Path "${{ github.workspace }}\artifacts\frontend")) {
+            throw "Downloaded frontend artifact folder is missing."
+          }
+
+          Write-Host "Backend artifact contents:"
+          Get-ChildItem -Path "${{ github.workspace }}\artifacts\backend" -Recurse
+
+          Write-Host "Frontend artifact contents:"
+          Get-ChildItem -Path "${{ github.workspace }}\artifacts\frontend" -Recurse
+
       - name: Deploy artifacts to IIS
         shell: powershell
         env:
