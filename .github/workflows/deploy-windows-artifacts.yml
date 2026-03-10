@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   TEXTZY_FRONTEND_PATH: C:\HostingSpaces\admin\textzy.in\wwwroot
   TEXTZY_BACKEND_PATH: C:\HostingSpaces\admin\api.textzy.in\wwwroot
   TEXTZY_FRONTEND_SITE_NAME: textzy.in
