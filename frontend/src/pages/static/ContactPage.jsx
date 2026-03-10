@@ -14,8 +14,8 @@ export default function ContactPage() {
     setStatus("sending");
     try {
       const runtime = typeof window !== "undefined" ? (window.__APP_CONFIG__ || window._APP_CONFIG_) : null;
-      const apiBase = runtime?.API_BASE || "/api";
-      const base = apiBase.replace(/\/+$/, "");
+      const apiBase = (runtime?.API_BASE || "/api").replace(/\/+$/, "");
+      const base = /\/api$/i.test(apiBase) ? apiBase : `${apiBase}/api`;
       const res = await fetch(`${base}/public/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -40,8 +40,9 @@ export function useBranding() {
       setLoading(true);
       try {
         const runtime = typeof window !== "undefined" ? (window.__APP_CONFIG__ || window._APP_CONFIG_) : null;
-        const base = runtime?.API_BASE || "/api";
-        const res = await fetch(`${base.replace(/\/+$/, "")}/public/platform-branding`, { credentials: "include" });
+        const base = (runtime?.API_BASE || "/api").replace(/\/+$/, "");
+        const apiBase = /\/api$/i.test(base) ? base : `${base}/api`;
+        const res = await fetch(`${apiBase}/public/platform-branding`, { credentials: "include" });
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
           if (!active) return;
