@@ -1,22 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Mail, MapPin, Phone } from "lucide-react";
-
-const brandFromConfig = () => {
-  const cfg = (typeof window !== "undefined" ? window._APP_CONFIG_ : {}) || {};
-  return {
-    name: cfg.BRAND_NAME || "Textzy",
-    address: cfg.BRAND_ADDRESS || "Mumbai, India",
-    phone: cfg.BRAND_PHONE || "+91 22 1234 5678",
-    email: cfg.BRAND_EMAIL || "hello@textzy.in",
-    whatsapp: cfg.BRAND_WHATSAPP || "+919867530000",
-    whatsappQr: cfg.BRAND_WHATSAPP_QR || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`https://wa.me/${(cfg.BRAND_WHATSAPP || "+919867530000").replace(/\D/g, "")}`)}`,
-    apiBase: cfg.API_BASE || "/api",
-  };
-};
+import StaticShell from "@/components/marketing/StaticShell";
+import { useBranding } from "@/hooks/useBranding";
 
 export default function ContactPage() {
-  const brand = brandFromConfig();
+  const { brand } = useBranding();
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
   const [status, setStatus] = useState("idle");
 
@@ -24,7 +13,8 @@ export default function ContactPage() {
     e.preventDefault();
     setStatus("sending");
     try {
-      const res = await fetch(`${brand.apiBase.replace(/\/$/, "")}/api/public/contact`, {
+      const apiBase = (typeof window !== "undefined" ? window._APP_CONFIG_?.API_BASE : "") || "/api";
+      const res = await fetch(`${apiBase.replace(/\/$/, "")}/api/public/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, channel: "contact-page", brand: brand.name }),
@@ -38,7 +28,8 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <StaticShell>
+      <div className="bg-slate-50">
       <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
         <div className="flex items-center gap-3 text-slate-500 text-sm">
           <Link to="/" className="flex items-center gap-2 text-orange-500 hover:text-orange-600">
@@ -76,6 +67,7 @@ export default function ContactPage() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </StaticShell>
   );
 }

@@ -1,18 +1,12 @@
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-
-const brandFromConfig = () => {
-  const cfg = (typeof window !== "undefined" ? window._APP_CONFIG_ : {}) || {};
-  return {
-    name: cfg.BRAND_NAME || "Textzy",
-    email: cfg.BRAND_EMAIL || "billing@textzy.in",
-  };
-};
+import StaticShell from "@/components/marketing/StaticShell";
+import { useBranding } from "@/hooks/useBranding";
 
 export default function RefundPage() {
-  const brand = brandFromConfig();
+  const { brand } = useBranding();
   return (
-    <div className="min-h-screen bg-white">
+    <StaticShell>
       <div className="max-w-4xl mx-auto px-6 py-10 space-y-6">
         <div className="flex items-center gap-3 text-slate-500 text-sm">
           <Link to="/" className="flex items-center gap-2 text-orange-500 hover:text-orange-600">
@@ -29,6 +23,6 @@ export default function RefundPage() {
           <li>Approved refunds are processed to the original payment method.</li>
         </ul>
       </div>
-    </div>
+    </StaticShell>
   );
 }

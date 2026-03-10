@@ -1,0 +1,76 @@
+import { useEffect, useState, useMemo } from "react";
+
+const defaults = {
+  name: "Textzy",
+  tagline: "Business inbox for WhatsApp & SMS.",
+  companyLine: "Textzy is a brand of Moneyart Private Limited.",
+  address: "Mumbai, India",
+  phone: "+91 22 1234 5678",
+  email: "hello@textzy.in",
+  whatsapp: "+919867530000",
+  whatsappQr: "",
+  logoUrl: "",
+};
+
+const appConfigBrand = (() => {
+  if (typeof window === "undefined") return defaults;
+  const c = window._APP_CONFIG_ || {};
+  return {
+    name: c.BRAND_NAME || defaults.name,
+    tagline: c.BRAND_TAGLINE || defaults.tagline,
+    companyLine: c.BRAND_COMPANY_LINE || defaults.companyLine,
+    address: c.BRAND_ADDRESS || defaults.address,
+    phone: c.BRAND_PHONE || defaults.phone,
+    email: c.BRAND_EMAIL || defaults.email,
+    whatsapp: c.BRAND_WHATSAPP || defaults.whatsapp,
+    whatsappQr: c.BRAND_WHATSAPP_QR || defaults.whatsappQr,
+    logoUrl: c.BRAND_LOGO_URL || "",
+  };
+})();
+
+export function useBranding() {
+  const [brand, setBrand] = useState(appConfigBrand);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/public/platform-branding", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (!active) return;
+          setBrand((prev) => ({
+            ...prev,
+            name: data.platformName || data.name || prev.name,
+            tagline: data.tagline || prev.tagline,
+            companyLine: data.companyLine || data.legalName || prev.companyLine,
+            address: data.address || prev.address,
+            phone: data.supportPhone || data.billingPhone || prev.phone,
+            email: data.supportEmail || data.billingEmail || prev.email,
+            whatsapp: data.whatsapp || prev.whatsapp,
+            whatsappQr: data.whatsappQr || prev.whatsappQr,
+            logoUrl: data.logoUrl || prev.logoUrl,
+          }));
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const withQr = useMemo(() => {
+    if (brand.whatsappQr) return brand.whatsappQr;
+    const num = (brand.whatsapp || "").replace(/\D/g, "");
+    return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`https://wa.me/${num}`)}`;
+  }, [brand.whatsappQr, brand.whatsapp]);
+
+  return { brand: { ...brand, whatsappQr: withQr }, loading };
+}
