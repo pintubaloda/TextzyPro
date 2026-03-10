@@ -60,6 +60,7 @@ export default function StaticShell({ children }) {
               <li><Link to="/terms" className="hover:text-orange-400">Terms</Link></li>
               <li><Link to="/refund" className="hover:text-orange-400">Refund</Link></li>
               <li><Link to="/cookies" className="hover:text-orange-400">Cookies</Link></li>
+              <li><Link to="/dpdp" className="hover:text-orange-400">DPDP Act</Link></li>
             </ul>
           </div>
           <div>
@@ -96,6 +97,7 @@ export default function StaticShell({ children }) {
               <Link to="/terms" className="hover:text-orange-400">Terms</Link>
               <Link to="/refund" className="hover:text-orange-400">Refund</Link>
               <Link to="/cookies" className="hover:text-orange-400">Cookies</Link>
+              <Link to="/dpdp" className="hover:text-orange-400">DPDP Act</Link>
             </div>
           </div>
         </div>

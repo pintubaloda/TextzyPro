@@ -141,6 +141,22 @@ export default function PrivacyPage() {
           </p>
         </div>
 
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold text-slate-900">GDPR + WhatsApp Compliance Clauses</h2>
+          <p className="text-slate-700 font-medium">GDPR Compliance (For EU Users)</p>
+          <p className="text-slate-700">
+            If you are located in the European Economic Area (EEA), we process personal data in accordance with the General Data Protection Regulation (GDPR).
+            Users have rights including access, rectification, erasure, restriction, and data portability. Where required, data processing is based on
+            contractual necessity, legal obligations, or legitimate interests.
+          </p>
+          <p className="text-slate-700 font-medium">WhatsApp Business Messaging Compliance</p>
+          <p className="text-slate-700">
+            Textzy provides infrastructure to send messages through the WhatsApp Business Platform. Users must comply with WhatsApp messaging policies,
+            including obtaining user opt-in, sending only approved templates, respecting opt-out requests, and avoiding spam or promotional abuse.
+            WhatsApp may suspend or restrict messaging accounts that violate their policies. Textzy is not responsible for restrictions imposed by WhatsApp or Meta platforms.
+          </p>
+        </div>
+
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-slate-900">11. Contact Us</h2>
           <p className="text-slate-700">Textzy</p>
