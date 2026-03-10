@@ -20,10 +20,18 @@ export default function ContactPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, channel: "contact-page", brand: brand.name }),
       });
-      if (!res.ok) throw new Error("fail");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setStatus("sent");
       setForm({ name: "", email: "", phone: "", message: "" });
     } catch {
+      // Fallback: open mailto so the user can still reach support
+      const subject = encodeURIComponent(`[Contact] ${form.name || ""}`.trim() || "Contact request");
+      const body = encodeURIComponent(
+        `Name: ${form.name}\nEmail: ${form.email}\nPhone/WhatsApp: ${form.phone}\nMessage:\n${form.message}`,
+      );
+      if (brand.email) {
+        window.location.href = `mailto:${brand.email}?subject=${subject}&body=${body}`;
+      }
       setStatus("error");
     }
   };
