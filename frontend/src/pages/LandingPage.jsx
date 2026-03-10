@@ -27,6 +27,19 @@ import { getPublicPlans } from "@/lib/api";
 
 const LandingPage = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const appConfig = (typeof window !== "undefined" ? window._APP_CONFIG_ : {}) || {};
+  const brand = {
+    name: appConfig.BRAND_NAME || "Textzy",
+    companyLine: appConfig.BRAND_COMPANY_LINE || "Textzy is a brand of Moneyart Private Limited.",
+    tagline: appConfig.BRAND_TAGLINE || "India's leading WhatsApp Business & SMS platform for modern businesses.",
+    address: appConfig.BRAND_ADDRESS || "Mumbai, India",
+    phone: appConfig.BRAND_PHONE || "+91 22 1234 5678",
+    email: appConfig.BRAND_EMAIL || "hello@textzy.in",
+    whatsapp: appConfig.BRAND_WHATSAPP || "+919867530000",
+    whatsappQr: appConfig.BRAND_WHATSAPP_QR || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`https://wa.me/${(appConfig.BRAND_WHATSAPP || "+919867530000").replace(/\D/g, "")}`)}`,
+  };
+  const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", message: "" });
+  const [contactStatus, setContactStatus] = useState("idle");
 
   const features = [
     {
@@ -344,6 +357,153 @@ const LandingPage = () => {
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* About */}
+      <section id="about" className="py-20 bg-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 grid md:grid-cols-2 gap-10 items-center">
+          <div>
+            <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 mb-4">About Textzy</Badge>
+            <h2 className="font-heading text-3xl md:text-4xl font-bold text-slate-900 mb-4">
+              {brand.name}, a brand of Moneyart Private Limited
+            </h2>
+            <p className="text-slate-600 leading-relaxed mb-4">
+              We help brands deliver trusted conversations over WhatsApp Business API and carrier-grade SMS. From opt-in capture to automation,
+              analytics, and compliance, Textzy keeps your customer messaging resilient and measurable.
+            </p>
+            <p className="text-slate-600 leading-relaxed">
+              Built for modern support and growth teams: verified WABA onboarding, template governance, smart routing, SignalR real-time inbox,
+              queue-backed delivery, and fallback SMS for failsafe reach.
+            </p>
+          </div>
+          <div className="bg-orange-50 border border-orange-100 rounded-2xl p-6 shadow-lg">
+            <h3 className="font-semibold text-slate-900 text-lg mb-3">Messaging Pillars</h3>
+            <ul className="space-y-3 text-slate-700">
+              <li className="flex gap-2">
+                <Check className="w-4 h-4 text-orange-500 mt-1" />
+                Trusted WhatsApp Business API with template approvals and embedded signup.
+              </li>
+              <li className="flex gap-2">
+                <Check className="w-4 h-4 text-orange-500 mt-1" />
+                DLT-compliant SMS gateway with delivery analytics and throttling controls.
+              </li>
+              <li className="flex gap-2">
+                <Check className="w-4 h-4 text-orange-500 mt-1" />
+                Real-time inbox, SignalR notifications, and Redis-backed queues to avoid misses.
+              </li>
+              <li className="flex gap-2">
+                <Check className="w-4 h-4 text-orange-500 mt-1" />
+                Secure platform with CSRF/2FA/IP controls, plus audit-grade reporting.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact + Support */}
+      <section id="contact" className="py-20 bg-slate-50">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-10 items-start">
+          <div className="space-y-4">
+            <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 mb-2">Contact Us</Badge>
+            <h3 className="font-heading text-3xl font-bold text-slate-900">Talk to our support desk</h3>
+            <p className="text-slate-600">
+              Raise a ticket and our team will route it into the support queue instantly. You’ll also get a WhatsApp follow-up from our Moneyart support handle.
+            </p>
+            <form
+              className="space-y-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setContactStatus("sending");
+                try {
+                  const payload = { ...contactForm, channel: "landing", brand: brand.name };
+                  const res = await fetch(`${(appConfig.API_BASE || window._APP_CONFIG_?.API_BASE || "/api").replace(/\/$/, "")}/api/public/contact`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  });
+                  if (!res.ok) throw new Error("Failed");
+                  setContactStatus("sent");
+                  setContactForm({ name: "", email: "", phone: "", message: "" });
+                } catch {
+                  setContactStatus("error");
+                }
+              }}
+            >
+              <div className="grid md:grid-cols-2 gap-3">
+                <input
+                  required
+                  value={contactForm.name}
+                  onChange={(e) => setContactForm((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="Full name"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-3 text-sm focus:border-orange-500 focus:outline-none"
+                />
+                <input
+                  required
+                  type="email"
+                  value={contactForm.email}
+                  onChange={(e) => setContactForm((p) => ({ ...p, email: e.target.value }))}
+                  placeholder="Work email"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-3 text-sm focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+              <input
+                value={contactForm.phone}
+                onChange={(e) => setContactForm((p) => ({ ...p, phone: e.target.value }))}
+                placeholder="Phone / WhatsApp (optional)"
+                className="w-full rounded-lg border border-slate-200 px-3 py-3 text-sm focus:border-orange-500 focus:outline-none"
+              />
+              <textarea
+                required
+                value={contactForm.message}
+                onChange={(e) => setContactForm((p) => ({ ...p, message: e.target.value }))}
+                placeholder="What do you need help with?"
+                rows={4}
+                className="w-full rounded-lg border border-slate-200 px-3 py-3 text-sm focus:border-orange-500 focus:outline-none"
+              />
+              <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white w-full md:w-auto px-6">
+                {contactStatus === "sending" ? "Sending..." : "Submit Ticket"}
+              </Button>
+              {contactStatus === "sent" && <p className="text-green-600 text-sm">Ticket submitted. We’ll get back on email/WhatsApp.</p>}
+              {contactStatus === "error" && <p className="text-red-600 text-sm">Could not submit. Please email {brand.email}.</p>}
+            </form>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6 space-y-4">
+            <h4 className="font-semibold text-slate-900">WhatsApp Support</h4>
+            <p className="text-slate-600">Scan the QR to chat with the Moneyart/Textzy support desk (Project: Moneyart).</p>
+            <div className="flex items-center gap-6">
+              <img src={brand.whatsappQr} alt="WhatsApp support QR" className="w-40 h-40 rounded-xl border border-slate-200 bg-white" />
+              <div className="space-y-2 text-slate-700">
+                <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-orange-500" /> {brand.whatsapp}</div>
+                <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-orange-500" /> {brand.email}</div>
+                <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-orange-500" /> {brand.address}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Policies */}
+      <section id="policies" className="py-18 bg-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 grid md:grid-cols-3 gap-6">
+          {[{
+            title: "Privacy Policy",
+            id: "privacy",
+            copy: "We process customer data strictly for delivering messaging services (WhatsApp & SMS). Access is role-based, encrypted in transit and at rest, with audit trails for platform admins."
+          },{
+            title: "Refund Policy",
+            id: "refund",
+            copy: "Prepaid credits are refundable on unused balance within 7 business days. Channel fees already consumed (WABA/SMS) are excluded. Write to billing@textzy.in with your Tenant ID."
+          },{
+            title: "Cookies Policy",
+            id: "cookies",
+            copy: "We use essential cookies for authentication and session security. Analytics cookies are optional and can be disabled from account settings or your browser."
+          }].map(policy => (
+            <div key={policy.id} id={policy.id} className="p-5 rounded-xl border border-slate-200 bg-slate-50">
+              <h4 className="font-semibold text-slate-900 mb-2">{policy.title}</h4>
+              <p className="text-slate-600 text-sm leading-relaxed">{policy.copy}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -684,7 +844,7 @@ const LandingPage = () => {
                 <span className="font-heading font-bold text-xl text-white">Textzy</span>
               </div>
               <p className="text-slate-400">
-                India's leading WhatsApp Business & SMS platform for modern businesses.
+                {brand.tagline}
               </p>
               <div className="flex items-center gap-4">
                 <a href="#" className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 hover:text-orange-500 hover:bg-slate-700 transition-colors">
@@ -699,22 +859,22 @@ const LandingPage = () => {
             <div>
               <h4 className="font-semibold text-white mb-4">Product</h4>
               <ul className="space-y-3">
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">WhatsApp API</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">SMS Gateway</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">Automation</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">Analytics</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">Integrations</a></li>
+                <li><a href="#features" className="text-slate-400 hover:text-orange-500 transition-colors">WhatsApp API</a></li>
+                <li><a href="#features" className="text-slate-400 hover:text-orange-500 transition-colors">SMS Gateway</a></li>
+                <li><a href="#features" className="text-slate-400 hover:text-orange-500 transition-colors">Automation</a></li>
+                <li><a href="#features" className="text-slate-400 hover:text-orange-500 transition-colors">Analytics</a></li>
+                <li><a href="#features" className="text-slate-400 hover:text-orange-500 transition-colors">Integrations</a></li>
               </ul>
             </div>
 
             <div>
               <h4 className="font-semibold text-white mb-4">Company</h4>
               <ul className="space-y-3">
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">About Us</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">Careers</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">Blog</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">Press Kit</a></li>
-                <li><a href="#" className="text-slate-400 hover:text-orange-500 transition-colors">Contact</a></li>
+                <li><a href="#about" className="text-slate-400 hover:text-orange-500 transition-colors">About Us</a></li>
+                <li><a href="/careers" className="text-slate-400 hover:text-orange-500 transition-colors">Careers</a></li>
+                <li><a href="/blog" className="text-slate-400 hover:text-orange-500 transition-colors">Blog</a></li>
+                <li><a href="/press" className="text-slate-400 hover:text-orange-500 transition-colors">Press Kit</a></li>
+                <li><a href="#contact" className="text-slate-400 hover:text-orange-500 transition-colors">Contact</a></li>
               </ul>
             </div>
 
@@ -723,15 +883,15 @@ const LandingPage = () => {
               <ul className="space-y-3">
                 <li className="flex items-center gap-2 text-slate-400">
                   <MapPin className="w-4 h-4" />
-                  Mumbai, India
+                  {brand.address}
                 </li>
                 <li className="flex items-center gap-2 text-slate-400">
                   <Phone className="w-4 h-4" />
-                  +91 22 1234 5678
+                  {brand.phone}
                 </li>
                 <li className="flex items-center gap-2 text-slate-400">
                   <Mail className="w-4 h-4" />
-                  hello@textzy.in
+                  {brand.email}
                 </li>
               </ul>
             </div>
@@ -743,9 +903,9 @@ const LandingPage = () => {
                 © 2024 Textzy. All rights reserved.
               </p>
               <div className="flex items-center gap-6">
-                <a href="#" className="text-slate-500 hover:text-slate-300 text-sm">Privacy Policy</a>
-                <a href="#" className="text-slate-500 hover:text-slate-300 text-sm">Terms of Service</a>
-                <a href="#" className="text-slate-500 hover:text-slate-300 text-sm">Cookie Policy</a>
+                <a href="#privacy" className="text-slate-500 hover:text-slate-300 text-sm">Privacy Policy</a>
+                <a href="#refund" className="text-slate-500 hover:text-slate-300 text-sm">Refund Policy</a>
+                <a href="#cookies" className="text-slate-500 hover:text-slate-300 text-sm">Cookies Policy</a>
               </div>
             </div>
           </div>
