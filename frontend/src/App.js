@@ -20,6 +20,11 @@ const RefundPage = lazy(() => import("@/pages/static/RefundPage"));
 const CookiesPage = lazy(() => import("@/pages/static/CookiesPage"));
 const TermsPage = lazy(() => import("@/pages/static/TermsPage"));
 const DpdpPage = lazy(() => import("@/pages/static/DpdpPage"));
+const MessagingCompliancePage = lazy(() => import("@/pages/static/MessagingCompliancePage"));
+const SecurityPage = lazy(() => import("@/pages/static/SecurityPage"));
+const SubprocessorsPage = lazy(() => import("@/pages/static/SubprocessorsPage"));
+const AupPage = lazy(() => import("@/pages/static/AupPage"));
+const DpaPage = lazy(() => import("@/pages/static/DpaPage"));
 
 // Dashboard Pages
 const DashboardLayout = lazy(() => import("@/layouts/DashboardLayout"));
@@ -96,6 +101,11 @@ function App() {
             <Route path="/cookies" element={<CookiesPage />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/dpdp" element={<DpdpPage />} />
+            <Route path="/messaging-compliance" element={<MessagingCompliancePage />} />
+            <Route path="/security" element={<SecurityPage />} />
+            <Route path="/subprocessors" element={<SubprocessorsPage />} />
+            <Route path="/acceptable-use" element={<AupPage />} />
+            <Route path="/dpa" element={<DpaPage />} />
 
             {/* Dashboard Routes */}
             <Route path="/dashboard" element={authed ? <DashboardLayout /> : <Navigate to="/login" replace />}>
