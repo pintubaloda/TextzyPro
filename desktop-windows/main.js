@@ -1,10 +1,11 @@
 const { app, BrowserWindow, session } = require("electron");
 const path = require("path");
 
-const SHELL_URL = "https://textzy-frontend-production.up.railway.app/?desktopShell=1&mobileShell=1&platform=windows";
+const SHELL_URL = "https://textzy.in/?desktopShell=1&mobileShell=1&platform=windows";
 const TRUSTED_HOSTS = new Set([
-  "textzy-frontend-production.up.railway.app",
-  "textzy-backend-production.up.railway.app"
+  "textzy.in",
+  "www.textzy.in",
+  "api.textzy.in"
 ]);
 
 function createWindow() {
@@ -18,8 +19,10 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
-    }
+      sandbox: true,
+      backgroundThrottling: false
+    },
+    icon: path.join(__dirname, "assets", "icon.png")
   });
 
   win.removeMenu();
