@@ -259,7 +259,7 @@ const LandingPage = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 hero-gradient relative overflow-hidden">
+      <section className="pt-24 pb-20 hero-gradient relative overflow-hidden">
         <div className="absolute inset-0 opacity-30">
           <img
             src="https://images.pexels.com/photos/17483870/pexels-photo-17483870.png"
@@ -268,7 +268,7 @@ const LandingPage = () => {
           />
         </div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+          <div className="grid lg:grid-cols-2 gap-12 items-center min-h-[520px]">
             <div className="space-y-8 animate-slide-up">
               <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100 px-4 py-1">
                 Trusted by 5,000+ Indian Businesses
@@ -430,14 +430,14 @@ const LandingPage = () => {
                 description: "Send broadcasts, set up automations, and watch your engagement metrics soar.",
               },
             ].map((item, index) => (
-              <div key={index} className="relative">
-                <div className="text-6xl font-bold text-orange-100 absolute -top-4 left-0">{item.step}</div>
-                <div className="pt-12 relative z-10">
+              <div key={index} className="relative flex flex-col">
+                <div className="text-6xl font-bold text-orange-100 absolute -top-4 left-0 select-none">{item.step}</div>
+                <div className="pt-10 relative z-10">
                   <h3 className="font-heading text-xl font-semibold text-slate-900 mb-3">{item.title}</h3>
                   <p className="text-slate-600">{item.description}</p>
                 </div>
                 {index < 2 && (
-                  <ChevronRight className="hidden md:block absolute top-1/2 -right-4 w-8 h-8 text-orange-300" />
+                  <ChevronRight className="hidden md:block absolute top-8 -right-5 w-8 h-8 text-orange-300 z-20" />
                 )}
               </div>
             ))}
@@ -522,11 +522,11 @@ const LandingPage = () => {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-3 gap-8 items-stretch">
             {pricingPlans.map((plan, index) => (
               <Card
                 key={index}
-                className={`relative bg-white ${
+                className={`relative bg-white flex flex-col ${
                   plan.popular ? "border-2 border-orange-500 shadow-glow" : "border-slate-200"
                 }`}
                 data-testid={`pricing-card-${plan.name.toLowerCase()}`}
@@ -545,8 +545,8 @@ const LandingPage = () => {
                   <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">{plan.taxLabel || "+ GST"}</p>
                   <CardDescription className="mt-2">{plan.description}</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <ul className="space-y-3">
+                <CardContent className="flex flex-col flex-1 space-y-4">
+                  <ul className="space-y-3 flex-1">
                     {plan.features.map((feature, i) => (
                       <li key={i} className="flex items-start gap-3">
                         <Check className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" />
@@ -555,7 +555,7 @@ const LandingPage = () => {
                     ))}
                   </ul>
                   <Button
-                    className={`w-full mt-6 ${
+                    className={`w-full mt-auto ${
                       plan.popular
                         ? "bg-orange-500 hover:bg-orange-600 text-white"
                         : "bg-slate-100 hover:bg-slate-200 text-slate-900"
@@ -611,13 +611,13 @@ const LandingPage = () => {
       <section className="py-24 bg-white relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="relative">
+            <div className="relative pb-8 pr-8">
               <img
                 src="https://images.pexels.com/photos/7682350/pexels-photo-7682350.jpeg"
                 alt="Customer support agent"
-                className="rounded-2xl shadow-2xl"
+                className="rounded-2xl shadow-2xl w-full object-cover"
               />
-              <div className="absolute -bottom-6 -right-6 bg-orange-500 text-white p-6 rounded-xl shadow-lg">
+              <div className="absolute bottom-0 right-0 bg-orange-500 text-white p-6 rounded-xl shadow-lg">
                 <p className="text-3xl font-bold">24/7</p>
                 <p className="text-sm">Support Available</p>
               </div>
@@ -679,15 +679,15 @@ const LandingPage = () => {
       {/* Footer */}
       <footer id="contact" className="bg-slate-900 pt-16 pb-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-12 mb-12">
-            <div className="space-y-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-10 mb-12">
+            <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
                   <MessageSquare className="w-5 h-5 text-white" />
                 </div>
                 <span className="font-heading font-bold text-xl text-white">{brand.name}</span>
               </div>
-              <p className="text-slate-400">
+              <p className="text-slate-400 leading-relaxed">
                 {brand.tagline}
               </p>
               <div className="flex items-center gap-4">
@@ -716,16 +716,11 @@ const LandingPage = () => {
               <ul className="space-y-3">
                 <li><Link to="/about" className="text-slate-400 hover:text-orange-500 transition-colors">About Us</Link></li>
                 <li><Link to="/contact" className="text-slate-400 hover:text-orange-500 transition-colors">Contact</Link></li>
-                <li><Link to="/privacy" className="text-slate-400 hover:text-orange-500 transition-colors">Privacy</Link></li>
-                <li><Link to="/terms" className="text-slate-400 hover:text-orange-500 transition-colors">Terms</Link></li>
-                <li><Link to="/refund" className="text-slate-400 hover:text-orange-500 transition-colors">Refund</Link></li>
+                <li><Link to="/privacy" className="text-slate-400 hover:text-orange-500 transition-colors">Privacy Policy</Link></li>
+                <li><Link to="/terms" className="text-slate-400 hover:text-orange-500 transition-colors">Terms of Service</Link></li>
+                <li><Link to="/refund" className="text-slate-400 hover:text-orange-500 transition-colors">Refund Policy</Link></li>
                 <li><Link to="/cookies" className="text-slate-400 hover:text-orange-500 transition-colors">Cookies</Link></li>
-                <li><Link to="/dpdp" className="text-slate-400 hover:text-orange-500 transition-colors">DPDP Act</Link></li>
-                <li><Link to="/messaging-compliance" className="text-slate-400 hover:text-orange-500 transition-colors">Messaging Compliance</Link></li>
-                <li><Link to="/acceptable-use" className="text-slate-400 hover:text-orange-500 transition-colors">Acceptable Use</Link></li>
                 <li><Link to="/security" className="text-slate-400 hover:text-orange-500 transition-colors">Security</Link></li>
-                <li><Link to="/subprocessors" className="text-slate-400 hover:text-orange-500 transition-colors">Subprocessors</Link></li>
-                <li><Link to="/dpa" className="text-slate-400 hover:text-orange-500 transition-colors">DPA</Link></li>
                 <li><Link to="/trust-center" className="text-slate-400 hover:text-orange-500 transition-colors">Trust Center</Link></li>
               </ul>
             </div>
@@ -762,12 +757,16 @@ const LandingPage = () => {
               <p className="text-slate-500 text-sm">
                 (c) 2026 {brand.name} - Designed & Developed with Love by Moneyart Private Limited
               </p>
-              <div className="flex items-center gap-6">
+              <div className="flex flex-wrap items-center gap-4 md:gap-6">
                 <Link to="/privacy" className="text-slate-500 hover:text-slate-300 text-sm">Privacy</Link>
                 <Link to="/terms" className="text-slate-500 hover:text-slate-300 text-sm">Terms</Link>
                 <Link to="/refund" className="text-slate-500 hover:text-slate-300 text-sm">Refund</Link>
                 <Link to="/cookies" className="text-slate-500 hover:text-slate-300 text-sm">Cookies</Link>
                 <Link to="/dpdp" className="text-slate-500 hover:text-slate-300 text-sm">DPDP Act</Link>
+                <Link to="/messaging-compliance" className="text-slate-500 hover:text-slate-300 text-sm">Compliance</Link>
+                <Link to="/acceptable-use" className="text-slate-500 hover:text-slate-300 text-sm">AUP</Link>
+                <Link to="/subprocessors" className="text-slate-500 hover:text-slate-300 text-sm">Subprocessors</Link>
+                <Link to="/dpa" className="text-slate-500 hover:text-slate-300 text-sm">DPA</Link>
               </div>
             </div>
           </div>

@@ -5,7 +5,7 @@ import StaticShell from "@/components/marketing/StaticShell";
 export default function SubprocessorsPage() {
   return (
     <StaticShell>
-      <div className="max-w-4xl mx-auto px-6 py-10 space-y-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
         <div className="flex items-center gap-3 text-slate-500 text-sm">
           <Link to="/" className="flex items-center gap-2 text-orange-500 hover:text-orange-600">
             <ArrowLeft className="w-4 h-4" /> Back to home

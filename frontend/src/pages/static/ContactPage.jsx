@@ -38,8 +38,7 @@ export default function ContactPage() {
 
   return (
     <StaticShell>
-      <div className="bg-slate-50">
-      <div className="max-w-5xl mx-auto px-6 py-10 space-y-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-8">
         <div className="flex items-center gap-3 text-slate-500 text-sm">
           <Link to="/" className="flex items-center gap-2 text-orange-500 hover:text-orange-600">
             <ArrowLeft className="w-4 h-4" /> Back to home
@@ -93,7 +92,6 @@ export default function ContactPage() {
             </div>
           </div>
         </div>
-      </div>
       </div>
     </StaticShell>
   );
