@@ -23,9 +23,32 @@ public class PlatformSettingsController(
     AuthContext auth,
     RbacService rbac,
     IConfiguration config,
-    IHttpClientFactory httpClientFactory) : ControllerBase
+    IHttpClientFactory httpClientFactory,
+    OutboundMessageQueueService outboundQueue,
+    WabaWebhookQueueService webhookQueue) : ControllerBase
 {
     private static readonly TimeSpan StepUpFreshWindow = TimeSpan.FromMinutes(10);
+
+    [HttpGet("queue-status")]
+    public IActionResult QueueStatus()
+    {
+        if (!auth.IsAuthenticated) return Unauthorized();
+        if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
+
+        return Ok(new
+        {
+            outbound = new
+            {
+                configured = (config["OutboundQueue:Provider"] ?? "memory").Trim().ToLowerInvariant(),
+                active = outboundQueue.ActiveProvider
+            },
+            webhook = new
+            {
+                configured = (config["WebhookQueue:Provider"] ?? "memory").Trim().ToLowerInvariant(),
+                active = webhookQueue.ActiveProvider
+            }
+        });
+    }
 
     [HttpGet("{scope}")]
     public async Task<IActionResult> GetScope(string scope, CancellationToken ct)
