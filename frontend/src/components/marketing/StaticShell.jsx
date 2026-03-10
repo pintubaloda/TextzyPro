@@ -66,6 +66,7 @@ export default function StaticShell({ children }) {
               <li><Link to="/security" className="hover:text-orange-400">Security</Link></li>
               <li><Link to="/subprocessors" className="hover:text-orange-400">Subprocessors</Link></li>
               <li><Link to="/dpa" className="hover:text-orange-400">DPA</Link></li>
+              <li><Link to="/trust-center" className="hover:text-orange-400">Trust Center</Link></li>
             </ul>
           </div>
           <div>
@@ -96,7 +97,7 @@ export default function StaticShell({ children }) {
         </div>
         <div className="border-t border-slate-800 py-4">
           <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500">
-            <span>© 2024 {brand.name}. All rights reserved.</span>
+            <span>© 2026 {brand.name} — Designed & Developed with ❤️ by Moneyart Private Limited</span>
             <div className="flex gap-4">
               <Link to="/privacy" className="hover:text-orange-400">Privacy</Link>
               <Link to="/terms" className="hover:text-orange-400">Terms</Link>

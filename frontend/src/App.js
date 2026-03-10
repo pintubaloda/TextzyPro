@@ -25,6 +25,7 @@ const SecurityPage = lazy(() => import("@/pages/static/SecurityPage"));
 const SubprocessorsPage = lazy(() => import("@/pages/static/SubprocessorsPage"));
 const AupPage = lazy(() => import("@/pages/static/AupPage"));
 const DpaPage = lazy(() => import("@/pages/static/DpaPage"));
+const TrustCenterPage = lazy(() => import("@/pages/static/TrustCenterPage"));
 
 // Dashboard Pages
 const DashboardLayout = lazy(() => import("@/layouts/DashboardLayout"));
@@ -106,6 +107,7 @@ function App() {
             <Route path="/subprocessors" element={<SubprocessorsPage />} />
             <Route path="/acceptable-use" element={<AupPage />} />
             <Route path="/dpa" element={<DpaPage />} />
+            <Route path="/trust-center" element={<TrustCenterPage />} />
 
             {/* Dashboard Routes */}
             <Route path="/dashboard" element={authed ? <DashboardLayout /> : <Navigate to="/login" replace />}>
