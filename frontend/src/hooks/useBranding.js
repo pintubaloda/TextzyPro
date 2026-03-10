@@ -4,10 +4,10 @@ const defaults = {
   name: "Textzy",
   tagline: "Business inbox for WhatsApp & SMS.",
   companyLine: "Textzy is a brand of Moneyart Private Limited.",
-  address: "Mumbai, India",
-  phone: "+91 22 1234 5678",
-  email: "hello@textzy.in",
-  whatsapp: "+919867530000",
+  address: "",
+  phone: "",
+  email: "",
+  whatsapp: "",
   whatsappQr: "",
   logoUrl: "",
 };
@@ -44,18 +44,22 @@ export function useBranding() {
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
           if (!active) return;
-          setBrand((prev) => ({
-            ...prev,
-            name: data.platformName || data.name || prev.name,
-            tagline: data.tagline || prev.tagline,
-            companyLine: data.companyLine || data.legalName || prev.companyLine,
-            address: data.address || prev.address,
-            phone: data.supportPhone || data.billingPhone || prev.phone,
-            email: data.supportEmail || data.billingEmail || prev.email,
-            whatsapp: data.whatsapp || prev.whatsapp,
-            whatsappQr: data.whatsappQr || prev.whatsappQr,
-            logoUrl: data.logoUrl || prev.logoUrl,
-          }));
+          setBrand((prev) => {
+            const phone = data.supportPhone || data.billingPhone || prev.phone;
+            const whatsapp = data.whatsapp || phone || prev.whatsapp;
+            return {
+              ...prev,
+              name: data.platformName || data.name || prev.name,
+              tagline: data.tagline || data.description || prev.tagline,
+              companyLine: data.companyLine || data.legalName || prev.companyLine,
+              address: data.address || data.contactAddress || prev.address,
+              phone,
+              email: data.supportEmail || data.billingEmail || prev.email,
+              whatsapp,
+              whatsappQr: data.whatsappQr || prev.whatsappQr,
+              logoUrl: data.logoUrl || prev.logoUrl,
+            };
+          });
         }
       } catch {
         /* ignore */
