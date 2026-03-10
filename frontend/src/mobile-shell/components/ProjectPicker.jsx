@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { C } from "../core";
-import { PROJECTS, Logo } from "../uiAssets";
+import { Logo } from "../uiAssets";
 
 const ProjectPicker = ({ projects, onSelect, loading = false }) => {
   const [sel, setSel] = useState(null);
-  const rows = projects?.length ? projects : PROJECTS;
+  const rows = Array.isArray(projects) ? projects : [];
   const badgeFor = (p) => {
     const icon = String(p?.icon || "").trim();
     if (/^[A-Za-z0-9]{1,4}$/.test(icon)) return icon.toUpperCase();
@@ -42,7 +42,11 @@ const ProjectPicker = ({ projects, onSelect, loading = false }) => {
             </div>
           ))}
         </div>
-        {rows.map((p) => {
+        {rows.length === 0 ? (
+          <div style={{ padding: "14px 10px", color: C.textSub, fontSize: 13 }}>
+            No projects available for this account.
+          </div>
+        ) : rows.map((p) => {
           const a = sel === p.slug;
           return (
             <div key={p.slug} onClick={() => setSel(p.slug)} style={{

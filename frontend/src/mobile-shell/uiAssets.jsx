@@ -47,11 +47,7 @@ export const CONTACTS = [
     ]},
 ];
 
-export const PROJECTS = [
-  {slug:"moneyart",  name:"MoneyArt",  icon:"MA", role:"Agent"},
-  {slug:"techcorp",  name:"TechCorp",  icon:"TC", role:"Admin"},
-  {slug:"retailhub", name:"RetailHub", icon:"RH", role:"Agent"},
-];
+export const PROJECTS = [];
 
 export const REPLIES = [
   "Got it!", "Sure thing!", "I'll check and get back to you.",

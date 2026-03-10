@@ -675,7 +675,7 @@ export default function TextzyMobile() {
     let nextCsrfHeader = first.nextCsrfHeader;
 
     if (!res.ok) {
-      const errText = await res.text();
+      let errText = await res.text();
       if (res.status === 403 && errText.toLowerCase().includes("csrf")) {
         const refreshed = await apiFetch("/api/auth/refresh", {
           method: "POST",
@@ -687,9 +687,12 @@ export default function TextzyMobile() {
           first = await trySwitch(refreshedCsrf);
           res = first.res;
           nextCsrfHeader = first.nextCsrfHeader || refreshedCsrf;
+          if (!res.ok && !res.bodyUsed) {
+            errText = await res.text().catch(() => errText);
+          }
         }
       }
-      if (!res.ok) throw new Error((await res.text()) || "Project switch failed");
+      if (!res.ok) throw new Error(errText || "Project switch failed");
     }
 
     const json = await res.json().catch(() => ({}));
