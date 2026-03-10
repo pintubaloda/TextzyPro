@@ -6,8 +6,8 @@ const defaults = {
   companyLine: "Textzy is a brand of Moneyart Private Limited.",
   address: "No-203, Wing A-2, Omkar Nandan, near Hotel Deccan Pavilion, opposite to Navale Bridge, Narhe, Pune, Maharashtra 411041",
   phone: "+919226508304",
-  email: "helpdesk@gmail.com",
-  whatsapp: "+91 7249630121",
+  email: "helpdesk@moneyart.in",
+  whatsapp: "+917249630121",
   whatsappQr: "",
   logoUrl: "",
 };

@@ -44,7 +44,7 @@ export default function ContactPage() {
           <Link to="/" className="flex items-center gap-2 text-orange-500 hover:text-orange-600">
             <ArrowLeft className="w-4 h-4" /> Back to home
           </Link>
-          <span>·</span>
+          <span>-</span>
           <span>Contact {brand.name}</span>
         </div>
         <h1 className="text-4xl font-bold text-slate-900">Talk to our support desk</h1>
@@ -59,7 +59,7 @@ export default function ContactPage() {
             <button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-lg">
               {status==="sending"?"Sending...":"Submit Ticket"}
             </button>
-            {status==="sent" && <p className="text-green-600 text-sm">Ticket submitted. We’ll follow up on email/WhatsApp.</p>}
+            {status==="sent" && <p className="text-green-600 text-sm">Ticket submitted. We'll follow up on email/WhatsApp.</p>}
             {status==="error" && <p className="text-red-600 text-sm">Could not submit. Please email {brand.email}.</p>}
           </form>
           <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 space-y-3">
