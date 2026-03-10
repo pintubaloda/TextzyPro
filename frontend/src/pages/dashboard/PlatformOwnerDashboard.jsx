@@ -218,6 +218,12 @@ export default function PlatformOwnerDashboard() {
       .slice(0, 6);
   }, [customers]);
 
+  const rabbitProvider = (queueHealth?.outbound?.provider || queueHealth?.webhook?.provider || "").toLowerCase();
+  const rabbitConnected = queueHealth?.outbound?.connected ?? queueHealth?.webhook?.connected ?? null;
+  const redisProvider = (queueHealth?.cache?.provider || queueHealth?.redis?.provider || "").toLowerCase();
+  const redisConnected = queueHealth?.cache?.connected ?? queueHealth?.redis?.connected ?? null;
+  const statusTone = (connected) => connected === false ? "text-rose-600 bg-rose-50 border-rose-100" : connected === true ? "text-emerald-600 bg-emerald-50 border-emerald-100" : "text-slate-600 bg-slate-50 border-slate-200";
+
   const topCustomers = useMemo(() => {
     return [...filteredCustomers]
       .sort((a, b) => Number(b.totalRevenue || 0) - Number(a.totalRevenue || 0))
@@ -383,6 +389,20 @@ export default function PlatformOwnerDashboard() {
               <CardDescription>Outbound queue provider, webhook backlog, and delivery processing pressure.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold ${statusTone(redisConnected)}`}>
+                  <Database className="w-4 h-4" />
+                  <span>Redis: {redisProvider || "unknown"}</span>
+                </div>
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-semibold ${statusTone(rabbitConnected)}`}>
+                  <ServerCog className="w-4 h-4" />
+                  <span>RabbitMQ: {rabbitProvider || "unknown"}</span>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => load(search)} disabled={refreshing}>
+                  <RefreshCcw className="w-4 h-4 mr-2" />
+                  Refresh status
+                </Button>
+              </div>
               <StatusRow label="Outbound Queue" value={`${queueHealth?.outbound?.provider || "unknown"} / depth ${number(outboundDepth)}`} helper="Primary outbound dispatch provider" />
               <StatusRow label="Webhook Queue" value={`${queueHealth?.webhook?.provider || "unknown"} / depth ${number(webhookDepth)}`} helper={`Processing ${number(queueHealth?.webhook?.processing || 0)} • Retry ${number(queueHealth?.webhook?.retrying || 0)}`} />
               <StatusRow label="Dead Letters (24h)" value={number(queueHealth?.webhook?.deadLetter24h || 0)} helper={`Unmapped ${number(queueHealth?.webhook?.unmapped24h || 0)} in last 24 hours`} valueClassName="text-rose-600" />
