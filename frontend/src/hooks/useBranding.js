@@ -14,7 +14,7 @@ const defaults = {
 
 const appConfigBrand = (() => {
   if (typeof window === "undefined") return defaults;
-  const c = window._APP_CONFIG_ || {};
+  const c = window.__APP_CONFIG__ || window._APP_CONFIG_ || {};
   const apiBase = c.API_BASE || "/api";
   return {
     name: c.BRAND_NAME || defaults.name,
@@ -39,7 +39,8 @@ export function useBranding() {
     const load = async () => {
       setLoading(true);
       try {
-        const base = (typeof window !== "undefined" ? window._APP_CONFIG_?.API_BASE : "") || "/api";
+        const runtime = typeof window !== "undefined" ? (window.__APP_CONFIG__ || window._APP_CONFIG_) : null;
+        const base = runtime?.API_BASE || "/api";
         const res = await fetch(`${base.replace(/\/+$/, "")}/public/platform-branding`, { credentials: "include" });
         if (res.ok) {
           const data = await res.json().catch(() => ({}));

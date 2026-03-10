@@ -13,7 +13,8 @@ export default function ContactPage() {
     e.preventDefault();
     setStatus("sending");
     try {
-      const apiBase = (typeof window !== "undefined" ? window._APP_CONFIG_?.API_BASE : "") || "/api";
+      const runtime = typeof window !== "undefined" ? (window.__APP_CONFIG__ || window._APP_CONFIG_) : null;
+      const apiBase = runtime?.API_BASE || "/api";
       const base = apiBase.replace(/\/+$/, "");
       const res = await fetch(`${base}/public/contact`, {
         method: "POST",
