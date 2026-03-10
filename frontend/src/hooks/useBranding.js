@@ -46,13 +46,13 @@ export function useBranding() {
           if (!active) return;
           setBrand((prev) => {
             const phone = data.supportPhone || data.billingPhone || prev.phone;
-            const whatsapp = data.whatsapp || phone || prev.whatsapp;
+            const whatsapp = data.supportWhatsappNo || data.whatsapp || phone || prev.whatsapp;
             return {
               ...prev,
               name: data.platformName || data.name || prev.name,
               tagline: data.tagline || data.description || prev.tagline,
               companyLine: data.companyLine || data.legalName || prev.companyLine,
-              address: data.address || data.contactAddress || prev.address,
+              address: data.billingAddress || data.address || data.contactAddress || prev.address,
               phone,
               email: data.supportEmail || data.billingEmail || prev.email,
               whatsapp,
