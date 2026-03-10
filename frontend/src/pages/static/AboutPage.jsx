@@ -33,7 +33,7 @@ export default function AboutPage() {
             <h3 className="font-semibold text-slate-900 mb-3">At a glance</h3>
             <ul className="space-y-2 text-slate-700">
               <li className="flex gap-2"><Check className="w-4 h-4 text-orange-500 mt-1" /> {brand.tagline}</li>
-              <li className="flex gap-2"><Check className="w-4 h-4 text-orange-500 mt-1" /> Contact: {brand.email}, {brand.phone}</li>
+              <li className="flex gap-2"><Check className="w-4 h-4 text-orange-500 mt-1" /> Contact: <a className="text-orange-600" href={`mailto:${brand.email}`}>{brand.email}</a> · <a className="text-orange-600" href={`tel:${brand.phone?.replace(/\\s+/g,"")}`}>{brand.phone}</a></li>
               <li className="flex gap-2"><Check className="w-4 h-4 text-orange-500 mt-1" /> Address: {brand.address}</li>
             </ul>
           </div>

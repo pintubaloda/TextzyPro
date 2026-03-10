@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Phone, Mail, MapPin, Send } from "lucide-react";
 import { useBranding } from "@/hooks/useBranding";
 
 export default function StaticShell({ children }) {
@@ -63,10 +63,27 @@ export default function StaticShell({ children }) {
           </div>
           <div>
             <h4 className="font-semibold text-white mb-3">Contact</h4>
-            <ul className="space-y-2 text-sm">
-              <li>{brand.address}</li>
-              <li>{brand.phone}</li>
-              <li>{brand.email}</li>
+            <ul className="space-y-2 text-sm text-slate-300">
+              <li className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-orange-400 mt-0.5" />
+                <span>{brand.address}</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-orange-400" />
+                <a className="hover:text-orange-300" href={`tel:${brand.phone?.replace(/\\s+/g, "")}`}>{brand.phone}</a>
+              </li>
+              <li className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-orange-400" />
+                <a className="hover:text-orange-300" href={`mailto:${brand.email}`}>{brand.email}</a>
+              </li>
+              {brand.whatsapp ? (
+                <li className="flex items-center gap-2">
+                  <Send className="w-4 h-4 text-orange-400" />
+                  <a className="hover:text-orange-300" href={`https://wa.me/${brand.whatsapp.replace(/\\D/g,"")}`} target="_blank" rel="noreferrer">
+                    WhatsApp {brand.whatsapp}
+                  </a>
+                </li>
+              ) : null}
             </ul>
           </div>
         </div>

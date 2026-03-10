@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Mail, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, Mail, MapPin, Phone, Send } from "lucide-react";
 import StaticShell from "@/components/marketing/StaticShell";
 import { useBranding } from "@/hooks/useBranding";
 
@@ -60,9 +60,27 @@ export default function ContactPage() {
             <div className="flex items-center gap-6">
               <img src={brand.whatsappQr} alt="WhatsApp support QR" className="w-36 h-36 rounded-xl border border-slate-200 bg-white" />
               <div className="space-y-2 text-slate-700 text-sm">
-                <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-orange-500" /> {brand.whatsapp}</div>
-                <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-orange-500" /> {brand.email}</div>
-                <div className="flex items-center gap-2"><MapPin className="w-4 h-4 text-orange-500" /> {brand.address}</div>
+                <div className="flex items-center gap-2">
+                  <Send className="w-4 h-4 text-orange-500" />
+                  <a href={`https://wa.me/${brand.whatsapp.replace(/\\D/g,"")}`} target="_blank" rel="noreferrer" className="hover:text-orange-600">
+                    WhatsApp {brand.whatsapp}
+                  </a>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-orange-500" />
+                  <a href={`tel:${brand.phone?.replace(/\\s+/g,"")}`} className="hover:text-orange-600">
+                    {brand.phone}
+                  </a>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-orange-500" />
+                  <a href={`mailto:${brand.email}`} className="hover:text-orange-600">
+                    {brand.email}
+                  </a>
+                </div>
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 text-orange-500 mt-0.5" /> <span>{brand.address}</span>
+                </div>
               </div>
             </div>
           </div>
