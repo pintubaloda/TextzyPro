@@ -249,7 +249,7 @@ const LoginScreen = ({ onLogin }) => {
   const [err,setErr]     = useState("");
   const autoSubmitRef = useRef(false);
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
     if (!email||!pass) { setErr("Please fill all fields."); return; }
     if (!otpVerified) { setErr("Please verify email OTP first."); return; }
     setLoad(true);
@@ -272,7 +272,7 @@ const LoginScreen = ({ onLogin }) => {
     } finally {
       setLoad(false);
     }
-  };
+  }, [email, pass, otpVerified, verificationId, onLogin]);
 
   const requestOtp = async () => {
     if (!email) { setErr("Enter email first."); return; }
@@ -340,7 +340,7 @@ const LoginScreen = ({ onLogin }) => {
     if (autoSubmitRef.current) return;
     autoSubmitRef.current = true;
     submit();
-  }, [otpVerified, email, pass, loading, twoFactor.challengeToken]);
+  }, [otpVerified, email, pass, loading, twoFactor.challengeToken, submit]);
 
   const verifyAuthenticator = async () => {
     if (!twoFactor.challengeToken || !twoFactor.code.trim()) { setErr("Enter authenticator code first."); return; }
