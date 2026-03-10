@@ -247,6 +247,7 @@ const LoginScreen = ({ onLogin }) => {
   const [showPass,setShowPass] = useState(false);
   const [loading,setLoad]= useState(false);
   const [err,setErr]     = useState("");
+  const autoSubmitRef = useRef(false);
 
   const submit = async () => {
     if (!email||!pass) { setErr("Please fill all fields."); return; }
@@ -263,9 +264,11 @@ const LoginScreen = ({ onLogin }) => {
           code: "",
           busy: false,
         });
+        autoSubmitRef.current = false;
       }
     } catch (e) {
       setErr(e?.message || "Login failed.");
+      autoSubmitRef.current = false;
     } finally {
       setLoad(false);
     }
@@ -283,6 +286,7 @@ const LoginScreen = ({ onLogin }) => {
       setOtpSent(true);
       setOtpReady(false);
       setOtpVerified(false);
+      autoSubmitRef.current = false;
     } catch (e) {
       setErr(e?.message || "Failed to send OTP.");
     } finally {
@@ -328,6 +332,15 @@ const LoginScreen = ({ onLogin }) => {
       setVerifyBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!otpVerified) return;
+    if (!email || !pass) return;
+    if (loading || twoFactor.challengeToken) return;
+    if (autoSubmitRef.current) return;
+    autoSubmitRef.current = true;
+    submit();
+  }, [otpVerified, email, pass, loading, twoFactor.challengeToken]);
 
   const verifyAuthenticator = async () => {
     if (!twoFactor.challengeToken || !twoFactor.code.trim()) { setErr("Enter authenticator code first."); return; }
@@ -383,6 +396,7 @@ const LoginScreen = ({ onLogin }) => {
         boxShadow:"0 -14px 46px rgba(0,0,0,0.16)",
         borderTop:"1px solid rgba(255,255,255,0.45)",
       }}>
+        <div style={{ maxWidth:1080, margin:"0 auto" }}>
         {/* tab switcher */}
         <div style={{ display:"flex", background:C.panelBg, borderRadius:12, padding:4, marginBottom:22 }}>
           {[{ mode: "password", label: "Password", icon: <I.Key/> }, { mode: "qr", label: "Scan QR", icon: <I.Camera/> }].map((item)=>(
@@ -573,6 +587,7 @@ const LoginScreen = ({ onLogin }) => {
             </p>
           </div>
         )}
+        </div>
       </div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
     </div>
