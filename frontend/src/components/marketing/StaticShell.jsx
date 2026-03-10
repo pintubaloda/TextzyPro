@@ -57,6 +57,7 @@ export default function StaticShell({ children }) {
               <li><Link to="/about" className="hover:text-orange-400">About Us</Link></li>
               <li><Link to="/contact" className="hover:text-orange-400">Contact</Link></li>
               <li><Link to="/privacy" className="hover:text-orange-400">Privacy</Link></li>
+              <li><Link to="/terms" className="hover:text-orange-400">Terms</Link></li>
               <li><Link to="/refund" className="hover:text-orange-400">Refund</Link></li>
               <li><Link to="/cookies" className="hover:text-orange-400">Cookies</Link></li>
             </ul>
@@ -92,6 +93,7 @@ export default function StaticShell({ children }) {
             <span>© 2024 {brand.name}. All rights reserved.</span>
             <div className="flex gap-4">
               <Link to="/privacy" className="hover:text-orange-400">Privacy</Link>
+              <Link to="/terms" className="hover:text-orange-400">Terms</Link>
               <Link to="/refund" className="hover:text-orange-400">Refund</Link>
               <Link to="/cookies" className="hover:text-orange-400">Cookies</Link>
             </div>

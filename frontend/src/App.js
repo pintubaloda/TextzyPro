@@ -18,6 +18,7 @@ const ContactPage = lazy(() => import("@/pages/static/ContactPage"));
 const PrivacyPage = lazy(() => import("@/pages/static/PrivacyPage"));
 const RefundPage = lazy(() => import("@/pages/static/RefundPage"));
 const CookiesPage = lazy(() => import("@/pages/static/CookiesPage"));
+const TermsPage = lazy(() => import("@/pages/static/TermsPage"));
 
 // Dashboard Pages
 const DashboardLayout = lazy(() => import("@/layouts/DashboardLayout"));
@@ -92,6 +93,7 @@ function App() {
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/refund" element={<RefundPage />} />
             <Route path="/cookies" element={<CookiesPage />} />
+            <Route path="/terms" element={<TermsPage />} />
 
             {/* Dashboard Routes */}
             <Route path="/dashboard" element={authed ? <DashboardLayout /> : <Navigate to="/login" replace />}>
