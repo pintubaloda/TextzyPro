@@ -13,6 +13,11 @@ const ProjectSelectPage = lazy(() => import("@/pages/auth/ProjectSelectPage"));
 const RegisterPage = lazy(() => import("@/pages/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPasswordPage"));
 const AcceptInvitePage = lazy(() => import("@/pages/auth/AcceptInvitePage"));
+const AboutPage = lazy(() => import("@/pages/static/AboutPage"));
+const ContactPage = lazy(() => import("@/pages/static/ContactPage"));
+const PrivacyPage = lazy(() => import("@/pages/static/PrivacyPage"));
+const RefundPage = lazy(() => import("@/pages/static/RefundPage"));
+const CookiesPage = lazy(() => import("@/pages/static/CookiesPage"));
 
 // Dashboard Pages
 const DashboardLayout = lazy(() => import("@/layouts/DashboardLayout"));
@@ -82,6 +87,11 @@ function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/accept-invite" element={<AcceptInvitePage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/refund" element={<RefundPage />} />
+            <Route path="/cookies" element={<CookiesPage />} />
 
             {/* Dashboard Routes */}
             <Route path="/dashboard" element={authed ? <DashboardLayout /> : <Navigate to="/login" replace />}>
