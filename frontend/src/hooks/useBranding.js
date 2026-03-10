@@ -15,6 +15,7 @@ const defaults = {
 const appConfigBrand = (() => {
   if (typeof window === "undefined") return defaults;
   const c = window._APP_CONFIG_ || {};
+  const apiBase = c.API_BASE || "/api";
   return {
     name: c.BRAND_NAME || defaults.name,
     tagline: c.BRAND_TAGLINE || defaults.tagline,
@@ -25,6 +26,7 @@ const appConfigBrand = (() => {
     whatsapp: c.BRAND_WHATSAPP || defaults.whatsapp,
     whatsappQr: c.BRAND_WHATSAPP_QR || defaults.whatsappQr,
     logoUrl: c.BRAND_LOGO_URL || "",
+    apiBase,
   };
 })();
 
@@ -37,7 +39,8 @@ export function useBranding() {
     const load = async () => {
       setLoading(true);
       try {
-        const res = await fetch("/api/public/platform-branding", { credentials: "include" });
+        const base = (typeof window !== "undefined" ? window._APP_CONFIG_?.API_BASE : "") || "/api";
+        const res = await fetch(`${base.replace(/\/+$/, "")}/public/platform-branding`, { credentials: "include" });
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
           if (!active) return;
@@ -67,9 +70,9 @@ export function useBranding() {
   }, []);
 
   const withQr = useMemo(() => {
-    if (brand.whatsappQr) return brand.whatsappQr;
     const num = (brand.whatsapp || "").replace(/\D/g, "");
-    return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`https://wa.me/${num}`)}`;
+    const qr = brand.whatsappQr || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`https://wa.me/${num}`)}`;
+    return qr;
   }, [brand.whatsappQr, brand.whatsapp]);
 
   return { brand: { ...brand, whatsappQr: withQr }, loading };
