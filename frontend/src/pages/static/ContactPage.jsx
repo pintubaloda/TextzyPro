@@ -14,7 +14,8 @@ export default function ContactPage() {
     setStatus("sending");
     try {
       const apiBase = (typeof window !== "undefined" ? window._APP_CONFIG_?.API_BASE : "") || "/api";
-      const res = await fetch(`${apiBase.replace(/\/$/, "")}/api/public/contact`, {
+      const base = apiBase.replace(/\/+$/, "");
+      const res = await fetch(`${base}/public/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, channel: "contact-page", brand: brand.name }),
