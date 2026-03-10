@@ -97,7 +97,7 @@ export default function StaticShell({ children }) {
         </div>
         <div className="border-t border-slate-800 py-4">
           <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-slate-500">
-            <span>© 2026 {brand.name} — Designed & Developed with ❤️ by Moneyart Private Limited</span>
+            <span>(c) 2026 {brand.name} - Designed & Developed with Love by Moneyart Private Limited</span>
             <div className="flex gap-4">
               <Link to="/privacy" className="hover:text-orange-400">Privacy</Link>
               <Link to="/terms" className="hover:text-orange-400">Terms</Link>

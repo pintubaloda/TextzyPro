@@ -24,20 +24,11 @@ import {
   Play,
 } from "lucide-react";
 import { getPublicPlans } from "@/lib/api";
+import { useBranding } from "@/hooks/useBranding";
 
 const LandingPage = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const appConfig = (typeof window !== "undefined" ? window._APP_CONFIG_ : {}) || {};
-  const brand = {
-    name: appConfig.BRAND_NAME || "Textzy",
-    companyLine: appConfig.BRAND_COMPANY_LINE || "Textzy is a brand of Moneyart Private Limited.",
-    tagline: appConfig.BRAND_TAGLINE || "India's leading WhatsApp Business & SMS platform for modern businesses.",
-    address: appConfig.BRAND_ADDRESS || "Mumbai, India",
-    phone: appConfig.BRAND_PHONE || "+91 22 1234 5678",
-    email: appConfig.BRAND_EMAIL || "hello@textzy.in",
-    whatsapp: appConfig.BRAND_WHATSAPP || "+919867530000",
-    whatsappQr: appConfig.BRAND_WHATSAPP_QR || `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`https://wa.me/${(appConfig.BRAND_WHATSAPP || "+919867530000").replace(/\D/g, "")}`)}`,
-  };
+  const { brand } = useBranding();
   const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", message: "" });
   const [contactStatus, setContactStatus] = useState("idle");
 
@@ -194,7 +185,7 @@ const LandingPage = () => {
               <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
                 <MessageSquare className="w-5 h-5 text-white" />
               </div>
-              <span className="font-heading font-bold text-xl text-slate-900">Textzy</span>
+              <span className="font-heading font-bold text-xl text-slate-900">{brand.name}</span>
             </Link>
 
             {/* Desktop Navigation */}
@@ -694,7 +685,7 @@ const LandingPage = () => {
                 <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
                   <MessageSquare className="w-5 h-5 text-white" />
                 </div>
-                <span className="font-heading font-bold text-xl text-white">Textzy</span>
+                <span className="font-heading font-bold text-xl text-white">{brand.name}</span>
               </div>
               <p className="text-slate-400">
                 {brand.tagline}
@@ -724,28 +715,44 @@ const LandingPage = () => {
               <h4 className="font-semibold text-white mb-4">Company</h4>
               <ul className="space-y-3">
                 <li><Link to="/about" className="text-slate-400 hover:text-orange-500 transition-colors">About Us</Link></li>
-                <li><Link to="/careers" className="text-slate-400 hover:text-orange-500 transition-colors">Careers</Link></li>
-                <li><Link to="/blog" className="text-slate-400 hover:text-orange-500 transition-colors">Blog</Link></li>
-                <li><Link to="/press" className="text-slate-400 hover:text-orange-500 transition-colors">Press Kit</Link></li>
                 <li><Link to="/contact" className="text-slate-400 hover:text-orange-500 transition-colors">Contact</Link></li>
+                <li><Link to="/privacy" className="text-slate-400 hover:text-orange-500 transition-colors">Privacy</Link></li>
+                <li><Link to="/terms" className="text-slate-400 hover:text-orange-500 transition-colors">Terms</Link></li>
+                <li><Link to="/refund" className="text-slate-400 hover:text-orange-500 transition-colors">Refund</Link></li>
+                <li><Link to="/cookies" className="text-slate-400 hover:text-orange-500 transition-colors">Cookies</Link></li>
+                <li><Link to="/dpdp" className="text-slate-400 hover:text-orange-500 transition-colors">DPDP Act</Link></li>
+                <li><Link to="/messaging-compliance" className="text-slate-400 hover:text-orange-500 transition-colors">Messaging Compliance</Link></li>
+                <li><Link to="/acceptable-use" className="text-slate-400 hover:text-orange-500 transition-colors">Acceptable Use</Link></li>
+                <li><Link to="/security" className="text-slate-400 hover:text-orange-500 transition-colors">Security</Link></li>
+                <li><Link to="/subprocessors" className="text-slate-400 hover:text-orange-500 transition-colors">Subprocessors</Link></li>
+                <li><Link to="/dpa" className="text-slate-400 hover:text-orange-500 transition-colors">DPA</Link></li>
+                <li><Link to="/trust-center" className="text-slate-400 hover:text-orange-500 transition-colors">Trust Center</Link></li>
               </ul>
             </div>
 
             <div>
               <h4 className="font-semibold text-white mb-4">Contact</h4>
-              <ul className="space-y-3">
-                <li className="flex items-center gap-2 text-slate-400">
-                  <MapPin className="w-4 h-4" />
-                  {brand.address}
+              <ul className="space-y-3 text-slate-400">
+                <li className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 text-orange-400 mt-0.5" />
+                  <span>{brand.address}</span>
                 </li>
-                <li className="flex items-center gap-2 text-slate-400">
-                  <Phone className="w-4 h-4" />
-                  {brand.phone}
+                <li className="flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-orange-400" />
+                  <a className="hover:text-orange-300" href={`tel:${brand.phone?.replace(/\\s+/g, "")}`}>{brand.phone}</a>
                 </li>
-                <li className="flex items-center gap-2 text-slate-400">
-                  <Mail className="w-4 h-4" />
-                  {brand.email}
+                <li className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-orange-400" />
+                  <a className="hover:text-orange-300" href={`mailto:${brand.email}`}>{brand.email}</a>
                 </li>
+                {brand.whatsapp ? (
+                  <li className="flex items-center gap-2">
+                    <Send className="w-4 h-4 text-orange-400" />
+                    <a className="hover:text-orange-300" href={`https://wa.me/${brand.whatsapp.replace(/\\D/g, "")}`} target="_blank" rel="noreferrer">
+                      WhatsApp {brand.whatsapp}
+                    </a>
+                  </li>
+                ) : null}
               </ul>
             </div>
           </div>
@@ -753,12 +760,14 @@ const LandingPage = () => {
           <div className="border-t border-slate-800 pt-8">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
               <p className="text-slate-500 text-sm">
-                © 2024 {brand.name}. All rights reserved.
+                (c) 2026 {brand.name} - Designed & Developed with Love by Moneyart Private Limited
               </p>
               <div className="flex items-center gap-6">
-                <Link to="/privacy" className="text-slate-500 hover:text-slate-300 text-sm">Privacy Policy</Link>
-                <Link to="/refund" className="text-slate-500 hover:text-slate-300 text-sm">Refund Policy</Link>
-                <Link to="/cookies" className="text-slate-500 hover:text-slate-300 text-sm">Cookies Policy</Link>
+                <Link to="/privacy" className="text-slate-500 hover:text-slate-300 text-sm">Privacy</Link>
+                <Link to="/terms" className="text-slate-500 hover:text-slate-300 text-sm">Terms</Link>
+                <Link to="/refund" className="text-slate-500 hover:text-slate-300 text-sm">Refund</Link>
+                <Link to="/cookies" className="text-slate-500 hover:text-slate-300 text-sm">Cookies</Link>
+                <Link to="/dpdp" className="text-slate-500 hover:text-slate-300 text-sm">DPDP Act</Link>
               </div>
             </div>
           </div>
