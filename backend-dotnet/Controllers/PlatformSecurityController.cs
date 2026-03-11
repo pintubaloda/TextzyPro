@@ -587,7 +587,7 @@ public class PlatformSecurityController(
     }
 
     [HttpGet("signals")]
-    public async Task<IActionResult> Signals([FromQuery] string status = "open", [FromQuery] int limit = 100, CancellationToken ct = default)
+    public async Task<IActionResult> Signals([FromQuery] string status = "open", [FromQuery] Guid? tenantId = null, [FromQuery] int limit = 100, CancellationToken ct = default)
     {
         if (!auth.IsAuthenticated) return Unauthorized();
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
@@ -596,6 +596,8 @@ public class PlatformSecurityController(
         var q = db.SecuritySignals.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "all", StringComparison.OrdinalIgnoreCase))
             q = q.Where(x => x.Status == status);
+        if (tenantId.HasValue && tenantId.Value != Guid.Empty)
+            q = q.Where(x => x.TenantId == tenantId.Value);
 
         var rows = await q
             .OrderByDescending(x => x.CreatedAtUtc)

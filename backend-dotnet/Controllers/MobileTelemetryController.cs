@@ -45,15 +45,19 @@ public class MobileTelemetryController(
     }
 
     [HttpGet("api/platform/mobile-telemetry")]
-    public async Task<IActionResult> ListForPlatform([FromQuery] int take = 200, [FromQuery] int days = 1, CancellationToken ct = default)
+    public async Task<IActionResult> ListForPlatform([FromQuery] Guid? tenantId = null, [FromQuery] int take = 200, [FromQuery] int days = 1, CancellationToken ct = default)
     {
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
         var safeTake = Math.Clamp(take, 20, 1000);
         var safeDays = Math.Clamp(days, 1, 30);
         var since = DateTime.UtcNow.AddDays(-safeDays);
 
-        var rows = await db.MobileTelemetryEvents
-            .Where(x => x.EventAtUtc >= since)
+        var query = db.MobileTelemetryEvents.AsNoTracking()
+            .Where(x => x.EventAtUtc >= since);
+        if (tenantId.HasValue && tenantId.Value != Guid.Empty)
+            query = query.Where(x => x.TenantId == tenantId.Value);
+
+        var rows = await query
             .OrderByDescending(x => x.EventAtUtc)
             .Take(safeTake)
             .Join(db.Users, e => e.UserId, u => u.Id, (e, u) => new

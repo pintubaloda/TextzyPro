@@ -225,40 +225,60 @@ public class PlatformCustomersController(
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
 
         var search = (q ?? string.Empty).Trim().ToLowerInvariant();
-        var baseQuery = db.Users.AsQueryable();
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            baseQuery = baseQuery.Where(u => u.Email.ToLower().Contains(search) || u.FullName.ToLower().Contains(search));
-        }
-
-        var users = await baseQuery
-            .OrderByDescending(u => u.CreatedAtUtc)
-            .Take(500)
-            .ToListAsync(ct);
-
-        var userIds = users.Select(u => u.Id).ToList();
-        var memberships = await db.TenantUsers.Where(x => userIds.Contains(x.UserId)).ToListAsync(ct);
-        var ownerGroupUserIds = ownersOnly
-            ? await db.TenantOwnerGroups.AsNoTracking()
-                .Where(x => x.IsActive)
-                .Select(x => x.OwnerUserId)
-                .Distinct()
-                .ToListAsync(ct)
-            : new List<Guid>();
+        List<User> users;
+        List<TenantUser> memberships;
 
         if (ownersOnly)
         {
-            var ownerUserIds = memberships
-                .Where(x => string.Equals(x.Role, "owner", StringComparison.OrdinalIgnoreCase))
+            var ownerMembershipUserIds = await db.TenantUsers.AsNoTracking()
+                .Where(x => x.Role.ToLower() == "owner")
                 .Select(x => x.UserId)
+                .Distinct()
+                .ToListAsync(ct);
+            var ownerGroupUserIds = await db.TenantOwnerGroups.AsNoTracking()
+                .Where(x => x.IsActive)
+                .Select(x => x.OwnerUserId)
+                .Distinct()
+                .ToListAsync(ct);
+            var ownerUserIds = ownerMembershipUserIds
                 .Concat(ownerGroupUserIds)
                 .Distinct()
-                .ToHashSet();
+                .ToList();
 
-            users = users.Where(u => ownerUserIds.Contains(u.Id)).ToList();
+            var ownerQuery = db.Users.AsQueryable().Where(u => ownerUserIds.Contains(u.Id));
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                ownerQuery = ownerQuery.Where(u => u.Email.ToLower().Contains(search) || u.FullName.ToLower().Contains(search));
+            }
+
+            users = await ownerQuery
+                .OrderByDescending(u => u.CreatedAtUtc)
+                .Take(500)
+                .ToListAsync(ct);
+
+            var ownerIds = users.Select(u => u.Id).ToList();
+            memberships = ownerIds.Count == 0
+                ? new List<TenantUser>()
+                : await db.TenantUsers.AsNoTracking().Where(x => ownerIds.Contains(x.UserId)).ToListAsync(ct);
         }
         else
         {
+            var baseQuery = db.Users.AsQueryable();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                baseQuery = baseQuery.Where(u => u.Email.ToLower().Contains(search) || u.FullName.ToLower().Contains(search));
+            }
+
+            users = await baseQuery
+                .OrderByDescending(u => u.CreatedAtUtc)
+                .Take(500)
+                .ToListAsync(ct);
+
+            var userIds = users.Select(u => u.Id).ToList();
+            memberships = userIds.Count == 0
+                ? new List<TenantUser>()
+                : await db.TenantUsers.AsNoTracking().Where(x => userIds.Contains(x.UserId)).ToListAsync(ct);
+
             users = users.Where(u => !u.IsSuperAdmin).ToList();
         }
 

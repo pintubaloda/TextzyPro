@@ -332,8 +332,8 @@ function PlatformAnalytics({ days }) {
         getPlatformCustomers("").catch(() => []),
         getPlatformWebhookAnalytics(tenantId === "all" ? "" : tenantId, days).catch(() => null),
         getPlatformQueueHealth().catch(() => null),
-        getPlatformSecuritySignals({ status: "open", limit: 100 }).catch(() => []),
-        getPlatformMobileTelemetry({ take: 250, days: Math.min(days, 30) }).catch(() => []),
+        getPlatformSecuritySignals({ tenantId: tenantId === "all" ? "" : tenantId, status: "open", limit: 100 }).catch(() => []),
+        getPlatformMobileTelemetry({ tenantId: tenantId === "all" ? "" : tenantId, take: 250, days: Math.min(days, 30) }).catch(() => []),
       ]);
       setCustomers(Array.isArray(customerRows) ? customerRows : []);
       setWebhook(webhookRes || null);

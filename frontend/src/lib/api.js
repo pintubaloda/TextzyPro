@@ -1063,15 +1063,17 @@ export async function getPlatformQueueHealth() {
   return apiGet('/api/platform/queue-health')
 }
 
-export async function getPlatformMobileTelemetry({ take = 200, days = 1 } = {}) {
+export async function getPlatformMobileTelemetry({ tenantId = "", take = 200, days = 1 } = {}) {
   const q = new URLSearchParams()
+  if (tenantId) q.set("tenantId", tenantId)
   q.set("take", String(take))
   q.set("days", String(days))
   return apiGet(`/api/platform/mobile-telemetry?${q.toString()}`)
 }
 
-export async function getPlatformSecuritySignals({ status = "open", limit = 100 } = {}) {
+export async function getPlatformSecuritySignals({ tenantId = "", status = "open", limit = 100 } = {}) {
   const q = new URLSearchParams()
+  if (tenantId) q.set("tenantId", tenantId)
   if (status) q.set("status", status)
   q.set("limit", String(limit))
   return apiGet(`/api/platform/security/signals?${q.toString()}`)
