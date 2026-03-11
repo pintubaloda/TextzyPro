@@ -202,13 +202,13 @@ public class PlatformCustomersController(
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
 
         var search = (q ?? string.Empty).Trim().ToLowerInvariant();
-        var query = db.Users.Where(u => !u.IsSuperAdmin);
+        var baseQuery = db.Users.AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
-            query = query.Where(u => u.Email.ToLower().Contains(search) || u.FullName.ToLower().Contains(search));
+            baseQuery = baseQuery.Where(u => u.Email.ToLower().Contains(search) || u.FullName.ToLower().Contains(search));
         }
 
-        var users = await query
+        var users = await baseQuery
             .OrderByDescending(u => u.CreatedAtUtc)
             .Take(500)
             .ToListAsync(ct);
@@ -225,6 +225,10 @@ public class PlatformCustomersController(
                 .ToHashSet();
 
             users = users.Where(u => ownerUserIds.Contains(u.Id)).ToList();
+        }
+        else
+        {
+            users = users.Where(u => !u.IsSuperAdmin).ToList();
         }
 
         var rows = users.Select(u =>

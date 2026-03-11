@@ -353,20 +353,35 @@ function PlatformAnalytics({ days }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days, tenantId]);
 
+  const scopedCustomers = useMemo(
+    () => (tenantId === "all" ? customers : customers.filter((row) => row.tenantId === tenantId)),
+    [customers, tenantId]
+  );
+
+  const scopedSecuritySignals = useMemo(
+    () => (tenantId === "all" ? securitySignals : securitySignals.filter((row) => !row?.tenantId || row.tenantId === tenantId)),
+    [securitySignals, tenantId]
+  );
+
+  const scopedMobileTelemetry = useMemo(
+    () => (tenantId === "all" ? mobileTelemetry : mobileTelemetry.filter((row) => !row?.tenantId || row.tenantId === tenantId)),
+    [mobileTelemetry, tenantId]
+  );
+
   const summary = useMemo(() => {
     const activeStatuses = new Set(["active", "trialing", "trial"]);
     return {
-      totalTenants: customers.length,
-      activeTenants: customers.filter((row) => activeStatuses.has(String(row.subscriptionStatus || "").toLowerCase())).length,
-      totalUsers: customers.reduce((acc, row) => acc + Number(row.users || 0), 0),
-      totalRevenue: customers.reduce((acc, row) => acc + Number(row.totalRevenue || 0), 0),
-      mrr: customers
+      totalTenants: scopedCustomers.length,
+      activeTenants: scopedCustomers.filter((row) => activeStatuses.has(String(row.subscriptionStatus || "").toLowerCase())).length,
+      totalUsers: scopedCustomers.reduce((acc, row) => acc + Number(row.users || 0), 0),
+      totalRevenue: scopedCustomers.reduce((acc, row) => acc + Number(row.totalRevenue || 0), 0),
+      mrr: scopedCustomers
         .filter((row) => activeStatuses.has(String(row.subscriptionStatus || "").toLowerCase()))
         .reduce((acc, row) => acc + Number(row.monthlyPrice || 0), 0),
-      openSignals: securitySignals.filter((row) => String(row.status || "").toLowerCase() !== "resolved").length,
-      telemetry: mobileTelemetry.length,
+      openSignals: scopedSecuritySignals.filter((row) => String(row.status || "").toLowerCase() !== "resolved").length,
+      telemetry: scopedMobileTelemetry.length,
     };
-  }, [customers, securitySignals, mobileTelemetry]);
+  }, [scopedCustomers, scopedSecuritySignals, scopedMobileTelemetry]);
 
   const webhookRows = useMemo(() => {
     return Object.entries(webhook?.statusSummary || {}).map(([name, value]) => ({ name, value: Number(value || 0) }));
@@ -374,25 +389,25 @@ function PlatformAnalytics({ days }) {
 
   const planMix = useMemo(() => {
     const map = new Map();
-    customers.forEach((row) => map.set(row.planName || "No Plan", (map.get(row.planName || "No Plan") || 0) + 1));
+    scopedCustomers.forEach((row) => map.set(row.planName || "No Plan", (map.get(row.planName || "No Plan") || 0) + 1));
     return [...map.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8);
-  }, [customers]);
+  }, [scopedCustomers]);
 
   const topRevenue = useMemo(() => {
-    return [...customers]
+    return [...scopedCustomers]
       .sort((a, b) => Number(b.totalRevenue || 0) - Number(a.totalRevenue || 0))
       .slice(0, 8)
       .map((row) => ({ name: row.companyName || row.tenantName || row.tenantSlug, revenue: Number(row.totalRevenue || 0) }));
-  }, [customers]);
+  }, [scopedCustomers]);
 
   const securityBreakdown = useMemo(() => {
     const map = new Map();
-    securitySignals.forEach((row) => {
+    scopedSecuritySignals.forEach((row) => {
       const key = String(row.signalType || row.type || "unknown");
       map.set(key, (map.get(key) || 0) + 1);
     });
     return [...map.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8);
-  }, [securitySignals]);
+  }, [scopedSecuritySignals]);
 
   if (loading) {
     return <div className="rounded-3xl border border-slate-200 bg-white p-10 text-sm text-slate-500">Loading platform analytics...</div>;
