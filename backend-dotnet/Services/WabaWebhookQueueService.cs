@@ -108,6 +108,18 @@ public class WabaWebhookQueueService(IConfiguration config, ILogger<WabaWebhookQ
         }
     }
 
+    public (string Provider, bool? Connected) GetRedisHealth()
+    {
+        if (string.IsNullOrWhiteSpace(_redisConn)) return ("redis", null);
+        return ("redis", _redis.Value is not null && _redis.Value.IsConnected);
+    }
+
+    public (string Provider, bool? Connected) GetRabbitHealth()
+    {
+        if (string.IsNullOrWhiteSpace(_rabbitConn)) return ("rabbitmq", null);
+        return ("rabbitmq", _rabbitConnLazy.Value is not null && _rabbitConnLazy.Value.IsOpen);
+    }
+
     private static IConnection? BuildRabbitConnection(string connectionString, string vhost, string user, string pass, bool useTls)
     {
         if (!Uri.TryCreate(connectionString, UriKind.Absolute, out var uri)) return null;

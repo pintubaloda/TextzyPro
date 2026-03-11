@@ -26,13 +26,44 @@ public class PlatformQueueHealthController(
         var retrying = await db.WebhookEvents.CountAsync(x => x.Status == "RetryScheduled", ct);
         var processing = await db.WebhookEvents.CountAsync(x => x.Status == "Processing", ct);
         var unmapped24h = await db.WebhookEvents.CountAsync(x => x.Status == "Unmapped" && x.ReceivedAtUtc > now.AddHours(-24), ct);
+        var outboundRedis = outboundQueue.GetRedisHealth();
+        var webhookRedis = webhookQueue.GetRedisHealth();
+        var outboundRabbit = outboundQueue.GetRabbitHealth();
+        var webhookRabbit = webhookQueue.GetRabbitHealth();
+
+        static bool? Combine(bool? a, bool? b)
+        {
+            if (a == true || b == true) return true;
+            if (a == false && b == false) return false;
+            if (a == false || b == false) return false;
+            return null;
+        }
+
+        var redisConnected = Combine(outboundRedis.Connected, webhookRedis.Connected);
+        var rabbitConnected = Combine(outboundRabbit.Connected, webhookRabbit.Connected);
 
         return Ok(new
         {
+            redis = new
+            {
+                provider = "redis",
+                connected = redisConnected
+            },
+            rabbitmq = new
+            {
+                provider = "rabbitmq",
+                connected = rabbitConnected
+            },
             outbound = new
             {
                 provider = outboundQueue.ActiveProvider,
-                depth = await outboundQueue.GetDepthAsync(ct)
+                depth = await outboundQueue.GetDepthAsync(ct),
+                connected = outboundQueue.ActiveProvider switch
+                {
+                    "redis" => outboundRedis.Connected,
+                    "rabbitmq" => outboundRabbit.Connected,
+                    _ => null
+                }
             },
             webhook = new
             {
@@ -41,9 +72,14 @@ public class PlatformQueueHealthController(
                 processing,
                 retrying,
                 deadLetter24h,
-                unmapped24h
+                unmapped24h,
+                connected = webhookQueue.ActiveProvider switch
+                {
+                    "redis" => webhookRedis.Connected,
+                    "rabbitmq" => webhookRabbit.Connected,
+                    _ => null
+                }
             }
         });
     }
 }
-
