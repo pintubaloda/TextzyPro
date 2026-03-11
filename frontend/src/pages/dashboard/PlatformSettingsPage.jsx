@@ -98,6 +98,8 @@ const PlatformSettingsPage = () => {
     termsUrl: "",
     privacyUrl: "",
     webPushPublicKey: "",
+    webPushPrivateKey: "",
+    webPushSubject: "",
     firebaseApiKey: "",
     firebaseAuthDomain: "",
     firebaseProjectId: "",
@@ -326,6 +328,8 @@ const PlatformSettingsPage = () => {
       termsUrl: appConfig.termsUrl || "",
       privacyUrl: appConfig.privacyUrl || "",
       webPushPublicKey: appConfig.webPushPublicKey || "",
+      webPushPrivateKey: appConfig.webPushPrivateKey || "",
+      webPushSubject: appConfig.webPushSubject || "",
       firebaseApiKey: appConfig.firebaseApiKey || "",
       firebaseAuthDomain: appConfig.firebaseAuthDomain || "",
       firebaseProjectId: appConfig.firebaseProjectId || "",
@@ -406,6 +410,8 @@ const PlatformSettingsPage = () => {
             termsUrl: values.termsUrl || "",
             privacyUrl: values.privacyUrl || "",
             webPushPublicKey: values.webPushPublicKey || "",
+            webPushPrivateKey: values.webPushPrivateKey || "",
+            webPushSubject: values.webPushSubject || "",
             firebaseApiKey: values.firebaseApiKey || "",
             firebaseAuthDomain: values.firebaseAuthDomain || "",
             firebaseProjectId: values.firebaseProjectId || "",
@@ -1127,6 +1133,8 @@ const PlatformSettingsPage = () => {
               <CardHeader><CardTitle>Firebase & Push</CardTitle></CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2"><Label>Web Push Public Key (VAPID)</Label><Input value={appConfig.webPushPublicKey} onChange={(e) => setAppConfig((p) => ({ ...p, webPushPublicKey: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Web Push Private Key (server only)</Label><Input type="password" value={appConfig.webPushPrivateKey} onChange={(e) => setAppConfig((p) => ({ ...p, webPushPrivateKey: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Web Push Subject</Label><Input placeholder="mailto:support@textzy.in" value={appConfig.webPushSubject} onChange={(e) => setAppConfig((p) => ({ ...p, webPushSubject: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Firebase API Key</Label><Input value={appConfig.firebaseApiKey} onChange={(e) => setAppConfig((p) => ({ ...p, firebaseApiKey: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Firebase Auth Domain</Label><Input value={appConfig.firebaseAuthDomain} onChange={(e) => setAppConfig((p) => ({ ...p, firebaseAuthDomain: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Firebase Project ID</Label><Input value={appConfig.firebaseProjectId} onChange={(e) => setAppConfig((p) => ({ ...p, firebaseProjectId: e.target.value }))} /></div>
@@ -1290,6 +1298,23 @@ const PlatformSettingsPage = () => {
                 placeholder="BEl..."
                 value={appConfig.webPushPublicKey}
                 onChange={(e) => setAppConfig((p) => ({ ...p, webPushPublicKey: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Web Push Private Key (server only)</Label>
+              <Input
+                type="password"
+                placeholder="Private VAPID key"
+                value={appConfig.webPushPrivateKey}
+                onChange={(e) => setAppConfig((p) => ({ ...p, webPushPrivateKey: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Web Push Subject</Label>
+              <Input
+                placeholder="mailto:support@textzy.in"
+                value={appConfig.webPushSubject}
+                onChange={(e) => setAppConfig((p) => ({ ...p, webPushSubject: e.target.value }))}
               />
             </div>
             <div className="space-y-2">

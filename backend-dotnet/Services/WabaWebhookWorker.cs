@@ -16,6 +16,7 @@ public class WabaWebhookWorker(
     IHubContext<InboxHub> hub,
     UserPresenceService presence,
     IConfiguration config,
+    SecretCryptoService crypto,
     TenantSchemaGuardService schemaGuard,
     SensitiveDataRedactor redactor,
     ILogger<WabaWebhookWorker> logger) : BackgroundService
@@ -598,9 +599,19 @@ public class WabaWebhookWorker(
         InboundItem inbound,
         CancellationToken ct)
     {
-        var vapidPublicKey = (config["Push:VapidPublicKey"] ?? string.Empty).Trim();
-        var vapidPrivateKey = (config["Push:VapidPrivateKey"] ?? string.Empty).Trim();
-        var vapidSubject = (config["Push:VapidSubject"] ?? "mailto:support@textzy.local").Trim();
+        var pushSettings = await controlDb.PlatformSettings
+            .Where(x => x.Scope == "mobile-app" &&
+                (x.Key == "webPushPublicKey" || x.Key == "webPushPrivateKey" || x.Key == "webPushSubject"))
+            .ToListAsync(ct);
+        var pushValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in pushSettings)
+        {
+            pushValues[row.Key] = crypto.Decrypt(row.ValueEncrypted);
+        }
+
+        var vapidPublicKey = (pushValues.TryGetValue("webPushPublicKey", out var dbPublicKey) ? dbPublicKey : config["Push:VapidPublicKey"] ?? string.Empty).Trim();
+        var vapidPrivateKey = (pushValues.TryGetValue("webPushPrivateKey", out var dbPrivateKey) ? dbPrivateKey : config["Push:VapidPrivateKey"] ?? string.Empty).Trim();
+        var vapidSubject = (pushValues.TryGetValue("webPushSubject", out var dbSubject) ? dbSubject : config["Push:VapidSubject"] ?? "mailto:support@textzy.local").Trim();
         var fcmProjectId = (config["Push:FcmProjectId"] ?? string.Empty).Trim();
         var fcmSaJson = (config["Push:FcmServiceAccountJson"] ?? string.Empty).Trim();
         var fcmSaPath = (config["Push:FcmServiceAccountPath"] ?? string.Empty).Trim();
