@@ -1265,9 +1265,10 @@ export async function updatePlatformBillingPlan(id, payload) {
   return apiPut(`/api/platform/billing/plans/${id}`, payload)
 }
 
-export async function getPlatformCustomers(q = '') {
+export async function getPlatformCustomers(q = '', ownerUserId = '') {
   const qs = new URLSearchParams()
   if (q) qs.set('q', q)
+  if (ownerUserId) qs.set('ownerUserId', ownerUserId)
   const data = await apiGet(`/api/platform/customers${qs.toString() ? `?${qs.toString()}` : ''}`)
   return Array.isArray(data) ? data : (data?.items || [])
 }
@@ -1277,6 +1278,12 @@ export async function getPlatformUsers(q = '', ownersOnly = false) {
   if (q) qs.set('q', q)
   if (ownersOnly) qs.set('ownersOnly', 'true')
   return apiGet(`/api/platform/customers/users${qs.toString() ? `?${qs.toString()}` : ''}`)
+}
+
+export async function getPlatformOwners(q = '') {
+  const qs = new URLSearchParams()
+  if (q) qs.set('q', q)
+  return apiGet(`/api/platform/customers/owners${qs.toString() ? `?${qs.toString()}` : ''}`)
 }
 
 export async function getPlatformUserTenants(userId) {

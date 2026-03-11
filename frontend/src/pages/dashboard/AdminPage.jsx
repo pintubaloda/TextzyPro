@@ -36,9 +36,9 @@ import {
   getPlatformCustomerSubscriptions,
   getPlatformCustomerUsage,
   getPlatformCustomers,
+  getPlatformOwners,
   getPlatformSecurityReport,
   getPlatformUserTenants,
-  getPlatformUsers,
   listPlatformBillingPlans,
   savePlatformCustomerCompanySettings,
   savePlatformCustomerFeatures,
@@ -167,15 +167,29 @@ export default function AdminPage() {
   const [userTenantReport, setUserTenantReport] = useState(null);
   const [docViewer, setDocViewer] = useState({ open: false, type: "sms" });
 
-  const loadCustomers = useCallback(async (search = "") => {
+  const loadCustomers = useCallback(async (search = "", ownerUserId = "") => {
     try {
       setLoadingCustomers(true);
-      const data = await getPlatformCustomers(search);
+      const data = await getPlatformCustomers(search, ownerUserId);
       const rows = Array.isArray(data) ? data : [];
       setCustomers(rows);
-      setSelectedTenantId((prev) => prev || rows[0]?.tenantId || "");
     } catch (error) {
       toast.error(error?.message || "Failed to load platform customers");
+    } finally {
+      setLoadingCustomers(false);
+    }
+  }, []);
+
+  const loadOwners = useCallback(async () => {
+    try {
+      setLoadingCustomers(true);
+      const data = await getPlatformOwners("");
+      const rows = Array.isArray(data) ? data : [];
+      setPlatformUsers(rows);
+      setSelectedUserId((prev) => (prev && rows.some((user) => user.userId === prev) ? prev : ""));
+    } catch (error) {
+      toast.error(error?.message || "Failed to load tenant owners");
+      setPlatformUsers([]);
     } finally {
       setLoadingCustomers(false);
     }
@@ -232,8 +246,8 @@ export default function AdminPage() {
   }, [selectedMonth, selectedTenantId]);
 
   useEffect(() => {
-    loadCustomers("");
-  }, [loadCustomers]);
+    loadOwners();
+  }, [loadOwners]);
 
   useEffect(() => {
     (async () => {
@@ -249,28 +263,20 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const data = await getPlatformUsers("", true);
-        const users = Array.isArray(data) ? data : [];
-        setPlatformUsers(users);
-        setSelectedUserId((prev) => prev || users[0]?.userId || "");
-      } catch {
-        setPlatformUsers([]);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
     loadTenantDetails();
   }, [loadTenantDetails]);
 
   useEffect(() => {
-    if (!selectedUserId) return;
+    if (!selectedUserId) {
+      setCustomers([]);
+      setUserTenantReport(null);
+      return;
+    }
+    loadCustomers("", selectedUserId);
     getPlatformUserTenants(selectedUserId)
       .then((data) => setUserTenantReport(data || null))
       .catch(() => setUserTenantReport(null));
-  }, [selectedUserId]);
+  }, [loadCustomers, selectedUserId]);
 
   const selectedOwner = useMemo(
     () => platformUsers.find((user) => user.userId === selectedUserId) || null,
@@ -278,8 +284,21 @@ export default function AdminPage() {
   );
 
   const userCompanyRows = useMemo(() => {
-    return (userTenantReport?.groups || []).flatMap((group) => group.companies || []);
-  }, [userTenantReport]);
+    if (userTenantReport?.groups?.length) {
+      return (userTenantReport.groups || []).flatMap((group) => group.companies || []);
+    }
+    if (!selectedUserId) return [];
+    return customers
+      .filter((company) => company?.ownerUserId === selectedUserId)
+      .map((company) => ({
+        tenantId: company.tenantId,
+        tenantName: company.tenantName,
+        tenantSlug: company.tenantSlug,
+        companyName: company.companyName,
+        ownerRole: "owner",
+        ownerGroupId: company.ownerGroupId,
+      }));
+  }, [customers, selectedUserId, userTenantReport]);
 
   const ownerTenantIds = useMemo(
     () => new Set(userCompanyRows.map((company) => company.tenantId)),
@@ -287,9 +306,9 @@ export default function AdminPage() {
   );
 
   const ownerCustomers = useMemo(() => {
-    const rows = ownerTenantIds.size
-      ? customers.filter((item) => ownerTenantIds.has(item.tenantId))
-      : customers;
+    const rows = selectedUserId
+      ? customers.filter((item) => item?.ownerUserId === selectedUserId || ownerTenantIds.has(item.tenantId))
+      : [];
     const q = query.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((item) =>
@@ -311,7 +330,7 @@ export default function AdminPage() {
     }).length;
     const invoiceCount = tenantRows.reduce((acc, item) => acc + Number(item.invoiceCount || 0), 0);
     return { tenants, users, activeUsers, revenue, activePlans, invoiceCount };
-  }, [customers, ownerTenantIds]);
+  }, [customers, ownerTenantIds, selectedUserId]);
 
   const selectedCustomer = useMemo(
     () => ownerCustomers.find((item) => item.tenantId === selectedTenantId) || customers.find((item) => item.tenantId === selectedTenantId) || null,
@@ -319,10 +338,17 @@ export default function AdminPage() {
   );
 
   useEffect(() => {
-    if (!ownerCustomers.length) return;
+    if (!selectedUserId) {
+      setSelectedTenantId("");
+      return;
+    }
+    if (!ownerCustomers.length) {
+      setSelectedTenantId("");
+      return;
+    }
     const validTenant = ownerCustomers.some((item) => item.tenantId === selectedTenantId);
     if (!validTenant) setSelectedTenantId(ownerCustomers[0].tenantId);
-  }, [ownerCustomers, selectedTenantId]);
+  }, [ownerCustomers, selectedTenantId, selectedUserId]);
 
   useEffect(() => {
     let ignore = false;
@@ -485,7 +511,7 @@ export default function AdminPage() {
               <BookOpenText className="mr-2 h-4 w-4" />
               API Docs
             </Button>
-            <Button variant="outline" className="h-11 rounded-xl border-slate-300 bg-white/80 px-5" onClick={() => loadCustomers(query)} disabled={loadingCustomers}>
+            <Button variant="outline" className="h-11 rounded-xl border-slate-300 bg-white/80 px-5" onClick={() => loadOwners()} disabled={loadingCustomers}>
               <RefreshCcw className={`mr-2 h-4 w-4 ${loadingCustomers ? "animate-spin" : ""}`} />
               Refresh portfolio
             </Button>
@@ -526,12 +552,12 @@ export default function AdminPage() {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Owner Groups</p>
-                <p className="mt-2 text-lg font-bold text-slate-950">{Number(userTenantReport?.ownerGroupCount || 0).toLocaleString()}</p>
-                <p className="text-sm text-slate-500">{Number(ownerTotals.tenants || 0).toLocaleString()} tenants mapped</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">{selectedUserId ? Number(userTenantReport?.ownerGroupCount || 0).toLocaleString() : "-"}</p>
+                <p className="text-sm text-slate-500">{selectedUserId ? `${Number(ownerTotals.tenants || 0).toLocaleString()} tenants mapped` : "Select an owner to load workspace"}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tenant Slug Coverage</p>
-                <p className="mt-2 text-lg font-bold text-slate-950">{ownerCustomers.length.toLocaleString()}</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">{selectedUserId ? ownerCustomers.length.toLocaleString() : "-"}</p>
                 <p className="text-sm text-slate-500">Filtered workspaces for this owner</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
@@ -545,11 +571,11 @@ export default function AdminPage() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
-        <KpiCard title="Owner Tenants" value={ownerTotals.tenants.toLocaleString()} hint="Workspaces under selected owner" icon={Building2} />
-        <KpiCard title="Owner Seats" value={ownerTotals.users.toLocaleString()} hint={`${ownerTotals.activeUsers.toLocaleString()} active seats`} icon={Users} tone="blue" />
-        <KpiCard title="Owner Revenue" value={formatMoney(ownerTotals.revenue)} hint={`${ownerTotals.activePlans.toLocaleString()} active subscriptions`} icon={BadgeIndianRupee} tone="emerald" />
-        <KpiCard title="Invoices" value={ownerTotals.invoiceCount.toLocaleString()} hint="Invoices generated across owner tenants" icon={FileText} tone="violet" />
-        <KpiCard title="Tenant Controls" value={tenantFeatures.smsGatewayReportEnabled ? "Reports on" : "Reports off"} hint="Selected tenant overrides" icon={ShieldCheck} tone="orange" />
+        <KpiCard title="Owner Tenants" value={selectedUserId ? ownerTotals.tenants.toLocaleString() : "-"} hint="Workspaces under selected owner" icon={Building2} />
+        <KpiCard title="Owner Seats" value={selectedUserId ? ownerTotals.users.toLocaleString() : "-"} hint={selectedUserId ? `${ownerTotals.activeUsers.toLocaleString()} active seats` : "Select an owner first"} icon={Users} tone="blue" />
+        <KpiCard title="Owner Revenue" value={selectedUserId ? formatMoney(ownerTotals.revenue) : "-"} hint={selectedUserId ? `${ownerTotals.activePlans.toLocaleString()} active subscriptions` : "Select an owner first"} icon={BadgeIndianRupee} tone="emerald" />
+        <KpiCard title="Invoices" value={selectedUserId ? ownerTotals.invoiceCount.toLocaleString() : "-"} hint="Invoices generated across owner tenants" icon={FileText} tone="violet" />
+        <KpiCard title="Tenant Controls" value={selectedUserId ? (tenantFeatures.smsGatewayReportEnabled ? "Reports on" : "Reports off") : "-"} hint="Selected tenant overrides" icon={ShieldCheck} tone="orange" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
@@ -570,7 +596,7 @@ export default function AdminPage() {
                     className="h-11 rounded-xl border-slate-300 pl-9"
                   />
                 </div>
-                <Button variant="outline" className="h-11 rounded-xl" onClick={() => loadCustomers("")} disabled={loadingCustomers}>
+                <Button variant="outline" className="h-11 rounded-xl" onClick={() => loadCustomers(query, selectedUserId)} disabled={loadingCustomers || !selectedUserId}>
                   Refresh data
                 </Button>
               </div>
@@ -710,7 +736,7 @@ export default function AdminPage() {
                       resetStartDate: true,
                     });
                     toast.success(assignStatus === "trial" ? "Trial plan assigned successfully." : "Plan assigned successfully.");
-                    await Promise.all([loadCustomers(query), loadTenantDetails()]);
+                    await Promise.all([loadCustomers(query, selectedUserId), loadTenantDetails()]);
                   } catch (error) {
                     toast.error(error?.message || "Failed to assign plan.");
                   } finally {

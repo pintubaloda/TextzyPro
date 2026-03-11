@@ -25,6 +25,7 @@ public class PlatformCustomersController(
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] string q = "",
+        [FromQuery] Guid? ownerUserId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
@@ -37,6 +38,17 @@ public class PlatformCustomersController(
         var requestedPage = Math.Max(1, page);
 
         IQueryable<Tenant> tenantQuery = db.Tenants.AsNoTracking();
+        if (ownerUserId.HasValue && ownerUserId.Value != Guid.Empty)
+        {
+            var ownedGroupIds = await db.TenantOwnerGroups.AsNoTracking()
+                .Where(x => x.OwnerUserId == ownerUserId.Value)
+                .Select(x => x.Id)
+                .ToListAsync(ct);
+
+            tenantQuery = tenantQuery.Where(t =>
+                (t.OwnerGroupId.HasValue && ownedGroupIds.Contains(t.OwnerGroupId.Value)) ||
+                db.TenantUsers.Any(u => u.TenantId == t.Id && u.UserId == ownerUserId.Value && u.Role.ToLower() == "owner"));
+        }
         if (!string.IsNullOrWhiteSpace(search))
         {
             var companyTenantIds = await db.TenantCompanyProfiles.AsNoTracking()
@@ -174,6 +186,7 @@ public class PlatformCustomersController(
                 tenantSlug = tenant.Slug,
                 companyName = !string.IsNullOrWhiteSpace(profile?.CompanyName) ? profile.CompanyName : tenant.Name,
                 ownerGroupId = tenant.OwnerGroupId,
+                ownerUserId = owner?.Id,
                 createdAtUtc = tenant.CreatedAtUtc,
                 ownerName = !string.IsNullOrWhiteSpace(owner?.FullName) ? owner.FullName : owner?.Email ?? "-",
                 ownerEmail = owner?.Email ?? "-",
@@ -203,6 +216,7 @@ public class PlatformCustomersController(
                 x.tenantSlug,
                 x.companyName,
                 x.ownerGroupId,
+                x.ownerUserId,
                 x.createdAtUtc,
                 x.ownerName,
                 x.ownerEmail,
@@ -216,6 +230,58 @@ public class PlatformCustomersController(
                 x.totalRevenue
             })
         });
+    }
+
+    [HttpGet("owners")]
+    public async Task<IActionResult> Owners([FromQuery] string q = "", CancellationToken ct = default)
+    {
+        if (!auth.IsAuthenticated) return Unauthorized();
+        if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
+
+        var search = (q ?? string.Empty).Trim().ToLowerInvariant();
+        var ownerMembershipUserIds = await db.TenantUsers.AsNoTracking()
+            .Where(x => x.Role.ToLower() == "owner")
+            .Select(x => x.UserId)
+            .Distinct()
+            .ToListAsync(ct);
+        var ownerGroupUserIds = await db.TenantOwnerGroups.AsNoTracking()
+            .Select(x => x.OwnerUserId)
+            .Distinct()
+            .ToListAsync(ct);
+        var ownerUserIds = ownerMembershipUserIds
+            .Concat(ownerGroupUserIds)
+            .Distinct()
+            .ToList();
+
+        if (ownerUserIds.Count == 0) return Ok(Array.Empty<object>());
+
+        IQueryable<User> ownerQuery = db.Users.AsNoTracking().Where(u => ownerUserIds.Contains(u.Id));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            ownerQuery = ownerQuery.Where(u => u.Email.ToLower().Contains(search) || u.FullName.ToLower().Contains(search));
+        }
+
+        var owners = await ownerQuery
+            .OrderBy(u => u.FullName)
+            .ThenBy(u => u.Email)
+            .Take(500)
+            .ToListAsync(ct);
+
+        var ownerIds = owners.Select(x => x.Id).ToList();
+        var ownedGroupCounts = await db.TenantOwnerGroups.AsNoTracking()
+            .Where(x => ownerIds.Contains(x.OwnerUserId))
+            .GroupBy(x => x.OwnerUserId)
+            .Select(g => new { UserId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.UserId, x => x.Count, ct);
+
+        return Ok(owners.Select(owner => new
+        {
+            userId = owner.Id,
+            name = string.IsNullOrWhiteSpace(owner.FullName) ? owner.Email : owner.FullName,
+            email = owner.Email,
+            isActive = owner.IsActive,
+            ownerGroupCount = ownedGroupCounts.TryGetValue(owner.Id, out var count) ? count : 0
+        }));
     }
 
     [HttpGet("users")]
