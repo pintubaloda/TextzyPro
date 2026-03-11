@@ -23,9 +23,6 @@ public class EquenceSmsMessageProvider(
         public string DefaultSender { get; init; } = string.Empty;
         public string DefaultPeId { get; init; } = string.Empty;
         public string DefaultTemplateId { get; init; } = string.Empty;
-        public string Priority { get; init; } = "2";
-        public string ExpValidity { get; init; } = "60";
-        public string AppsPort { get; init; } = "65000";
     }
 
     public async Task<string> SendAsync(ChannelType channel, string recipient, string body, SmsSendContext? context = null, CancellationToken ct = default)
@@ -113,9 +110,6 @@ TenantDone:
             $"to={Uri.EscapeDataString(recipient)}",
             $"from={Uri.EscapeDataString(sender)}",
             $"text={Uri.EscapeDataString(messageText)}",
-            $"priority={Uri.EscapeDataString(gateway.Priority)}",
-            $"expValidity={Uri.EscapeDataString(gateway.ExpValidity)}",
-            $"appsPort={Uri.EscapeDataString(gateway.AppsPort)}",
         };
 
         var url = $"{gateway.BaseUrl.TrimEnd('?')}{(gateway.BaseUrl.Contains('?') ? "&" : "?")}{string.Join("&", query)}";
@@ -170,7 +164,7 @@ TenantDone:
                 TemplateId = Truncate(templateId, 64),
                 HttpMethod = "GET",
                 RequestUrlMasked = Truncate(MaskSensitiveQueryString(url), 4000),
-                RequestPayloadMasked = Truncate($"recipient={recipient};sender={sender};peId={peId};templateId={templateId};messageLength={messageText?.Length ?? 0};priority={gateway.Priority};expValidity={gateway.ExpValidity};appsPort={gateway.AppsPort}", 2000),
+                RequestPayloadMasked = Truncate($"recipient={recipient};sender={sender};peId={peId};templateId={templateId};messageLength={messageText?.Length ?? 0}", 2000),
                 HttpStatusCode = statusCode,
                 ResponseBody = Truncate(responseBody, 4000),
                 IsSuccess = isSuccess,
@@ -212,9 +206,6 @@ TenantDone:
             DefaultSender = FirstNonEmpty(settings.TryGetValue("defaultSenderAddress", out var sender) ? sender : null, config["Sms:Equence:SenderAddress"]) ?? string.Empty,
             DefaultPeId = FirstNonEmpty(settings.TryGetValue("defaultPeId", out var pe) ? pe : null, config["Sms:Equence:PeId"]) ?? string.Empty,
             DefaultTemplateId = FirstNonEmpty(settings.TryGetValue("defaultTemplateId", out var template) ? template : null, config["Sms:Equence:TemplateId"]) ?? string.Empty,
-            Priority = FirstNonEmpty(settings.TryGetValue("equencePriority", out var priority) ? priority : null, config["Sms:Equence:Priority"], "2") ?? "2",
-            ExpValidity = FirstNonEmpty(settings.TryGetValue("equenceExpValidity", out var validity) ? validity : null, config["Sms:Equence:ExpValidity"], "60") ?? "60",
-            AppsPort = FirstNonEmpty(settings.TryGetValue("equenceAppsPort", out var port) ? port : null, config["Sms:Equence:AppsPort"], "65000") ?? "65000",
         };
     }
 
@@ -322,14 +313,15 @@ TenantDone:
             {
                 var first = response[0];
                 if (first.TryGetProperty("mrid", out var mrid) && !string.IsNullOrWhiteSpace(mrid.ToString()))
-                    return mrid.ToString().Trim();
+                    return $"equence_{mrid}";
                 if (first.TryGetProperty("id", out var id) && !string.IsNullOrWhiteSpace(id.ToString()))
-                    return id.ToString().Trim();
+                    return $"equence_{id}";
             }
         }
         catch
         {
         }
-        return string.Empty;
+
+        return $"equence_{Guid.NewGuid():N}";
     }
 }

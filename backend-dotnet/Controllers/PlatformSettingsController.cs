@@ -23,32 +23,9 @@ public class PlatformSettingsController(
     AuthContext auth,
     RbacService rbac,
     IConfiguration config,
-    IHttpClientFactory httpClientFactory,
-    OutboundMessageQueueService outboundQueue,
-    WabaWebhookQueueService webhookQueue) : ControllerBase
+    IHttpClientFactory httpClientFactory) : ControllerBase
 {
     private static readonly TimeSpan StepUpFreshWindow = TimeSpan.FromMinutes(10);
-
-    [HttpGet("queue-status")]
-    public IActionResult QueueStatus()
-    {
-        if (!auth.IsAuthenticated) return Unauthorized();
-        if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
-
-        return Ok(new
-        {
-            outbound = new
-            {
-                configured = (config["OutboundQueue:Provider"] ?? "memory").Trim().ToLowerInvariant(),
-                active = outboundQueue.ActiveProvider
-            },
-            webhook = new
-            {
-                configured = (config["WebhookQueue:Provider"] ?? "memory").Trim().ToLowerInvariant(),
-                active = webhookQueue.ActiveProvider
-            }
-        });
-    }
 
     [HttpGet("{scope}")]
     public async Task<IActionResult> GetScope(string scope, CancellationToken ct)
@@ -465,9 +442,6 @@ public class PlatformSettingsController(
                 var equenceBaseUrl = Pick(values, "equenceBaseUrl", config["Sms:Equence:BaseUrl"], "https://api.equence.in/pushsms");
                 var equenceUsername = Pick(values, "equenceUsername", config["Sms:Equence:Username"]);
                 var equencePassword = Pick(values, "equencePassword", config["Sms:Equence:Password"]);
-                var priority = Pick(values, "equencePriority", config["Sms:Equence:Priority"], "2");
-                var expValidity = Pick(values, "equenceExpValidity", config["Sms:Equence:ExpValidity"], "60");
-                var appsPort = Pick(values, "equenceAppsPort", config["Sms:Equence:AppsPort"], "65000");
 
                 if (string.IsNullOrWhiteSpace(equenceUsername) || string.IsNullOrWhiteSpace(equencePassword))
                     return BadRequest("Equence settings missing. Require username and password.");
@@ -481,9 +455,6 @@ public class PlatformSettingsController(
                     $"to={Uri.EscapeDataString(recipient)}",
                     $"from={Uri.EscapeDataString(sender)}",
                     $"text={Uri.EscapeDataString(message)}",
-                    $"priority={Uri.EscapeDataString(priority)}",
-                    $"expValidity={Uri.EscapeDataString(expValidity)}",
-                    $"appsPort={Uri.EscapeDataString(appsPort)}",
                 };
                 url = $"{equenceBaseUrl.TrimEnd('?')}{(equenceBaseUrl.Contains('?') ? "&" : "?")}{string.Join("&", query)}";
             }

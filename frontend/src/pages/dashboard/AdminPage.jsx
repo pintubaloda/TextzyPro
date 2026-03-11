@@ -36,6 +36,7 @@ import {
   getPlatformCustomerSubscriptions,
   getPlatformCustomerUsage,
   getPlatformCustomers,
+  getPlatformSecurityReport,
   getPlatformUserTenants,
   getPlatformUsers,
   listPlatformBillingPlans,
@@ -61,6 +62,8 @@ const formatDateTime = (value) => {
   if (!value) return "-";
   return new Date(value).toLocaleString();
 };
+
+const formatStatus = (value) => String(value || "unknown").replace(/[_-]/g, " ");
 
 function KpiCard({ title, value, hint, icon: Icon, tone = "orange" }) {
   const tones = {
@@ -139,6 +142,12 @@ export default function AdminPage() {
   const [assigningPlan, setAssigningPlan] = useState(false);
   const [tenantFeatures, setTenantFeatures] = useState(DEFAULT_FEATURES);
   const [savingFeatures, setSavingFeatures] = useState(false);
+  const [ownerWorkspaceLoading, setOwnerWorkspaceLoading] = useState(false);
+  const [ownerWorkspace, setOwnerWorkspace] = useState({
+    invoices: [],
+    tenantSettings: [],
+    security: { summary: {}, loginHistory: [], sessionsByUser: [], auditEvents: [] },
+  });
   const [companySettings, setCompanySettings] = useState({
     billingEmail: "",
     billingPhone: "",
@@ -263,23 +272,138 @@ export default function AdminPage() {
       .catch(() => setUserTenantReport(null));
   }, [selectedUserId]);
 
-  const totals = useMemo(() => {
-    const tenants = customers.length;
-    const users = customers.reduce((acc, item) => acc + Number(item.users || 0), 0);
-    const activeUsers = customers.reduce((acc, item) => acc + Number(item.activeUsers || 0), 0);
-    const revenue = customers.reduce((acc, item) => acc + Number(item.totalRevenue || 0), 0);
-    const activePlans = customers.filter((item) => String(item.billingStatus || "").toLowerCase() === "active").length;
-    return { tenants, users, activeUsers, revenue, activePlans };
-  }, [customers]);
-
-  const selectedCustomer = useMemo(
-    () => customers.find((item) => item.tenantId === selectedTenantId) || null,
-    [customers, selectedTenantId],
+  const selectedOwner = useMemo(
+    () => platformUsers.find((user) => user.userId === selectedUserId) || null,
+    [platformUsers, selectedUserId],
   );
 
   const userCompanyRows = useMemo(() => {
     return (userTenantReport?.groups || []).flatMap((group) => group.companies || []);
   }, [userTenantReport]);
+
+  const ownerTenantIds = useMemo(
+    () => new Set(userCompanyRows.map((company) => company.tenantId)),
+    [userCompanyRows],
+  );
+
+  const ownerCustomers = useMemo(() => {
+    const rows = ownerTenantIds.size
+      ? customers.filter((item) => ownerTenantIds.has(item.tenantId))
+      : customers;
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((item) =>
+      [item.tenantName, item.tenantSlug, item.companyName, item.ownerEmail, item.ownerName]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q)),
+    );
+  }, [customers, ownerTenantIds, query]);
+
+  const ownerTotals = useMemo(() => {
+    const tenantRows = ownerTenantIds.size ? customers.filter((item) => ownerTenantIds.has(item.tenantId)) : [];
+    const tenants = tenantRows.length;
+    const users = tenantRows.reduce((acc, item) => acc + Number(item.users || 0), 0);
+    const activeUsers = tenantRows.reduce((acc, item) => acc + Number(item.activeUsers || 0), 0);
+    const revenue = tenantRows.reduce((acc, item) => acc + Number(item.totalRevenue || 0), 0);
+    const activePlans = tenantRows.filter((item) => {
+      const status = String(item.subscriptionStatus || item.billingStatus || "").toLowerCase();
+      return status === "active" || status === "trial" || status === "trialing";
+    }).length;
+    const invoiceCount = tenantRows.reduce((acc, item) => acc + Number(item.invoiceCount || 0), 0);
+    return { tenants, users, activeUsers, revenue, activePlans, invoiceCount };
+  }, [customers, ownerTenantIds]);
+
+  const selectedCustomer = useMemo(
+    () => ownerCustomers.find((item) => item.tenantId === selectedTenantId) || customers.find((item) => item.tenantId === selectedTenantId) || null,
+    [ownerCustomers, customers, selectedTenantId],
+  );
+
+  useEffect(() => {
+    if (!ownerCustomers.length) return;
+    const validTenant = ownerCustomers.some((item) => item.tenantId === selectedTenantId);
+    if (!validTenant) setSelectedTenantId(ownerCustomers[0].tenantId);
+  }, [ownerCustomers, selectedTenantId]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!selectedUserId || !ownerCustomers.length) {
+      setOwnerWorkspace({
+        invoices: [],
+        tenantSettings: [],
+        security: { summary: {}, loginHistory: [], sessionsByUser: [], auditEvents: [] },
+      });
+      return undefined;
+    }
+
+    (async () => {
+      try {
+        setOwnerWorkspaceLoading(true);
+        const tenantRows = await Promise.all(
+          ownerCustomers.map(async (customer) => {
+            const [invoiceRows, companyRow, featureRow] = await Promise.all([
+              getPlatformCustomerInvoices(customer.tenantId).catch(() => []),
+              getPlatformCustomerCompanySettings(customer.tenantId).catch(() => null),
+              getPlatformCustomerFeatures(customer.tenantId).catch(() => DEFAULT_FEATURES),
+            ]);
+            return {
+              customer,
+              invoices: Array.isArray(invoiceRows) ? invoiceRows : [],
+              company: companyRow,
+              features: featureRow || DEFAULT_FEATURES,
+            };
+          }),
+        );
+
+        const security = await getPlatformSecurityReport({
+          userId: selectedUserId,
+          limit: 200,
+        }).catch(() => ({ summary: {}, loginHistory: [], sessionsByUser: [], auditEvents: [] }));
+
+        if (ignore) return;
+
+        const invoices = tenantRows
+          .flatMap(({ customer, invoices: invoiceRows }) =>
+            invoiceRows.map((invoice) => ({
+              ...invoice,
+              tenantId: customer.tenantId,
+              tenantName: customer.tenantName,
+              tenantSlug: customer.tenantSlug,
+              companyName: customer.companyName,
+            })),
+          )
+          .sort((a, b) => new Date(b.createdAtUtc || 0).getTime() - new Date(a.createdAtUtc || 0).getTime());
+
+        const tenantSettings = tenantRows.map(({ customer, company, features }) => ({
+          tenantId: customer.tenantId,
+          tenantName: customer.tenantName,
+          tenantSlug: customer.tenantSlug,
+          companyName: customer.companyName,
+          planName: customer.planName || "No Plan",
+          subscriptionStatus: customer.subscriptionStatus || "none",
+          ownerGroupSmsProviderRoute: company?.ownerGroupSmsProviderRoute || "tata",
+          publicApiEnabled: company?.publicApiEnabled ?? true,
+          billingEmail: company?.billingEmail || "",
+          billingPhone: company?.billingPhone || "",
+          taxRatePercent: Number(company?.taxRatePercent ?? 18),
+          isTaxExempt: !!company?.isTaxExempt,
+          isReverseCharge: !!company?.isReverseCharge,
+          smsGatewayReportEnabled: !!features?.smsGatewayReportEnabled,
+        }));
+
+        setOwnerWorkspace({
+          invoices,
+          tenantSettings,
+          security,
+        });
+      } finally {
+        if (!ignore) setOwnerWorkspaceLoading(false);
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [ownerCustomers, selectedUserId]);
 
   const generateToken = (prefix, length) => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -287,6 +411,52 @@ export default function AdminPage() {
     for (let i = 0; i < length; i += 1) value += chars.charAt(Math.floor(Math.random() * chars.length));
     return value;
   };
+
+  const ownerBillingSummary = useMemo(() => {
+    const invoiceRows = ownerWorkspace.invoices || [];
+    const tenantSettings = ownerWorkspace.tenantSettings || [];
+    const paidTotal = invoiceRows
+      .filter((row) => String(row.status || "").toLowerCase() === "paid")
+      .reduce((acc, row) => acc + Number(row.total || 0), 0);
+    const openTotal = invoiceRows
+      .filter((row) => !["paid", "settled"].includes(String(row.status || "").toLowerCase()))
+      .reduce((acc, row) => acc + Number(row.total || 0), 0);
+    const monthlyExposure = ownerCustomers.reduce((acc, row) => acc + Number(row.monthlyPrice || 0), 0);
+    return {
+      paidTotal,
+      openTotal,
+      monthlyExposure,
+      invoices: invoiceRows.length,
+      taxExemptTenants: tenantSettings.filter((row) => row.isTaxExempt).length,
+      reverseChargeTenants: tenantSettings.filter((row) => row.isReverseCharge).length,
+    };
+  }, [ownerCustomers, ownerWorkspace.invoices, ownerWorkspace.tenantSettings]);
+
+  const ownerMessagingSummary = useMemo(() => {
+    const rows = ownerWorkspace.tenantSettings || [];
+    return {
+      tata: rows.filter((row) => row.ownerGroupSmsProviderRoute === "tata").length,
+      equence: rows.filter((row) => row.ownerGroupSmsProviderRoute === "equence").length,
+      publicApi: rows.filter((row) => row.publicApiEnabled).length,
+      smsReportEnabled: rows.filter((row) => row.smsGatewayReportEnabled).length,
+      whatsappReady: ownerCustomers.filter((row) => ["active", "trial", "trialing"].includes(String(row.subscriptionStatus || "").toLowerCase())).length,
+    };
+  }, [ownerCustomers, ownerWorkspace.tenantSettings]);
+
+  const ownerSecuritySummary = useMemo(() => {
+    const security = ownerWorkspace.security || {};
+    const loginHistory = security.loginHistory || [];
+    const auditEvents = security.auditEvents || [];
+    const activeSessions = loginHistory.filter((row) => !row.revokedAtUtc && (!row.expiresAtUtc || new Date(row.expiresAtUtc) > new Date())).length;
+    const suspiciousLogins = loginHistory.filter((row) => row.isSuspicious || row.ipPolicyStatus === "blocked" || row.ipPolicyStatus === "not_allowlisted").length;
+    const highSeverity = auditEvents.filter((row) => String(row.severity || "").toLowerCase() === "high").length;
+    return {
+      loginCount: loginHistory.length,
+      activeSessions,
+      suspiciousLogins,
+      highSeverity,
+    };
+  }, [ownerWorkspace.security]);
 
   const copyValue = async (label, value) => {
     if (!value) {
@@ -327,12 +497,59 @@ export default function AdminPage() {
         </div>
       </section>
 
+      <Card className="border-slate-200 shadow-sm">
+        <CardContent className="pt-6">
+          <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+            <div className="space-y-3">
+              <Label>Owner Workspace</Label>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger className="h-12 rounded-xl">
+                  <SelectValue placeholder="Select owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  {platformUsers.map((user) => (
+                    <SelectItem key={user.userId} value={user.userId}>
+                      {user.name} ({user.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Pick one owner and the whole page will scope to that owner’s tenants, billing, invoices, routes, and activity.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Selected Owner</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">{selectedOwner?.name || "No owner selected"}</p>
+                <p className="text-sm text-slate-500">{selectedOwner?.email || "Select an owner to load workspace"}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Owner Groups</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">{Number(userTenantReport?.ownerGroupCount || 0).toLocaleString()}</p>
+                <p className="text-sm text-slate-500">{Number(ownerTotals.tenants || 0).toLocaleString()} tenants mapped</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tenant Slug Coverage</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">{ownerCustomers.length.toLocaleString()}</p>
+                <p className="text-sm text-slate-500">Filtered workspaces for this owner</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Workspace Mode</p>
+                <p className="mt-2 text-lg font-bold text-slate-950">Owner Focus</p>
+                <p className="text-sm text-slate-500">Billing, invoices, settings and audit on one page</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-5">
-        <KpiCard title="Tenants" value={totals.tenants.toLocaleString()} hint="Customer workspaces under management" icon={Building2} />
-        <KpiCard title="Users" value={totals.users.toLocaleString()} hint={`${totals.activeUsers.toLocaleString()} active seats`} icon={Users} tone="blue" />
-        <KpiCard title="MRR" value={formatMoney(totals.revenue)} hint={`${totals.activePlans.toLocaleString()} active subscriptions`} icon={BadgeIndianRupee} tone="emerald" />
-        <KpiCard title="Plans" value={plans.length.toLocaleString()} hint="Commercial packs currently active" icon={Layers3} tone="violet" />
-        <KpiCard title="Feature Flags" value={tenantFeatures.smsGatewayReportEnabled ? "1 live" : "0 live"} hint="Selected tenant overrides" icon={ShieldCheck} tone="orange" />
+        <KpiCard title="Owner Tenants" value={ownerTotals.tenants.toLocaleString()} hint="Workspaces under selected owner" icon={Building2} />
+        <KpiCard title="Owner Seats" value={ownerTotals.users.toLocaleString()} hint={`${ownerTotals.activeUsers.toLocaleString()} active seats`} icon={Users} tone="blue" />
+        <KpiCard title="Owner Revenue" value={formatMoney(ownerTotals.revenue)} hint={`${ownerTotals.activePlans.toLocaleString()} active subscriptions`} icon={BadgeIndianRupee} tone="emerald" />
+        <KpiCard title="Invoices" value={ownerTotals.invoiceCount.toLocaleString()} hint="Invoices generated across owner tenants" icon={FileText} tone="violet" />
+        <KpiCard title="Tenant Controls" value={tenantFeatures.smsGatewayReportEnabled ? "Reports on" : "Reports off"} hint="Selected tenant overrides" icon={ShieldCheck} tone="orange" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
@@ -340,8 +557,8 @@ export default function AdminPage() {
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <CardTitle className="text-xl">Tenant Portfolio</CardTitle>
-                <CardDescription>Search and select any tenant to inspect lifecycle, billing and support posture.</CardDescription>
+                <CardTitle className="text-xl">Owner Tenant Portfolio</CardTitle>
+                <CardDescription>Select one owner above, then inspect that owner’s tenants, lifecycle, billing, and support posture from this page.</CardDescription>
               </div>
               <div className="flex w-full flex-col gap-3 md:flex-row lg:w-auto">
                 <div className="relative min-w-[260px]">
@@ -349,15 +566,12 @@ export default function AdminPage() {
                   <Input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") loadCustomers(query);
-                    }}
-                    placeholder="Search by company, slug or owner"
+                    placeholder="Search within selected owner’s tenants"
                     className="h-11 rounded-xl border-slate-300 pl-9"
                   />
                 </div>
-                <Button variant="outline" className="h-11 rounded-xl" onClick={() => loadCustomers(query)} disabled={loadingCustomers}>
-                  Search
+                <Button variant="outline" className="h-11 rounded-xl" onClick={() => loadCustomers("")} disabled={loadingCustomers}>
+                  Refresh data
                 </Button>
               </div>
             </div>
@@ -366,8 +580,8 @@ export default function AdminPage() {
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_280px]">
               <SectionTable
                 headers={["Tenant", "Owner", "Plan", "Status", "Revenue"]}
-                empty="No tenants found for the current query."
-                rows={customers.map((item) => {
+                empty="No tenants found for the selected owner."
+                rows={ownerCustomers.map((item) => {
                   const active = item.tenantId === selectedTenantId;
                   return (
                     <tr
@@ -654,97 +868,11 @@ export default function AdminPage() {
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-slate-900">Tenant Public API</p>
-                    <p className="text-xs text-slate-500">Simple tenant-scoped credentials for SMS and WhatsApp API use. Tenant slug stays explicit, but credentials are isolated per tenant.</p>
-                  </div>
-                  <Switch
-                    checked={!!companySettings.publicApiEnabled}
-                    onCheckedChange={(value) => setCompanySettings((prev) => ({ ...prev, publicApiEnabled: !!value }))}
-                    disabled={!selectedTenantId}
-                  />
+                <div>
+                  <p className="font-medium text-slate-900">Tenant Public API</p>
+                  <p className="text-xs text-slate-500">Tenant API credentials are managed from the tenant integrations page. Platform admin no longer sees or edits those secrets here.</p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Owner Group SMS Route</Label>
-                    <Select
-                      value={companySettings.ownerGroupSmsProviderRoute || "tata"}
-                      onValueChange={(value) => setCompanySettings((prev) => ({ ...prev, ownerGroupSmsProviderRoute: value }))}
-                    >
-                      <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select SMS route" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="tata">Tata</SelectItem>
-                        <SelectItem value="equence">Equence</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-slate-500">
-                      All tenants under this owner group will use the selected SMS route by default.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label>API Username</Label>
-                      <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => setCompanySettings((prev) => ({ ...prev, apiUsername: generateToken("tx_user_", 10) }))}>
-                          <RefreshCcw className="mr-2 h-4 w-4" />
-                          Generate
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => copyValue("API username", companySettings.apiUsername)}>
-                          <KeyRound className="mr-2 h-4 w-4" />
-                          Copy
-                        </Button>
-                      </div>
-                    </div>
-                    <Input
-                      value={companySettings.apiUsername}
-                      onChange={(event) => setCompanySettings((prev) => ({ ...prev, apiUsername: event.target.value }))}
-                      placeholder="tx_user_xxxx"
-                      disabled={!selectedTenantId}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label>API Password</Label>
-                      <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => setCompanySettings((prev) => ({ ...prev, apiPassword: generateToken("tx_pw_", 28) }))}>
-                          <RefreshCcw className="mr-2 h-4 w-4" />
-                          Generate
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => copyValue("API password", companySettings.apiPassword)}>
-                          <KeyRound className="mr-2 h-4 w-4" />
-                          Copy
-                        </Button>
-                      </div>
-                    </div>
-                    <Input
-                      value={companySettings.apiPassword}
-                      onChange={(event) => setCompanySettings((prev) => ({ ...prev, apiPassword: event.target.value }))}
-                      placeholder="tx_pw_xxxx"
-                      disabled={!selectedTenantId}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label>API Key</Label>
-                      <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => setCompanySettings((prev) => ({ ...prev, apiKey: generateToken("tx_live_sk_", 30) }))}>
-                          <RefreshCcw className="mr-2 h-4 w-4" />
-                          Generate
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => copyValue("API key", companySettings.apiKey)}>
-                          <KeyRound className="mr-2 h-4 w-4" />
-                          Copy
-                        </Button>
-                      </div>
-                    </div>
-                    <Input
-                      value={companySettings.apiKey}
-                      onChange={(event) => setCompanySettings((prev) => ({ ...prev, apiKey: event.target.value }))}
-                      placeholder="tx_live_sk_xxxx"
-                      disabled={!selectedTenantId}
-                    />
-                  </div>
                   <div className="space-y-2">
                     <Label>IP Whitelist</Label>
                     <Input
@@ -753,6 +881,23 @@ export default function AdminPage() {
                       placeholder="203.0.113.10, 198.51.100.0/24"
                       disabled={!selectedTenantId}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Owner Group SMS Route</Label>
+                    <Select
+                      value={companySettings.ownerGroupSmsProviderRoute || "tata"}
+                      onValueChange={(value) => setCompanySettings((prev) => ({ ...prev, ownerGroupSmsProviderRoute: value }))}
+                      disabled={!selectedTenantId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select SMS provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tata">Tata</SelectItem>
+                        <SelectItem value="equence">Equence</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-slate-500">All tenants under this owner group will use the selected SMS route by default.</p>
                   </div>
                 </div>
               </div>
@@ -795,8 +940,8 @@ export default function AdminPage() {
         <CardHeader>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <CardTitle className="text-xl">User to Company Mapping</CardTitle>
-              <CardDescription>Inspect which user belongs to which company, tenant and commercial plan.</CardDescription>
+              <CardTitle className="text-xl">Owner to Tenant Mapping</CardTitle>
+              <CardDescription>Everything below is already scoped to the selected owner. Use this section to verify owner-group mapping and company coverage.</CardDescription>
             </div>
             <div className="min-w-[280px]">
               <Select value={selectedUserId} onValueChange={setSelectedUserId}>
@@ -826,6 +971,184 @@ export default function AdminPage() {
           />
         </CardContent>
       </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle className="text-xl">Owner Billing Summary</CardTitle>
+                <CardDescription>Commercial posture for all tenants under the selected owner.</CardDescription>
+              </div>
+              <Button variant="outline" className="rounded-xl" onClick={() => window.location.assign("/dashboard/platform-settings?tab=billing-plans")}>
+                Manage plans
+                <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Collected</p>
+                <p className="mt-2 text-2xl font-bold text-slate-950">{formatMoney(ownerBillingSummary.paidTotal)}</p>
+                <p className="text-sm text-slate-500">{ownerBillingSummary.invoices.toLocaleString()} invoices total</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Open Exposure</p>
+                <p className="mt-2 text-2xl font-bold text-slate-950">{formatMoney(ownerBillingSummary.openTotal)}</p>
+                <p className="text-sm text-slate-500">Unpaid or pending invoice total</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Monthly Exposure</p>
+                <p className="mt-2 text-2xl font-bold text-slate-950">{formatMoney(ownerBillingSummary.monthlyExposure)}</p>
+                <p className="text-sm text-slate-500">Based on current monthly plan pricing</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tax Modes</p>
+                <p className="mt-2 text-2xl font-bold text-slate-950">{ownerBillingSummary.taxExemptTenants.toLocaleString()} / {ownerBillingSummary.reverseChargeTenants.toLocaleString()}</p>
+                <p className="text-sm text-slate-500">Tax-exempt / reverse-charge tenants</p>
+              </div>
+            </div>
+
+            <SectionTable
+              headers={["Invoice", "Tenant", "Date", "Amount", "Status"]}
+              empty={ownerWorkspaceLoading ? "Loading owner invoices..." : "No invoices found for this owner."}
+              rows={(ownerWorkspace.invoices || []).slice(0, 12).map((invoice) => (
+                <tr key={invoice.id} className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium text-slate-900">{invoice.invoiceNo || invoice.id}</td>
+                  <td className="px-4 py-3 text-slate-700">
+                    <div>{invoice.companyName || invoice.tenantName}</div>
+                    <div className="text-xs text-slate-500">{invoice.tenantSlug || "-"}</div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">{formatDate(invoice.createdAtUtc)}</td>
+                  <td className="px-4 py-3 text-slate-900">{formatMoney(invoice.total || 0)}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant="outline" className="capitalize">{formatStatus(invoice.status)}</Badge>
+                  </td>
+                </tr>
+              ))}
+            />
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-xl">Owner Messaging & Feature Controls</CardTitle>
+              <CardDescription>Transport routing, tenant feature access, and public API posture across this owner’s portfolio.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">SMS Route Split</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-950">{ownerMessagingSummary.tata.toLocaleString()} Tata / {ownerMessagingSummary.equence.toLocaleString()} Equence</p>
+                  <p className="text-sm text-slate-500">Owner-group routing defaults currently applied.</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Channel Access</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-950">{ownerMessagingSummary.publicApi.toLocaleString()} API / {ownerMessagingSummary.smsReportEnabled.toLocaleString()} reports</p>
+                  <p className="text-sm text-slate-500">{ownerMessagingSummary.whatsappReady.toLocaleString()} tenants have active WhatsApp billing posture.</p>
+                </div>
+              </div>
+
+              <SectionTable
+                headers={["Tenant", "Plan", "SMS Route", "Public API", "SMS Report", "Tax Mode"]}
+                empty={ownerWorkspaceLoading ? "Loading owner tenant controls..." : "No tenant settings found for this owner."}
+                rows={(ownerWorkspace.tenantSettings || []).map((row) => (
+                  <tr key={row.tenantId} className="border-t border-slate-100">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-900">{row.companyName || row.tenantName}</div>
+                      <div className="text-xs text-slate-500">{row.tenantSlug}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <div>{row.planName || "-"}</div>
+                      <div className="text-xs capitalize text-slate-500">{formatStatus(row.subscriptionStatus)}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge className={row.ownerGroupSmsProviderRoute === "equence" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}>
+                        {row.ownerGroupSmsProviderRoute === "equence" ? "Equence" : "Tata"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge className={row.publicApiEnabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}>
+                        {row.publicApiEnabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge className={row.smsGatewayReportEnabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}>
+                        {row.smsGatewayReportEnabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      {row.isTaxExempt ? "Tax exempt" : row.isReverseCharge ? "Reverse charge" : `${Number(row.taxRatePercent || 0)}% GST`}
+                    </td>
+                  </tr>
+                ))}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="text-xl">Owner Security Summary</CardTitle>
+                  <CardDescription>Authentication and audit posture for the selected owner account.</CardDescription>
+                </div>
+                <Button variant="outline" className="rounded-xl" onClick={() => window.location.assign("/dashboard/platform-security-report")}>
+                  Security report
+                  <ArrowUpRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Logins</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-950">{ownerSecuritySummary.loginCount.toLocaleString()}</p>
+                  <p className="text-sm text-slate-500">Tracked login rows for this owner</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Active Sessions</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-950">{ownerSecuritySummary.activeSessions.toLocaleString()}</p>
+                  <p className="text-sm text-slate-500">Non-revoked live sessions</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Suspicious</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-950">{ownerSecuritySummary.suspiciousLogins.toLocaleString()}</p>
+                  <p className="text-sm text-slate-500">Suspicious or blocked login posture</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">High Severity</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-950">{ownerSecuritySummary.highSeverity.toLocaleString()}</p>
+                  <p className="text-sm text-slate-500">High-severity audit events</p>
+                </div>
+              </div>
+
+              <SectionTable
+                headers={["Time", "Action", "Tenant", "Severity", "IP / Device"]}
+                empty={ownerWorkspaceLoading ? "Loading owner security activity..." : "No security activity found for this owner."}
+                rows={(ownerWorkspace.security?.auditEvents || []).slice(0, 10).map((event) => (
+                  <tr key={event.id} className="border-t border-slate-100">
+                    <td className="px-4 py-3 text-slate-700">{formatDateTime(event.createdAtUtc)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{event.action || "-"}</td>
+                    <td className="px-4 py-3 text-slate-700">{event.tenantSlug || event.tenantId || "-"}</td>
+                    <td className="px-4 py-3">
+                      <Badge className={String(event.severity || "").toLowerCase() === "high" ? "bg-rose-100 text-rose-700" : String(event.severity || "").toLowerCase() === "medium" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-700"}>
+                        {formatStatus(event.severity || "low")}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <div>{event.ipAddress || "-"}</div>
+                      <div className="text-xs text-slate-500">{event.deviceLabel || event.userAgent || "No device data"}</div>
+                    </td>
+                  </tr>
+                ))}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       <Card className="border-slate-200 shadow-sm">
         <CardHeader>

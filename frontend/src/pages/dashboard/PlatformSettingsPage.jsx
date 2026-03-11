@@ -170,9 +170,6 @@ const PlatformSettingsPage = () => {
     equenceBaseUrl: "https://api.equence.in/pushsms",
     equenceUsername: "",
     equencePassword: "",
-    equencePriority: "2",
-    equenceExpValidity: "60",
-    equenceAppsPort: "65000",
     defaultSenderAddress: "",
     defaultPeId: "",
     defaultTemplateId: "",
@@ -318,6 +315,7 @@ const PlatformSettingsPage = () => {
     }).catch(() => []);
     setSmsGatewayLogs(rows || []);
   };
+
   const saveMobileAppSettings = async () => {
     await savePlatformSettings("mobile-app", {
       appName: appConfig.appName || "",
@@ -531,9 +529,6 @@ const PlatformSettingsPage = () => {
             equenceBaseUrl: values.equenceBaseUrl || prev.equenceBaseUrl,
             equenceUsername: values.equenceUsername || "",
             equencePassword: values.equencePassword || "",
-            equencePriority: values.equencePriority || "2",
-            equenceExpValidity: values.equenceExpValidity || "60",
-            equenceAppsPort: values.equenceAppsPort || "65000",
             defaultSenderAddress: values.defaultSenderAddress || "",
             defaultPeId: values.defaultPeId || "",
             defaultTemplateId: values.defaultTemplateId || "",
@@ -1676,7 +1671,7 @@ const PlatformSettingsPage = () => {
           <CardHeader>
             <CardTitle>Professional SMS Gateway Setup</CardTitle>
             <CardDescription>
-              Manage Tata and Equence with DLT-safe defaults. Owner-group routing can override the platform default provider automatically.
+              Platform-wide transport config for Tata and Equence. Tenant sender/entity/template mappings still override platform defaults automatically.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
@@ -1742,21 +1737,9 @@ const PlatformSettingsPage = () => {
               <Label>Timeout (ms)</Label>
               <Input value={smsGateway.timeoutMs} onChange={(e) => setSmsGateway((p) => ({ ...p, timeoutMs: e.target.value }))} />
             </div>
-            <div className="space-y-2">
-              <Label>Equence Priority</Label>
-              <Input value={smsGateway.equencePriority} onChange={(e) => setSmsGateway((p) => ({ ...p, equencePriority: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Equence expValidity</Label>
-              <Input value={smsGateway.equenceExpValidity} onChange={(e) => setSmsGateway((p) => ({ ...p, equenceExpValidity: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Equence appsPort</Label>
-              <Input value={smsGateway.equenceAppsPort} onChange={(e) => setSmsGateway((p) => ({ ...p, equenceAppsPort: e.target.value }))} />
-            </div>
-            <div className="md:col-span-2 flex gap-2">
-              <Button
-                className="bg-orange-500 hover:bg-orange-600"
+              <div className="md:col-span-2 flex gap-2">
+                <Button
+                  className="bg-orange-500 hover:bg-orange-600"
                 disabled={loading}
                 onClick={async () => {
                   try {
@@ -1769,9 +1752,6 @@ const PlatformSettingsPage = () => {
                       equenceBaseUrl: smsGateway.equenceBaseUrl || "",
                       equenceUsername: smsGateway.equenceUsername || "",
                       equencePassword: smsGateway.equencePassword || "",
-                      equencePriority: smsGateway.equencePriority || "2",
-                      equenceExpValidity: smsGateway.equenceExpValidity || "60",
-                      equenceAppsPort: smsGateway.equenceAppsPort || "65000",
                       defaultSenderAddress: smsGateway.defaultSenderAddress || "",
                       defaultPeId: smsGateway.defaultPeId || "",
                       defaultTemplateId: smsGateway.defaultTemplateId || "",
