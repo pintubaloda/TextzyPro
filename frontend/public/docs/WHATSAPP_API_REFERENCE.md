@@ -1,7 +1,7 @@
-# Textzy WhatsApp API Reference
+﻿# Textzy WhatsApp API Reference
 
 Base URL:
-- `https://textzy-backend-production.up.railway.app`
+- `https://api.textzy.in`
 
 ## 1. Public WhatsApp API
 
@@ -17,7 +17,7 @@ Channel value:
 ## 2. GET Example
 
 ```text
-GET https://textzy-backend-production.up.railway.app/api/public/messages/send
+GET https://api.textzy.in/api/public/messages/send
   ?recipient=919999999999
   &msg=Hello from Textzy WhatsApp API
   &user=MONEYART
@@ -194,3 +194,5 @@ Endpoints:
 - richer features such as templates, interactive buttons, flows, media, and inbox actions use authenticated tenant APIs
 - session messaging is subject to WhatsApp conversation-window rules
 - approved templates should be used when a session message is not allowed
+
+

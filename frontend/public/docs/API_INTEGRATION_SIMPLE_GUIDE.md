@@ -6,3 +6,4 @@ Use the dedicated references below.
 - WhatsApp API: `WHATSAPP_API_REFERENCE.md`
 
 Open the HTML views from `/docs/index.html` for a formatted in-browser reading experience.
+

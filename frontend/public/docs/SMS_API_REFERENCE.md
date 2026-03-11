@@ -1,7 +1,7 @@
-# Textzy SMS API Reference
+﻿# Textzy SMS API Reference
 
 Base URL:
-- `https://textzy-backend-production.up.railway.app`
+- `https://api.textzy.in`
 
 ## 1. Public SMS API
 
@@ -14,7 +14,7 @@ Endpoints:
 ## 2. GET Example
 
 ```text
-GET https://textzy-backend-production.up.railway.app/api/public/messages/send
+GET https://api.textzy.in/api/public/messages/send
   ?recipient=919999999999
   &msg=Your approved DLT message text
   &user=MONEYART
@@ -143,3 +143,5 @@ Tenant SMS reports and delivery ledgers show message progress such as:
 - Unicode / regional:
   - `1-70` characters = 1 SMS
   - multipart uses `67` characters per segment
+
+
