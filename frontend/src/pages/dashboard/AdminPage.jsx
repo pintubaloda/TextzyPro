@@ -36,7 +36,7 @@ import {
   getPlatformCustomerSubscriptions,
   getPlatformCustomerUsage,
   getPlatformCustomers,
-  getPlatformOwners,
+  getPlatformUsers,
   getPlatformSecurityReport,
   getPlatformUserTenants,
   listPlatformBillingPlans,
@@ -183,12 +183,12 @@ export default function AdminPage() {
   const loadOwners = useCallback(async () => {
     try {
       setLoadingCustomers(true);
-      const data = await getPlatformOwners("");
+      const data = await getPlatformUsers("", false);
       const rows = Array.isArray(data) ? data : [];
       setPlatformUsers(rows);
       setSelectedUserId((prev) => (prev && rows.some((user) => user.userId === prev) ? prev : ""));
     } catch (error) {
-      toast.error(error?.message || "Failed to load tenant owners");
+      toast.error(error?.message || "Failed to load platform users");
       setPlatformUsers([]);
     } finally {
       setLoadingCustomers(false);
