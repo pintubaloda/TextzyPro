@@ -12,6 +12,10 @@ public class SupportTicket
     public string CompanyName { get; set; } = string.Empty;
     public string CreatedByName { get; set; } = string.Empty;
     public string CreatedByEmail { get; set; } = string.Empty;
+    public string RequesterName { get; set; } = string.Empty;
+    public string RequesterEmail { get; set; } = string.Empty;
+    public string RequesterPhone { get; set; } = string.Empty;
+    public string RequesterPhoneNormalized { get; set; } = string.Empty;
     public string ServiceKey { get; set; } = string.Empty;
     public string ServiceName { get; set; } = string.Empty;
     public string Subject { get; set; } = string.Empty;

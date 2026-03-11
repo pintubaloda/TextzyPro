@@ -331,7 +331,7 @@ export default function PlatformSupportDeskPage() {
                     </div>
                     <p className="mt-2 font-medium text-slate-900">{row.subject}</p>
                     <p className="mt-1 text-sm text-slate-500">{row.companyName} â€¢ {row.serviceName}</p>
-                    <p className="mt-1 text-xs text-slate-400">{row.createdByName} â€¢ {row.createdByEmail}</p>
+                    <p className="mt-1 text-xs text-slate-400">{row.requesterName || row.createdByName}{row.requesterPhone ? ` • ${row.requesterPhone}` : ""}</p>`r`n                    <p className="mt-1 text-xs text-slate-400">{row.requesterEmail || row.createdByEmail}</p>
                     <p className="mt-3 text-sm text-slate-600 line-clamp-2">{row.lastMessagePreview || "No preview available"}</p>
                   </div>
                   <div className="text-right text-xs text-slate-500">
@@ -380,8 +380,7 @@ export default function PlatformSupportDeskPage() {
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Requester</p>
-                    <p className="mt-2 font-semibold text-slate-950">{selectedTicket.createdByName}</p>
-                    <p className="mt-1 text-xs text-slate-500">{selectedTicket.createdByEmail}</p>
+                    <p className="mt-2 font-semibold text-slate-950">{selectedTicket.requesterName || selectedTicket.createdByName}</p>`r`n                    <p className="mt-1 text-xs text-slate-500">{selectedTicket.requesterEmail || selectedTicket.createdByEmail}</p>`r`n                    <p className="mt-1 text-xs text-slate-500">{selectedTicket.requesterPhone || "Mobile not provided"}</p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Status</p>
@@ -419,6 +418,50 @@ export default function PlatformSupportDeskPage() {
                     })}
                   </div>
                 </ScrollArea>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">Previous tickets from this requester</p>
+                      <p className="text-xs text-slate-500">Matches by requester email or mobile number.</p>
+                    </div>
+                    <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">
+                      {Array.isArray(detail?.relatedTickets) ? detail.relatedTickets.length : 0}
+                    </Badge>
+                  </div>
+                  {!Array.isArray(detail?.relatedTickets) || detail.relatedTickets.length === 0 ? (
+                    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                      No previous tickets found for this requester yet.
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {detail.relatedTickets.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setSelectedId(item.id)}
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:border-orange-200 hover:bg-orange-50/40"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-950">{item.ticketNo}</p>
+                              <p className="mt-1 text-sm text-slate-700">{item.subject}</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {item.requesterName}
+                                {item.requesterPhone ? ` • ${item.requesterPhone}` : ""}
+                                {item.tenantName ? ` • ${item.tenantName}` : ""}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <Badge className={statusTone(item.status)}>{item.status.replaceAll("_", " ")}</Badge>
+                              <p className="mt-2 text-xs text-slate-500">{fmtDateTime(item.lastMessageAtUtc)}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <Label>Reply as platform owner</Label>
@@ -477,3 +520,6 @@ export default function PlatformSupportDeskPage() {
     </div>
   );
 }
+
+
+

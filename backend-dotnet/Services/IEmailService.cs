@@ -30,4 +30,15 @@ public interface IEmailService
         Dictionary<string, string>? details = null,
         CancellationToken ct = default,
         IReadOnlyCollection<EmailAttachment>? attachments = null);
+
+    Task SendSupportTicketEventAsync(
+        string toEmail,
+        string displayName,
+        string companyName,
+        string ticketNo,
+        string subject,
+        string eventTitle,
+        string eventDescription,
+        Dictionary<string, string>? details = null,
+        CancellationToken ct = default);
 }

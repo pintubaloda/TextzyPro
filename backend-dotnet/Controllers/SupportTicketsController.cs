@@ -13,7 +13,9 @@ public class SupportTicketsController(
     AuthContext auth,
     TenancyContext tenancy,
     SecretCryptoService crypto,
-    AuditLogService audit) : ControllerBase
+    AuditLogService audit,
+    IEmailService emailService,
+    ILogger<SupportTicketsController> logger) : ControllerBase
 {
     [HttpGet("context")]
     public async Task<IActionResult> GetContext(CancellationToken ct)
@@ -130,7 +132,8 @@ public class SupportTicketsController(
                 x.ServiceName.ToLower().Contains(search) ||
                 x.CompanyName.ToLower().Contains(search) ||
                 x.CreatedByName.ToLower().Contains(search) ||
-                x.CreatedByEmail.ToLower().Contains(search));
+                x.CreatedByEmail.ToLower().Contains(search) ||
+                x.RequesterPhone.Contains(search));
         }
 
         var totalCount = await baseQuery.CountAsync(ct);
@@ -161,6 +164,9 @@ public class SupportTicketsController(
                 ticket.TenantSlug,
                 ticket.CreatedByName,
                 ticket.CreatedByEmail,
+                ticket.RequesterName,
+                ticket.RequesterEmail,
+                ticket.RequesterPhone,
                 ticket.LastMessagePreview,
                 ticket.LastActorType,
                 ticket.LastMessageAtUtc,
@@ -207,6 +213,9 @@ public class SupportTicketsController(
                 tenantSlug = x.TenantSlug,
                 createdByName = x.CreatedByName,
                 createdByEmail = x.CreatedByEmail,
+                requesterName = string.IsNullOrWhiteSpace(x.RequesterName) ? x.CreatedByName : x.RequesterName,
+                requesterEmail = string.IsNullOrWhiteSpace(x.RequesterEmail) ? x.CreatedByEmail : x.RequesterEmail,
+                requesterPhone = x.RequesterPhone,
                 lastMessagePreview = x.LastMessagePreview,
                 lastActorType = x.LastActorType,
                 lastMessageAtUtc = x.LastMessageAtUtc,
@@ -233,7 +242,8 @@ public class SupportTicketsController(
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
 
-        return Ok(MapDetail(ticket, messages));
+        var relatedTickets = await LoadRelatedTicketsAsync(ticket, true, ct);
+        return Ok(MapDetail(ticket, messages, relatedTickets));
     }
 
     [HttpPost("tickets")]
@@ -272,6 +282,10 @@ public class SupportTicketsController(
             CompanyName = string.IsNullOrWhiteSpace(company?.CompanyName) ? tenant.Name : company.CompanyName,
             CreatedByName = string.IsNullOrWhiteSpace(auth.FullName) ? auth.Email : auth.FullName,
             CreatedByEmail = auth.Email,
+            RequesterName = string.IsNullOrWhiteSpace(auth.FullName) ? auth.Email : auth.FullName,
+            RequesterEmail = auth.Email,
+            RequesterPhone = string.Empty,
+            RequesterPhoneNormalized = string.Empty,
             ServiceKey = NormalizeServiceKey(request.ServiceKey, serviceName),
             ServiceName = serviceName,
             Subject = subject,
@@ -300,8 +314,19 @@ public class SupportTicketsController(
         db.SupportTicketMessages.Add(message);
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync("support.ticket.created", $"ticket={ticket.TicketNo}; service={ticket.ServiceKey}", ct);
+        await TrySendSupportEmailAsync(
+            ticket,
+            "Ticket created",
+            "Your support request has been created successfully. Reply on this thread whenever you need to add more context.",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Service"] = ticket.ServiceName,
+                ["Priority"] = ticket.Priority,
+                ["Status"] = "Open"
+            },
+            ct);
 
-        return Ok(MapDetail(ticket, new[] { message }));
+        return Ok(MapDetail(ticket, new[] { message }, Array.Empty<object>()));
     }
 
     [HttpPost("tickets/{ticketId:guid}/reply")]
@@ -346,12 +371,24 @@ public class SupportTicketsController(
         ticket.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync("support.ticket.reply", $"ticket={ticket.TicketNo}", ct);
+        await TrySendSupportEmailAsync(
+            ticket,
+            "Ticket updated",
+            "A new message has been added to your support ticket.",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Service"] = ticket.ServiceName,
+                ["Status"] = "Open",
+                ["Latest message"] = SupportTicketCatalog.BuildPreview(body)
+            },
+            ct);
 
         var messages = await db.SupportTicketMessages.AsNoTracking()
             .Where(x => x.TicketId == ticket.Id)
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
-        return Ok(MapDetail(ticket, messages));
+        var relatedTickets = await LoadRelatedTicketsAsync(ticket, true, ct);
+        return Ok(MapDetail(ticket, messages, relatedTickets));
     }
 
     [HttpPost("tickets/{ticketId:guid}/reopen")]
@@ -395,15 +432,77 @@ public class SupportTicketsController(
 
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync("support.ticket.reopen", $"ticket={ticket.TicketNo}", ct);
+        await TrySendSupportEmailAsync(
+            ticket,
+            "Ticket reopened",
+            "Your support ticket has been reopened and moved back into the active queue.",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Service"] = ticket.ServiceName,
+                ["Status"] = "Open",
+                ["Updated"] = now.ToLocalTime().ToString("g")
+            },
+            ct);
 
         var messages = await db.SupportTicketMessages.AsNoTracking()
             .Where(x => x.TicketId == ticket.Id)
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
-        return Ok(MapDetail(ticket, messages));
+        var relatedTickets = await LoadRelatedTicketsAsync(ticket, true, ct);
+        return Ok(MapDetail(ticket, messages, relatedTickets));
     }
 
-    private static object MapDetail(SupportTicket ticket, IReadOnlyList<SupportTicketMessage> messages)
+    private async Task<IReadOnlyList<object>> LoadRelatedTicketsAsync(SupportTicket ticket, bool tenantScoped, CancellationToken ct)
+    {
+        var requesterEmail = string.IsNullOrWhiteSpace(ticket.RequesterEmail) ? ticket.CreatedByEmail : ticket.RequesterEmail;
+        var requesterPhone = ticket.RequesterPhoneNormalized;
+        if (string.IsNullOrWhiteSpace(requesterEmail) && string.IsNullOrWhiteSpace(requesterPhone))
+            return Array.Empty<object>();
+
+        var query = db.SupportTickets.AsNoTracking().Where(x => x.Id != ticket.Id);
+        if (tenantScoped)
+            query = query.Where(x => x.TenantId == ticket.TenantId);
+
+        if (!string.IsNullOrWhiteSpace(requesterEmail) && !string.IsNullOrWhiteSpace(requesterPhone))
+        {
+            query = query.Where(x =>
+                x.RequesterEmail.ToLower() == requesterEmail.ToLower() ||
+                x.CreatedByEmail.ToLower() == requesterEmail.ToLower() ||
+                x.RequesterPhoneNormalized == requesterPhone);
+        }
+        else if (!string.IsNullOrWhiteSpace(requesterEmail))
+        {
+            query = query.Where(x =>
+                x.RequesterEmail.ToLower() == requesterEmail.ToLower() ||
+                x.CreatedByEmail.ToLower() == requesterEmail.ToLower());
+        }
+        else
+        {
+            query = query.Where(x => x.RequesterPhoneNormalized == requesterPhone);
+        }
+
+        var items = await query
+            .OrderByDescending(x => x.LastMessageAtUtc)
+            .Take(8)
+            .Select(x => new
+            {
+                id = x.Id,
+                ticketNo = x.TicketNo,
+                subject = x.Subject,
+                status = x.Status,
+                serviceName = x.ServiceName,
+                tenantName = x.TenantName,
+                tenantSlug = x.TenantSlug,
+                requesterName = string.IsNullOrWhiteSpace(x.RequesterName) ? x.CreatedByName : x.RequesterName,
+                requesterPhone = x.RequesterPhone,
+                lastMessageAtUtc = x.LastMessageAtUtc
+            })
+            .ToListAsync(ct);
+
+        return items.Cast<object>().ToList();
+    }
+
+    private static object MapDetail(SupportTicket ticket, IReadOnlyList<SupportTicketMessage> messages, IReadOnlyList<object> relatedTickets)
     {
         return new
         {
@@ -418,6 +517,9 @@ public class SupportTicketsController(
                 createdByUserId = ticket.CreatedByUserId,
                 createdByName = ticket.CreatedByName,
                 createdByEmail = ticket.CreatedByEmail,
+                requesterName = string.IsNullOrWhiteSpace(ticket.RequesterName) ? ticket.CreatedByName : ticket.RequesterName,
+                requesterEmail = string.IsNullOrWhiteSpace(ticket.RequesterEmail) ? ticket.CreatedByEmail : ticket.RequesterEmail,
+                requesterPhone = ticket.RequesterPhone,
                 serviceKey = ticket.ServiceKey,
                 serviceName = ticket.ServiceName,
                 subject = ticket.Subject,
@@ -443,8 +545,38 @@ public class SupportTicketsController(
                 authorType = x.AuthorType,
                 body = x.Body,
                 createdAtUtc = x.CreatedAtUtc
-            })
+            }),
+            relatedTickets
         };
+    }
+
+    private async Task TrySendSupportEmailAsync(
+        SupportTicket ticket,
+        string title,
+        string description,
+        Dictionary<string, string> details,
+        CancellationToken ct)
+    {
+        var recipientEmail = string.IsNullOrWhiteSpace(ticket.RequesterEmail) ? ticket.CreatedByEmail : ticket.RequesterEmail;
+        var recipientName = string.IsNullOrWhiteSpace(ticket.RequesterName) ? ticket.CreatedByName : ticket.RequesterName;
+        if (string.IsNullOrWhiteSpace(recipientEmail)) return;
+        try
+        {
+            await emailService.SendSupportTicketEventAsync(
+                recipientEmail,
+                recipientName,
+                ticket.CompanyName,
+                ticket.TicketNo,
+                ticket.Subject,
+                title,
+                description,
+                details,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send support ticket email for ticket {TicketNo}", ticket.TicketNo);
+        }
     }
 
     private static string? FirstNonEmpty(Dictionary<string, string> values, params string[] keys)

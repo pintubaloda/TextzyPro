@@ -13,7 +13,9 @@ public class PlatformSupportTicketsController(
     ControlDbContext db,
     AuthContext auth,
     RbacService rbac,
-    AuditLogService audit) : ControllerBase
+    AuditLogService audit,
+    IEmailService emailService,
+    ILogger<PlatformSupportTicketsController> logger) : ControllerBase
 {
     [HttpGet("tickets")]
     public async Task<IActionResult> List(
@@ -55,7 +57,8 @@ public class PlatformSupportTicketsController(
                 x.TenantName.ToLower().Contains(search) ||
                 x.TenantSlug.ToLower().Contains(search) ||
                 x.CreatedByName.ToLower().Contains(search) ||
-                x.CreatedByEmail.ToLower().Contains(search));
+                x.CreatedByEmail.ToLower().Contains(search) ||
+                x.RequesterPhone.Contains(search));
         }
 
         var totalCount = await baseQuery.CountAsync(ct);
@@ -81,6 +84,9 @@ public class PlatformSupportTicketsController(
                 ticket.CompanyName,
                 ticket.CreatedByName,
                 ticket.CreatedByEmail,
+                ticket.RequesterName,
+                ticket.RequesterEmail,
+                ticket.RequesterPhone,
                 ticket.ServiceKey,
                 ticket.ServiceName,
                 ticket.Subject,
@@ -146,6 +152,9 @@ public class PlatformSupportTicketsController(
                 companyName = x.CompanyName,
                 createdByName = x.CreatedByName,
                 createdByEmail = x.CreatedByEmail,
+                requesterName = string.IsNullOrWhiteSpace(x.RequesterName) ? x.CreatedByName : x.RequesterName,
+                requesterEmail = string.IsNullOrWhiteSpace(x.RequesterEmail) ? x.CreatedByEmail : x.RequesterEmail,
+                requesterPhone = x.RequesterPhone,
                 serviceKey = x.ServiceKey,
                 serviceName = x.ServiceName,
                 subject = x.Subject,
@@ -173,6 +182,7 @@ public class PlatformSupportTicketsController(
             .Where(x => x.TicketId == ticketId)
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
+        var relatedTickets = await LoadRelatedTicketsAsync(ticket, ct);
 
         return Ok(new
         {
@@ -186,6 +196,9 @@ public class PlatformSupportTicketsController(
                 companyName = ticket.CompanyName,
                 createdByName = ticket.CreatedByName,
                 createdByEmail = ticket.CreatedByEmail,
+                requesterName = string.IsNullOrWhiteSpace(ticket.RequesterName) ? ticket.CreatedByName : ticket.RequesterName,
+                requesterEmail = string.IsNullOrWhiteSpace(ticket.RequesterEmail) ? ticket.CreatedByEmail : ticket.RequesterEmail,
+                requesterPhone = ticket.RequesterPhone,
                 serviceKey = ticket.ServiceKey,
                 serviceName = ticket.ServiceName,
                 subject = ticket.Subject,
@@ -208,7 +221,8 @@ public class PlatformSupportTicketsController(
                 authorType = x.AuthorType,
                 body = x.Body,
                 createdAtUtc = x.CreatedAtUtc
-            })
+            }),
+            relatedTickets
         });
     }
 
@@ -254,11 +268,23 @@ public class PlatformSupportTicketsController(
         ticket.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync("platform.support.ticket.reply", $"ticket={ticket.TicketNo}", ct);
+        await TrySendSupportEmailAsync(
+            ticket,
+            "Platform replied",
+            "Your support ticket has a new reply from the Textzy support team.",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Service"] = ticket.ServiceName,
+                ["Status"] = "Waiting on customer",
+                ["Latest reply"] = SupportTicketCatalog.BuildPreview(body)
+            },
+            ct);
 
         var messages = await db.SupportTicketMessages.AsNoTracking()
             .Where(x => x.TicketId == ticket.Id)
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
+        var relatedTickets = await LoadRelatedTicketsAsync(ticket, ct);
         return Ok(new
         {
             ticket = new
@@ -277,7 +303,8 @@ public class PlatformSupportTicketsController(
                 authorType = x.AuthorType,
                 body = x.Body,
                 createdAtUtc = x.CreatedAtUtc
-            })
+            }),
+            relatedTickets
         });
     }
 
@@ -337,6 +364,23 @@ public class PlatformSupportTicketsController(
 
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync("platform.support.ticket.status", $"ticket={ticket.TicketNo}; status={nextStatus}", ct);
+        await TrySendSupportEmailAsync(
+            ticket,
+            nextStatus == "closed" ? "Ticket closed" : nextStatus == "open" ? "Ticket reopened" : "Ticket status updated",
+            nextStatus switch
+            {
+                "closed" => "Your support ticket has been marked as closed by the Textzy support team.",
+                "open" => "Your support ticket has been reopened and moved back into the active queue.",
+                "waiting_on_customer" => "Your support ticket is waiting on your response.",
+                _ => "Your support ticket status has changed."
+            },
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Service"] = ticket.ServiceName,
+                ["Status"] = ticket.Status.Replace("_", " "),
+                ["Updated"] = now.ToLocalTime().ToString("g")
+            },
+            ct);
         return Ok(new
         {
             id = ticket.Id,
@@ -346,6 +390,81 @@ public class PlatformSupportTicketsController(
             reopenedAtUtc = ticket.ReopenedAtUtc,
             updatedAtUtc = ticket.UpdatedAtUtc
         });
+    }
+
+    private async Task<IReadOnlyList<object>> LoadRelatedTicketsAsync(SupportTicket ticket, CancellationToken ct)
+    {
+        var requesterEmail = string.IsNullOrWhiteSpace(ticket.RequesterEmail) ? ticket.CreatedByEmail : ticket.RequesterEmail;
+        var requesterPhone = ticket.RequesterPhoneNormalized;
+        if (string.IsNullOrWhiteSpace(requesterEmail) && string.IsNullOrWhiteSpace(requesterPhone))
+            return Array.Empty<object>();
+
+        var query = db.SupportTickets.AsNoTracking().Where(x => x.Id != ticket.Id);
+        if (!string.IsNullOrWhiteSpace(requesterEmail) && !string.IsNullOrWhiteSpace(requesterPhone))
+        {
+            query = query.Where(x =>
+                x.RequesterEmail.ToLower() == requesterEmail.ToLower() ||
+                x.CreatedByEmail.ToLower() == requesterEmail.ToLower() ||
+                x.RequesterPhoneNormalized == requesterPhone);
+        }
+        else if (!string.IsNullOrWhiteSpace(requesterEmail))
+        {
+            query = query.Where(x =>
+                x.RequesterEmail.ToLower() == requesterEmail.ToLower() ||
+                x.CreatedByEmail.ToLower() == requesterEmail.ToLower());
+        }
+        else
+        {
+            query = query.Where(x => x.RequesterPhoneNormalized == requesterPhone);
+        }
+
+        var items = await query
+            .OrderByDescending(x => x.LastMessageAtUtc)
+            .Take(8)
+            .Select(x => new
+            {
+                id = x.Id,
+                ticketNo = x.TicketNo,
+                subject = x.Subject,
+                status = x.Status,
+                serviceName = x.ServiceName,
+                tenantName = x.TenantName,
+                tenantSlug = x.TenantSlug,
+                requesterName = string.IsNullOrWhiteSpace(x.RequesterName) ? x.CreatedByName : x.RequesterName,
+                requesterPhone = x.RequesterPhone,
+                lastMessageAtUtc = x.LastMessageAtUtc
+            })
+            .ToListAsync(ct);
+        return items.Cast<object>().ToList();
+    }
+
+    private async Task TrySendSupportEmailAsync(
+        SupportTicket ticket,
+        string title,
+        string description,
+        Dictionary<string, string> details,
+        CancellationToken ct)
+    {
+        var recipientEmail = string.IsNullOrWhiteSpace(ticket.RequesterEmail) ? ticket.CreatedByEmail : ticket.RequesterEmail;
+        var recipientName = string.IsNullOrWhiteSpace(ticket.RequesterName) ? ticket.CreatedByName : ticket.RequesterName;
+        if (string.IsNullOrWhiteSpace(recipientEmail)) return;
+        try
+        {
+            await emailService.SendSupportTicketEventAsync(
+                recipientEmail,
+                recipientName,
+                ticket.CompanyName,
+                ticket.TicketNo,
+                ticket.Subject,
+                title,
+                description,
+                details,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send platform support email for ticket {TicketNo}", ticket.TicketNo);
+        }
     }
 
     public sealed class ReplyRequest

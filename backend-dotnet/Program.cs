@@ -540,6 +540,10 @@ static void EnsureControlAuthSchema(ControlDbContext db)
             "CompanyName" text NOT NULL DEFAULT '',
             "CreatedByName" text NOT NULL DEFAULT '',
             "CreatedByEmail" text NOT NULL DEFAULT '',
+            "RequesterName" text NOT NULL DEFAULT '',
+            "RequesterEmail" text NOT NULL DEFAULT '',
+            "RequesterPhone" text NOT NULL DEFAULT '',
+            "RequesterPhoneNormalized" text NOT NULL DEFAULT '',
             "ServiceKey" text NOT NULL DEFAULT '',
             "ServiceName" text NOT NULL DEFAULT '',
             "Subject" text NOT NULL DEFAULT '',
@@ -556,10 +560,18 @@ static void EnsureControlAuthSchema(ControlDbContext db)
             "UpdatedAtUtc" timestamp with time zone NOT NULL DEFAULT now()
         );
         """);
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "SupportTickets" ADD COLUMN IF NOT EXISTS "RequesterName" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "SupportTickets" ADD COLUMN IF NOT EXISTS "RequesterEmail" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "SupportTickets" ADD COLUMN IF NOT EXISTS "RequesterPhone" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "SupportTickets" ADD COLUMN IF NOT EXISTS "RequesterPhoneNormalized" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""UPDATE "SupportTickets" SET "RequesterName" = "CreatedByName" WHERE COALESCE("RequesterName",'') = '' AND COALESCE("CreatedByName",'') <> '';""");
+    db.Database.ExecuteSqlRaw("""UPDATE "SupportTickets" SET "RequesterEmail" = "CreatedByEmail" WHERE COALESCE("RequesterEmail",'') = '' AND COALESCE("CreatedByEmail",'') <> '';""");
     db.Database.ExecuteSqlRaw("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_SupportTickets_TicketNo" ON "SupportTickets" ("TicketNo");""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_SupportTickets_Tenant_Status_LastMessageAtUtc" ON "SupportTickets" ("TenantId","Status","LastMessageAtUtc" DESC);""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_SupportTickets_Status_LastMessageAtUtc" ON "SupportTickets" ("Status","LastMessageAtUtc" DESC);""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_SupportTickets_ServiceKey" ON "SupportTickets" ("ServiceKey");""");
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_SupportTickets_RequesterEmail" ON "SupportTickets" ("RequesterEmail");""");
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_SupportTickets_RequesterPhoneNormalized" ON "SupportTickets" ("RequesterPhoneNormalized");""");
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "SupportTicketMessages" (
             "Id" uuid PRIMARY KEY,

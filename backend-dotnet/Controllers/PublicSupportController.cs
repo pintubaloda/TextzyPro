@@ -9,7 +9,9 @@ namespace Textzy.Api.Controllers;
 [Route("api/public")]
 public class PublicSupportController(
     ControlDbContext db,
-    AuditLogService audit) : ControllerBase
+    AuditLogService audit,
+    IEmailService emailService,
+    ILogger<PublicSupportController> logger) : ControllerBase
 {
     [HttpPost("contact")]
     public async Task<IActionResult> Create([FromBody] PublicContactRequest request, CancellationToken ct)
@@ -31,6 +33,7 @@ public class PublicSupportController(
         }
 
         var now = DateTime.UtcNow;
+        var normalizedPhone = NormalizePhone(phone);
         var subject = string.IsNullOrWhiteSpace(request.Subject)
             ? "Contact request"
             : request.Subject.Trim();
@@ -48,6 +51,10 @@ public class PublicSupportController(
             CompanyName = string.IsNullOrWhiteSpace(request.Company) ? "Public" : request.Company.Trim(),
             CreatedByName = name,
             CreatedByEmail = email,
+            RequesterName = name,
+            RequesterEmail = email,
+            RequesterPhone = phone,
+            RequesterPhoneNormalized = normalizedPhone,
             ServiceKey = "public_contact",
             ServiceName = "Public Contact",
             Subject = subject,
@@ -77,8 +84,53 @@ public class PublicSupportController(
         db.SupportTicketMessages.Add(messageRow);
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync("support.ticket.public_created", $"ticket={ticket.TicketNo}; email={email}", ct);
+        await TrySendSupportEmailAsync(
+            ticket,
+            "Ticket created",
+            "Your support request has been received. Our team will update you on this ticket by email.",
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Service"] = ticket.ServiceName,
+                ["Status"] = "Open",
+                ["Requester"] = ticket.RequesterName,
+                ["Mobile"] = string.IsNullOrWhiteSpace(ticket.RequesterPhone) ? "Not provided" : ticket.RequesterPhone
+            },
+            ct);
 
         return Ok(new { ticketId = ticket.Id, ticketNo = ticket.TicketNo });
+    }
+
+    private async Task TrySendSupportEmailAsync(
+        SupportTicket ticket,
+        string title,
+        string description,
+        Dictionary<string, string> details,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(ticket.RequesterEmail)) return;
+        try
+        {
+            await emailService.SendSupportTicketEventAsync(
+                ticket.RequesterEmail,
+                ticket.RequesterName,
+                ticket.CompanyName,
+                ticket.TicketNo,
+                ticket.Subject,
+                title,
+                description,
+                details,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send public support email for ticket {TicketNo}", ticket.TicketNo);
+        }
+    }
+
+    private static string NormalizePhone(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        return new string(raw.Where(char.IsDigit).ToArray());
     }
 
     public sealed class PublicContactRequest

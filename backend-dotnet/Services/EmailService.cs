@@ -476,4 +476,79 @@ public class EmailService(
 
         await SendEmailAsync(toEmail, $"Textzy Billing: {eventTitle}", html, plain, ct, attachments);
     }
+
+    public async Task SendSupportTicketEventAsync(
+        string toEmail,
+        string displayName,
+        string companyName,
+        string ticketNo,
+        string subject,
+        string eventTitle,
+        string eventDescription,
+        Dictionary<string, string>? details = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail)) return;
+
+        var safeName = string.IsNullOrWhiteSpace(displayName) ? "there" : WebUtility.HtmlEncode(displayName);
+        var safeCompany = WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(companyName) ? "Your Workspace" : companyName);
+        var safeTicketNo = WebUtility.HtmlEncode(ticketNo);
+        var safeSubject = WebUtility.HtmlEncode(subject);
+        var safeTitle = WebUtility.HtmlEncode(eventTitle);
+        var safeDesc = WebUtility.HtmlEncode(eventDescription);
+        var rows = details ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var detailRows = string.Join("", rows.Select(kv =>
+            $"<tr><td style=\"padding:8px 0;color:#6b7280;font-size:13px;\">{WebUtility.HtmlEncode(kv.Key)}</td><td style=\"padding:8px 0;color:#111827;font-size:13px;font-weight:600;text-align:right;\">{WebUtility.HtmlEncode(kv.Value ?? string.Empty)}</td></tr>"));
+
+        var html = $"""
+            <!doctype html>
+            <html lang="en">
+            <body style="margin:0;padding:0;background:#f7f7fb;font-family:Segoe UI,Arial,sans-serif;color:#111827;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(17,24,39,.08);">
+                      <tr>
+                        <td style="background:#f97316;padding:18px 24px;color:#fff;font-weight:700;font-size:20px;">Textzy Support Update</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:24px;">
+                          <p style="margin:0 0 10px;">Hi {safeName},</p>
+                          <p style="margin:0 0 10px;color:#4b5563;">Workspace: <strong>{safeCompany}</strong></p>
+                          <p style="margin:0 0 10px;color:#4b5563;">Ticket ID: <strong>{safeTicketNo}</strong></p>
+                          <h2 style="margin:0 0 8px;font-size:20px;color:#111827;">{safeTitle}</h2>
+                          <p style="margin:0 0 8px;color:#4b5563;">Subject: <strong>{safeSubject}</strong></p>
+                          <p style="margin:0 0 16px;color:#4b5563;line-height:1.6;">{safeDesc}</p>
+                          {(rows.Count > 0 ? $"<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;\">{detailRows}</table>" : "")}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:14px 24px;background:#f9fafb;color:#6b7280;font-size:12px;">
+                          Powered by Moneyart Private Limited
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """;
+
+        var detailsPlain = rows.Count == 0
+            ? string.Empty
+            : string.Join("\n", rows.Select(kv => $"{kv.Key}: {kv.Value}"));
+        var plain = $"""
+            Hi {(string.IsNullOrWhiteSpace(displayName) ? "there" : displayName)},
+
+            {eventTitle}
+            Ticket ID: {ticketNo}
+            Subject: {subject}
+            {eventDescription}
+            Workspace: {(string.IsNullOrWhiteSpace(companyName) ? "Your Workspace" : companyName)}
+            {(string.IsNullOrWhiteSpace(detailsPlain) ? "" : "\n" + detailsPlain)}
+            """;
+
+        await SendEmailAsync(toEmail, $"Textzy Support: {eventTitle} ({ticketNo})", html, plain, ct);
+    }
 }
