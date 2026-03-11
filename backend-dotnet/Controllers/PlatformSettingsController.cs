@@ -476,14 +476,38 @@ public class PlatformSettingsController(
                 $"Template_ID={Uri.EscapeDataString(templateId)}",
             };
             var url = $"{tataBaseUrl.TrimEnd('?')}{(tataBaseUrl.Contains('?') ? "&" : "?")}{string.Join("&", query)}";
+            var startedAt = DateTime.UtcNow;
+            var currentTenantId = auth.TenantId == Guid.Empty ? (Guid?)null : auth.TenantId;
 
             using var smsTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             smsTimeoutCts.CancelAfter(timeoutMs);
             var http = httpClientFactory.CreateClient();
             using var resTata = await http.GetAsync(url, smsTimeoutCts.Token);
+            var statusCode = (int)resTata.StatusCode;
             var rawBody = await resTata.Content.ReadAsStringAsync(smsTimeoutCts.Token);
+            var providerMessageId = ExtractSmsProviderMessageId(rawBody);
+            await SaveSmsGatewayRequestLogAsync(new SmsGatewayRequestLog
+            {
+                Id = Guid.NewGuid(),
+                CreatedAtUtc = DateTime.UtcNow,
+                Provider = "tata",
+                TenantId = currentTenantId,
+                Recipient = Truncate(recipient, 64),
+                Sender = Truncate(sender, 32),
+                PeId = Truncate(peId, 64),
+                TemplateId = Truncate(templateId, 64),
+                HttpMethod = "GET",
+                RequestUrlMasked = Truncate(MaskSensitiveQueryString(url), 4000),
+                RequestPayloadMasked = Truncate($"test=true;recipient={recipient};sender={sender};peId={peId};templateId={templateId};messageLength={message.Length}", 2000),
+                HttpStatusCode = statusCode,
+                ResponseBody = Truncate(rawBody, 4000),
+                IsSuccess = resTata.IsSuccessStatusCode,
+                Error = resTata.IsSuccessStatusCode ? string.Empty : Truncate($"TATA test failed ({statusCode})", 2000),
+                DurationMs = Math.Max(1, (int)(DateTime.UtcNow - startedAt).TotalMilliseconds),
+                ProviderMessageId = Truncate(providerMessageId, 256)
+            }, ct);
             if (!resTata.IsSuccessStatusCode)
-                throw new InvalidOperationException($"TATA test failed ({(int)resTata.StatusCode}): {rawBody}");
+                throw new InvalidOperationException($"TATA test failed ({statusCode}): {rawBody}");
 
             await audit.WriteAsync("platform.sms.test.success", $"provider=tata; to={recipient}", ct);
             return Ok(new { ok = true, provider = "tata", message = "TATA test SMS submitted.", raw = rawBody });
@@ -618,6 +642,52 @@ public class PlatformSettingsController(
         var key = (value ?? string.Empty).Trim();
         if (key.Length <= 8) return key;
         return $"{key[..6]}...{key[^4..]}";
+    }
+
+    private async Task SaveSmsGatewayRequestLogAsync(SmsGatewayRequestLog log, CancellationToken ct)
+    {
+        try
+        {
+            db.SmsGatewayRequestLogs.Add(log);
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            // Diagnostics logging should never break the test SMS flow.
+        }
+    }
+
+    private static string MaskSensitiveQueryString(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        var masked = System.Text.RegularExpressions.Regex.Replace(url, @"([?&]pswd=)[^&]*", "$1***", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        masked = System.Text.RegularExpressions.Regex.Replace(masked, @"([?&]user=)[^&]*", "$1***", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return masked;
+    }
+
+    private static string Truncate(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        return value.Length <= max ? value : value[..max];
+    }
+
+    private static string ExtractSmsProviderMessageId(string responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody)) return string.Empty;
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            foreach (var key in new[] { "jobId", "jobid", "campaignId", "campaign_id", "cusTmId", "custmId", "msgid", "messageid" })
+            {
+                if (doc.RootElement.TryGetProperty(key, out var value))
+                    return value.ToString().Trim();
+            }
+        }
+        catch
+        {
+        }
+
+        return string.Empty;
     }
 
     public sealed class SmtpTestRequest

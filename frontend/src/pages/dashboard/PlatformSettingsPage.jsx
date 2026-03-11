@@ -1751,6 +1751,16 @@ const PlatformSettingsPage = () => {
                         message: smsGateway.testMessage,
                         templateId: smsGateway.defaultTemplateId || "",
                       });
+                      if (isSuperAdmin) {
+                        const rows = await getPlatformSmsGatewayLogs({
+                          provider: "tata",
+                          tenantId: smsGatewayLogFilters.tenantId,
+                          isSuccess: smsGatewayLogFilters.isSuccess === "all" ? "" : smsGatewayLogFilters.isSuccess === "success",
+                          recipientContains: smsGatewayLogFilters.recipientContains,
+                          limit: Number(smsGatewayLogFilters.limit || 200),
+                        }).catch(() => []);
+                        setSmsGatewayLogs(rows || []);
+                      }
                       toast.success("TATA test SMS submitted");
                     } catch (e) {
                       toast.error(e?.message || "TATA test SMS failed");
