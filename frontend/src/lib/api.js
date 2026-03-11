@@ -1270,9 +1270,10 @@ export async function getPlatformCustomers(q = '') {
   return Array.isArray(data) ? data : (data?.items || [])
 }
 
-export async function getPlatformUsers(q = '') {
+export async function getPlatformUsers(q = '', ownersOnly = false) {
   const qs = new URLSearchParams()
   if (q) qs.set('q', q)
+  if (ownersOnly) qs.set('ownersOnly', 'true')
   return apiGet(`/api/platform/customers/users${qs.toString() ? `?${qs.toString()}` : ''}`)
 }
 

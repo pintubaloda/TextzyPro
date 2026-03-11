@@ -251,7 +251,7 @@ export default function AdminPage() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await getPlatformUsers("");
+        const data = await getPlatformUsers("", true);
         const users = Array.isArray(data) ? data : [];
         setPlatformUsers(users);
         setSelectedUserId((prev) => prev || users[0]?.userId || "");

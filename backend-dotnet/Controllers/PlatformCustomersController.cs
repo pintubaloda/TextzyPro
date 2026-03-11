@@ -196,7 +196,7 @@ public class PlatformCustomersController(
     }
 
     [HttpGet("users")]
-    public async Task<IActionResult> Users([FromQuery] string q = "", CancellationToken ct = default)
+    public async Task<IActionResult> Users([FromQuery] string q = "", [FromQuery] bool ownersOnly = false, CancellationToken ct = default)
     {
         if (!auth.IsAuthenticated) return Unauthorized();
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
@@ -215,6 +215,17 @@ public class PlatformCustomersController(
 
         var userIds = users.Select(u => u.Id).ToList();
         var memberships = await db.TenantUsers.Where(x => userIds.Contains(x.UserId)).ToListAsync(ct);
+
+        if (ownersOnly)
+        {
+            var ownerUserIds = memberships
+                .Where(x => string.Equals(x.Role, "owner", StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.UserId)
+                .Distinct()
+                .ToHashSet();
+
+            users = users.Where(u => ownerUserIds.Contains(u.Id)).ToList();
+        }
 
         var rows = users.Select(u =>
         {
