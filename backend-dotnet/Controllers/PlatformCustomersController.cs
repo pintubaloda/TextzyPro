@@ -91,11 +91,24 @@ public class PlatformCustomersController(
         var profiles = await db.TenantCompanyProfiles.AsNoTracking()
             .Where(x => tenantIds.Contains(x.TenantId))
             .ToDictionaryAsync(x => x.TenantId, ct);
+        var ownerGroupIds = tenantRows
+            .Where(x => x.OwnerGroupId.HasValue)
+            .Select(x => x.OwnerGroupId!.Value)
+            .Distinct()
+            .ToList();
+        var ownerGroups = ownerGroupIds.Count == 0
+            ? new Dictionary<Guid, TenantOwnerGroup>()
+            : await db.TenantOwnerGroups.AsNoTracking()
+                .Where(x => ownerGroupIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, ct);
 
         var memberships = await db.TenantUsers.AsNoTracking()
             .Where(x => tenantIds.Contains(x.TenantId))
             .ToListAsync(ct);
-        var membershipUserIds = memberships.Select(x => x.UserId).Distinct().ToList();
+        var membershipUserIds = memberships.Select(x => x.UserId)
+            .Concat(ownerGroups.Values.Select(x => x.OwnerUserId))
+            .Distinct()
+            .ToList();
         var users = membershipUserIds.Count == 0
             ? new Dictionary<Guid, User>()
             : await db.Users.AsNoTracking()
@@ -129,13 +142,23 @@ public class PlatformCustomersController(
         {
             profiles.TryGetValue(tenant.Id, out var profile);
             var tenantMemberships = memberships.Where(x => x.TenantId == tenant.Id).ToList();
-            var ownerMembership = tenantMemberships
-                .OrderBy(x => RolePriority(x.Role))
-                .ThenBy(x => x.CreatedAtUtc)
-                .FirstOrDefault();
-            var owner = ownerMembership is not null && users.TryGetValue(ownerMembership.UserId, out var ownerUser)
-                ? ownerUser
-                : null;
+            User? owner = null;
+            if (tenant.OwnerGroupId.HasValue &&
+                ownerGroups.TryGetValue(tenant.OwnerGroupId.Value, out var ownerGroup) &&
+                users.TryGetValue(ownerGroup.OwnerUserId, out var ownerGroupUser))
+            {
+                owner = ownerGroupUser;
+            }
+            else
+            {
+                var ownerMembership = tenantMemberships
+                    .OrderBy(x => RolePriority(x.Role))
+                    .ThenBy(x => x.CreatedAtUtc)
+                    .FirstOrDefault();
+                owner = ownerMembership is not null && users.TryGetValue(ownerMembership.UserId, out var ownerUser)
+                    ? ownerUser
+                    : null;
+            }
             var activeUsers = tenantMemberships.Count(x =>
                 users.TryGetValue(x.UserId, out var u) && u.IsActive);
             var latestSubscription = latestSubscriptions.FirstOrDefault(x => x.TenantId == tenant.Id);
@@ -215,12 +238,20 @@ public class PlatformCustomersController(
 
         var userIds = users.Select(u => u.Id).ToList();
         var memberships = await db.TenantUsers.Where(x => userIds.Contains(x.UserId)).ToListAsync(ct);
+        var ownerGroupUserIds = ownersOnly
+            ? await db.TenantOwnerGroups.AsNoTracking()
+                .Where(x => x.IsActive)
+                .Select(x => x.OwnerUserId)
+                .Distinct()
+                .ToListAsync(ct)
+            : new List<Guid>();
 
         if (ownersOnly)
         {
             var ownerUserIds = memberships
                 .Where(x => string.Equals(x.Role, "owner", StringComparison.OrdinalIgnoreCase))
                 .Select(x => x.UserId)
+                .Concat(ownerGroupUserIds)
                 .Distinct()
                 .ToHashSet();
 
@@ -259,7 +290,19 @@ public class PlatformCustomersController(
         if (user is null) return NotFound("User not found.");
 
         var memberships = await db.TenantUsers.Where(x => x.UserId == userId).ToListAsync(ct);
-        var tenantIds = memberships.Select(x => x.TenantId).Distinct().ToList();
+        var ownedGroupIds = await db.TenantOwnerGroups.AsNoTracking()
+            .Where(x => x.OwnerUserId == userId && x.IsActive)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+        var membershipTenantIds = memberships.Select(x => x.TenantId).Distinct().ToList();
+        var ownedGroupTenantIds = ownedGroupIds.Count == 0
+            ? new List<Guid>()
+            : await db.Tenants.AsNoTracking()
+                .Where(x => x.OwnerGroupId.HasValue && ownedGroupIds.Contains(x.OwnerGroupId.Value))
+                .Select(x => x.Id)
+                .Distinct()
+                .ToListAsync(ct);
+        var tenantIds = membershipTenantIds.Concat(ownedGroupTenantIds).Distinct().ToList();
         var tenants = await db.Tenants.Where(x => tenantIds.Contains(x.Id)).ToListAsync(ct);
         var profiles = await db.TenantCompanyProfiles.Where(x => tenantIds.Contains(x.TenantId)).ToDictionaryAsync(x => x.TenantId, ct);
 
@@ -278,7 +321,8 @@ public class PlatformCustomersController(
             {
                 var sub = latestSubs.FirstOrDefault(x => x.TenantId == t.Id);
                 var plan = sub is not null && planMap.TryGetValue(sub.PlanId, out var p) ? p : null;
-                var role = memberships.FirstOrDefault(m => m.TenantId == t.Id)?.Role ?? "member";
+                var role = memberships.FirstOrDefault(m => m.TenantId == t.Id)?.Role
+                    ?? (ownedGroupIds.Contains(t.OwnerGroupId ?? Guid.Empty) ? "owner" : "member");
                 var status = (sub?.Status ?? "inactive").ToLowerInvariant();
                 return new
                 {
