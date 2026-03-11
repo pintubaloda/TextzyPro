@@ -42,7 +42,7 @@ jobs:
         run: dotnet publish Textzy.Api.csproj -c Release -o "$env:GITHUB_WORKSPACE\\artifacts\\backend"
 
       - name: Upload backend artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: textzy-backend
           path: ${{ github.workspace }}/artifacts/backend
@@ -88,7 +88,7 @@ jobs:
           Get-ChildItem -Path "$env:GITHUB_WORKSPACE\frontend\dist" -Recurse
 
       - name: Upload frontend artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: textzy-frontend
           path: ${{ github.workspace }}/frontend/dist
@@ -106,13 +106,13 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download backend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: textzy-backend
           path: ${{ github.workspace }}/artifacts/backend
 
       - name: Download frontend artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: textzy-frontend
           path: ${{ github.workspace }}/artifacts/frontend
@@ -155,3 +155,4 @@ jobs:
           -FrontendFacebookAppId "$env:TEXTZY_FRONTEND_FACEBOOK_APP_ID"
           -FrontendWabaEmbeddedConfigId "$env:TEXTZY_FRONTEND_WABA_EMBEDDED_CONFIG_ID"
           -ReleaseTag "${{ github.run_number }}-${{ github.sha }}"
+

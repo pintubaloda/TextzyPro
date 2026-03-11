@@ -316,7 +316,7 @@ export default function AdminPage() {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q)),
     );
-  }, [customers, ownerTenantIds, query]);
+  }, [customers, ownerTenantIds, query, selectedUserId]);
 
   const ownerTotals = useMemo(() => {
     const tenantRows = ownerTenantIds.size ? customers.filter((item) => ownerTenantIds.has(item.tenantId)) : [];
@@ -330,7 +330,7 @@ export default function AdminPage() {
     }).length;
     const invoiceCount = tenantRows.reduce((acc, item) => acc + Number(item.invoiceCount || 0), 0);
     return { tenants, users, activeUsers, revenue, activePlans, invoiceCount };
-  }, [customers, ownerTenantIds, selectedUserId]);
+  }, [customers, ownerTenantIds]);
 
   const selectedCustomer = useMemo(
     () => ownerCustomers.find((item) => item.tenantId === selectedTenantId) || customers.find((item) => item.tenantId === selectedTenantId) || null,
@@ -1314,3 +1314,4 @@ export default function AdminPage() {
     </div>
   );
 }
+

@@ -1,34 +1,21 @@
-﻿# Textzy WhatsApp API Reference
+# Textzy WhatsApp API Reference
 
-Base URL:
-- `https://api.textzy.in`
+## Overview
+Textzy WhatsApp API supports two modes:
+- Public tenant-scoped API for simple plain-text sends
+- Authenticated tenant APIs for templates, media, inbox, and automation flows
 
-## 1. Public WhatsApp API
+Base URL: `https://api.textzy.in`
 
-Use this API when an external system wants to send a plain WhatsApp text message through Textzy with tenant-specific API credentials.
+## Public WhatsApp Send
+Use the public endpoint when an external system needs to send a plain WhatsApp text message.
 
-Endpoints:
-- `GET /api/public/messages/send`
-- `POST /api/public/messages/send`
-
-Channel value:
-- `whatsapp`
-
-## 2. GET Example
-
-```text
-GET https://api.textzy.in/api/public/messages/send
-  ?recipient=919999999999
-  &msg=Hello from Textzy WhatsApp API
-  &user=MONEYART
-  &pswd=YOUR_PASSWORD
-  &apikey=YOUR_API_KEY
-  &channel=whatsapp
-  &tenantSlug=moneyart
+### GET
+```http
+GET https://api.textzy.in/api/public/messages/send?recipient=919999999999&msg=Hello from Textzy WhatsApp API&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&channel=whatsapp&tenantSlug=moneyart
 ```
 
-## 3. POST Example
-
+### POST
 ```json
 {
   "recipient": "919999999999",
@@ -38,66 +25,14 @@ GET https://api.textzy.in/api/public/messages/send
   "apiKey": "YOUR_API_KEY",
   "tenantSlug": "moneyart",
   "channel": "whatsapp",
-  "idempotencyKey": "wa-20260308-0001"
+  "idempotencyKey": "wa-20260311-0001"
 }
 ```
 
-## 4. Required Fields
+## Authenticated Tenant Messaging
+Use authenticated tenant APIs when messages originate from Textzy web, mobile, desktop, inbox, or workflow execution.
 
-- `recipient`: mobile number with country code
-- `message` or `msg`: plain WhatsApp message text
-- `tenantSlug`: target tenant slug
-- `user`: tenant API username
-- `password` or `pswd`: tenant API password
-- `apiKey` or `apikey`: tenant API key
-- `channel`: `whatsapp`
-
-## 5. Optional Fields
-
-- `idempotencyKey`
-
-## 6. Security Model
-
-- every tenant has its own API username, password, and API key
-- `tenantSlug` is mandatory
-- credentials are validated against that tenant only
-- optional IP whitelist can be applied per tenant
-- HTTPS is required
-
-## 7. Success Response
-
-```json
-{
-  "jobId": "5d64f8bf-4c1f-4e59-92a9-4a0f5a8c992e",
-  "message": "Accepted"
-}
-```
-
-## 8. Error Response
-
-```json
-{
-  "message": "Invalid authorization.",
-  "code": "401"
-}
-```
-
-Common codes:
-- `400` request rejected
-- `401` invalid authorization
-- `403` access denied
-- `429` rate limit exceeded
-- `503` gateway temporarily unavailable
-
-## 9. Authenticated Tenant WhatsApp API
-
-Use the authenticated tenant APIs when messages originate from Textzy web, mobile, desktop, inbox, or workflow execution.
-
-Primary endpoint:
-- `POST /api/messages/send`
-
-### Session message example
-
+### Session Message
 ```json
 {
   "recipient": "919999999999",
@@ -107,8 +42,7 @@ Primary endpoint:
 }
 ```
 
-### Template message example
-
+### Template Message
 ```json
 {
   "recipient": "919999999999",
@@ -120,8 +54,7 @@ Primary endpoint:
 }
 ```
 
-### Interactive button example
-
+### Interactive Buttons
 ```json
 {
   "recipient": "919999999999",
@@ -133,8 +66,7 @@ Primary endpoint:
 }
 ```
 
-### Interactive flow example
-
+### Interactive Flow
 ```json
 {
   "recipient": "919999999999",
@@ -151,48 +83,60 @@ Primary endpoint:
 }
 ```
 
-## 10. Media APIs
+## Request Fields
+| Field | Used In | Description |
+|---|---|---|
+| `recipient` | Public and authenticated | WhatsApp number with country code |
+| `message` / `msg` | Public | Plain text message body |
+| `body` | Authenticated | Session or interactive message body |
+| `tenantSlug` | Public | Tenant slug that owns the credentials |
+| `user` / `password` / `apiKey` | Public | Tenant-scoped public API credentials |
+| `templateName` | Authenticated | Approved template name |
+| `templateLanguageCode` | Authenticated | Template language code |
+| `interactiveType` | Authenticated | `button`, `list`, or `flow` |
 
-Endpoints:
+## Responses
+### Accepted
+```json
+{
+  "jobId": "5d64f8bf-4c1f-4e59-92a9-4a0f5a8c992e",
+  "message": "Accepted"
+}
+```
+
+### Error
+```json
+{
+  "message": "Invalid authorization.",
+  "code": "401"
+}
+```
+
+## Media Endpoints
 - `POST /api/messages/upload-whatsapp-media`
 - `POST /api/messages/upload-whatsapp-asset`
 - `GET /api/messages/media/{mediaId}`
 
-## 11. Template APIs
-
-Endpoints:
+## Template Endpoints
 - `GET /api/templates`
 - `POST /api/templates`
-- `PUT /api/templates/{id}`
-- `DELETE /api/templates/{id}`
-- `GET /api/templates/{id}/presets`
+- `POST /api/templates/{id}/sync-meta`
 - `GET /api/templates/project-list`
 
-## 12. Webhook APIs
-
-Endpoints:
-- `GET /api/waba/webhook`
-- `POST /api/waba/webhook`
-
-## 13. Flow and Automation APIs
-
-Endpoints:
+## Flow and Automation Endpoints
 - `GET /api/automation/flows`
 - `POST /api/automation/flows`
-- `GET /api/automation/flows/{flowId}`
-- `PUT /api/automation/flows/{flowId}`
-- `GET /api/automation/flows/{flowId}/versions`
-- `POST /api/automation/flows/{flowId}/versions/{versionId}/publish`
 - `POST /api/automation/flows/{flowId}/simulate`
 - `POST /api/automation/flows/{flowId}/run`
 - `POST /api/automation/flows/{flowId}/send-flow`
-- `POST /api/automation/flows/{flowId}/data-exchange`
 
-## 14. Operational Notes
+## Webhook Endpoint
+- `GET /api/waba/webhook`
+- `POST /api/waba/webhook`
 
-- public WhatsApp API examples above are for plain text sends
-- richer features such as templates, interactive buttons, flows, media, and inbox actions use authenticated tenant APIs
-- session messaging is subject to WhatsApp conversation-window rules
-- approved templates should be used when a session message is not allowed
-
-
+## Implementation Checklist
+- Generate tenant public API credentials in Integrations
+- Configure WABA and template approvals
+- Use public API for simple text sends only
+- Use authenticated APIs for templates, media, inbox, and flows
+- Monitor webhook and inbox delivery flow in platform analytics

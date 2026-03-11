@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { BookOpenText, Copy, ExternalLink, FileCode2, Hash, MessageSquareText } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookOpenText, Copy, ExternalLink, FileCode2, Globe2, MessageSquareText } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 const DOCS = {
   sms: {
     title: "SMS API Reference",
-    description: "Public SMS integration reference with tenant-scoped credentials, DLT rules, sender registry, and delivery reporting.",
+    description: "Tenant-scoped SMS API documentation with public send examples, authentication, DLT fields, status model, and implementation patterns.",
     html: "/docs/sms-api-reference.html",
     markdown: "/docs/SMS_API_REFERENCE.md",
     tone: "from-orange-50 via-white to-amber-50",
@@ -16,7 +16,7 @@ const DOCS = {
   },
   whatsapp: {
     title: "WhatsApp API Reference",
-    description: "Public and tenant-authenticated WhatsApp messaging reference with send samples, templates, media, webhooks, and flows.",
+    description: "WhatsApp API documentation with public send examples, authenticated messaging flows, templates, interactive messages, media, and automation operations.",
     html: "/docs/whatsapp-api-reference.html",
     markdown: "/docs/WHATSAPP_API_REFERENCE.md",
     tone: "from-cyan-50 via-white to-emerald-50",
@@ -33,62 +33,112 @@ async function copyText(text, label) {
   toast.success(`${label} copied`);
 }
 
+function enhanceDocument(doc) {
+  const body = doc?.body;
+  if (!body) return { sections: [], html: "" };
+
+  Array.from(body.querySelectorAll("h2, h3")).forEach((heading, index) => {
+    if (!heading.id) {
+      const slug = String(heading.textContent || `section-${index}`)
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      heading.id = slug || `section-${index}`;
+    }
+    heading.classList.add("textzy-anchor-target");
+  });
+
+  const sections = Array.from(body.querySelectorAll("h2, h3")).map((heading, index) => ({
+    id: heading.id || `section-${index}`,
+    label: (heading.textContent || `Section ${index + 1}`).trim(),
+    level: heading.tagName.toLowerCase() === "h2" ? 2 : 3,
+  }));
+
+  return {
+    sections,
+    html: body.innerHTML,
+  };
+}
+
 export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }) {
-  const iframeRef = useRef(null);
+  const docMeta = useMemo(() => getDoc(type), [type]);
+  const contentRef = useRef(null);
   const [sections, setSections] = useState([]);
   const [activeSection, setActiveSection] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const docMeta = useMemo(() => getDoc(type), [type]);
+  const [htmlContent, setHtmlContent] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const enhanceIframeDocument = useCallback((doc) => {
-    if (!doc) return;
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
 
-    if (!doc.getElementById("textzy-doc-viewer-style")) {
-      const style = doc.createElement("style");
-      style.id = "textzy-doc-viewer-style";
-      style.textContent = `
-        .textzy-pre-wrap { position: relative; margin-top: 12px; }
-        .textzy-copy-btn {
-          position: absolute;
-          top: 10px;
-          right: 10px;
-          z-index: 4;
-          border: 1px solid rgba(226,232,240,0.9);
-          background: rgba(255,255,255,0.96);
-          color: #0f172a;
-          border-radius: 10px;
-          font-size: 12px;
-          font-weight: 700;
-          padding: 6px 10px;
-          cursor: pointer;
-          box-shadow: 0 8px 18px rgba(15,23,42,0.08);
+    const load = async () => {
+      try {
+        setLoading(true);
+        setSections([]);
+        setActiveSection("");
+        const response = await fetch(docMeta.html, { credentials: "same-origin" });
+        if (!response.ok) throw new Error(`Failed to load documentation (${response.status})`);
+        const html = await response.text();
+        const parser = new DOMParser();
+        const parsed = parser.parseFromString(html, "text/html");
+        const enhanced = enhanceDocument(parsed);
+        if (cancelled) return;
+        setHtmlContent(enhanced.html);
+        setSections(enhanced.sections);
+        setActiveSection(enhanced.sections[0]?.id || "");
+      } catch (error) {
+        if (!cancelled) {
+          setHtmlContent(`
+            <div class="textzy-doc-error">
+              <h2>Documentation unavailable</h2>
+              <p>${error?.message || "Failed to load documentation."}</p>
+            </div>
+          `);
+          setSections([]);
+          setActiveSection("");
         }
-        .textzy-copy-btn:hover { background: #fff7ed; color: #c2410c; }
-        .textzy-anchor-target { scroll-margin-top: 24px; }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [docMeta.html, open]);
+
+  useEffect(() => {
+    const container = contentRef.current;
+    if (!container) return;
+
+    const styleId = "textzy-doc-inline-style";
+    if (!container.querySelector(`#${styleId}`)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
+        .textzy-doc-surface{padding:28px;min-height:100%;background:#fff;color:#0f172a}
+        .textzy-doc-surface .wrap{max-width:1200px;margin:0 auto;padding:0}
+        .textzy-doc-surface .hero{margin-bottom:20px}
+        .textzy-doc-surface .textzy-anchor-target{scroll-margin-top:24px}
+        .textzy-doc-surface .textzy-doc-error{display:flex;min-height:320px;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#475569}
+        .textzy-pre-wrap{position:relative;margin-top:12px}
+        .textzy-copy-btn{position:absolute;top:10px;right:10px;z-index:4;border:1px solid rgba(226,232,240,.9);background:rgba(255,255,255,.96);color:#0f172a;border-radius:10px;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer;box-shadow:0 8px 18px rgba(15,23,42,.08)}
+        .textzy-copy-btn:hover{background:#fff7ed;color:#c2410c}
       `;
-      doc.head.appendChild(style);
+      container.prepend(style);
     }
 
-    Array.from(doc.querySelectorAll("h2, h3")).forEach((heading, index) => {
-      if (!heading.id) {
-        const slug = String(heading.textContent || `section-${index}`)
-          .toLowerCase()
-          .trim()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-        heading.id = slug || `section-${index}`;
-      }
-      heading.classList.add("textzy-anchor-target");
-    });
-
-    Array.from(doc.querySelectorAll("pre")).forEach((pre, index) => {
-      if (pre.closest(".textzy-pre-wrap")) return;
-      const wrapper = doc.createElement("div");
+    Array.from(container.querySelectorAll("pre")).forEach((pre, index) => {
+      if (pre.parentElement?.classList.contains("textzy-pre-wrap")) return;
+      const wrapper = document.createElement("div");
       wrapper.className = "textzy-pre-wrap";
       pre.parentNode.insertBefore(wrapper, pre);
       wrapper.appendChild(pre);
 
-      const button = doc.createElement("button");
+      const button = document.createElement("button");
       button.type = "button";
       button.className = "textzy-copy-btn";
       button.textContent = "Copy";
@@ -110,40 +160,26 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
       wrapper.appendChild(button);
     });
 
-    const headingNodes = Array.from(doc.querySelectorAll("h2, h3")).map((heading, index) => ({
-      id: heading.id || `section-${index}`,
-      label: (heading.textContent || `Section ${index + 1}`).trim(),
-      level: heading.tagName.toLowerCase() === "h2" ? 2 : 3,
-    }));
-    setSections(headingNodes);
-    setActiveSection((prev) => prev || headingNodes[0]?.id || "");
+    const headings = Array.from(container.querySelectorAll("h2, h3"));
+    if (!headings.length) return;
 
-    const observer = new doc.defaultView.IntersectionObserver(
+    const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
         if (visible?.target?.id) setActiveSection(visible.target.id);
       },
-      { rootMargin: "-10% 0px -70% 0px", threshold: [0, 1] }
+      { root: container, rootMargin: "-10% 0px -70% 0px", threshold: [0, 1] }
     );
 
-    headingNodes.forEach((item) => {
-      const el = doc.getElementById(item.id);
-      if (el) observer.observe(el);
-    });
-  }, []);
-
-  const handleLoad = useCallback(() => {
-    const iframe = iframeRef.current;
-    const doc = iframe?.contentDocument;
-    setLoaded(true);
-    enhanceIframeDocument(doc);
-  }, [enhanceIframeDocument]);
+    headings.forEach((heading) => observer.observe(heading));
+    return () => observer.disconnect();
+  }, [htmlContent]);
 
   const jumpToSection = useCallback((id) => {
-    const doc = iframeRef.current?.contentDocument;
-    const target = doc?.getElementById(id);
+    const container = contentRef.current;
+    const target = container?.querySelector(`#${CSS.escape(id)}`);
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
       setActiveSection(id);
@@ -151,7 +187,7 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
   }, []);
 
   const handleTypeChange = (nextType) => {
-    setLoaded(false);
+    setHtmlContent("");
     setSections([]);
     setActiveSection("");
     onTypeChange(nextType);
@@ -159,7 +195,7 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] overflow-hidden border-slate-200 p-0 sm:max-w-[95vw]">
+      <DialogContent className="max-w-[96vw] overflow-hidden border-slate-200 p-0 sm:max-w-[96vw]">
         <DialogHeader className={`border-b border-slate-200 bg-gradient-to-r ${docMeta.tone} px-6 py-5`}>
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-2">
@@ -169,7 +205,7 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
                   {docMeta.chip}
                 </Badge>
                 <Badge variant="outline" className="rounded-full border-slate-300 bg-white/80 text-slate-700">
-                  In-app documentation
+                  Postman-style documentation
                 </Badge>
               </div>
               <DialogTitle className="text-2xl font-bold text-slate-950">{docMeta.title}</DialogTitle>
@@ -183,7 +219,7 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
                 SMS API
               </Button>
               <Button variant={type === "whatsapp" ? "default" : "outline"} className={type === "whatsapp" ? "bg-orange-500 hover:bg-orange-600" : ""} onClick={() => handleTypeChange("whatsapp")}>
-                <Hash className="mr-2 h-4 w-4" />
+                <Globe2 className="mr-2 h-4 w-4" />
                 WhatsApp API
               </Button>
               <Button variant="outline" onClick={() => copyText(`${window.location.origin}${docMeta.html}`, "Viewer link")}>
@@ -201,11 +237,11 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
             </div>
           </div>
         </DialogHeader>
-        <div className="grid h-[82vh] grid-cols-1 bg-slate-50 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="grid h-[82vh] grid-cols-1 bg-slate-50 xl:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="hidden border-r border-slate-200 bg-white xl:flex xl:flex-col">
             <div className="border-b border-slate-200 px-5 py-4">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Sections</p>
-              <p className="mt-1 text-sm text-slate-600">Jump directly to the relevant part of the reference.</p>
+              <p className="mt-1 text-sm text-slate-600">Browse endpoints, auth rules, request examples, and operational notes.</p>
             </div>
             <div className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
               {sections.length ? sections.map((section) => (
@@ -222,22 +258,20 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
                   {section.label}
                 </button>
               )) : (
-                <div className="px-3 py-6 text-sm text-slate-500">Loading section navigation…</div>
+                <div className="px-3 py-6 text-sm text-slate-500">{loading ? "Loading documentation…" : "No sections available."}</div>
               )}
             </div>
           </aside>
-          <div className="relative h-full bg-slate-100">
-            {!loaded ? (
+          <div className="relative h-full overflow-hidden bg-slate-100">
+            {loading ? (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-50/80 text-sm text-slate-500">
                 Loading documentation…
               </div>
             ) : null}
-            <iframe
-              ref={iframeRef}
-              title={docMeta.title}
-              src={docMeta.html}
-              onLoad={handleLoad}
-              className="h-full w-full border-0 bg-white"
+            <div
+              ref={contentRef}
+              className="h-full overflow-y-auto bg-white"
+              dangerouslySetInnerHTML={{ __html: `<div class="textzy-doc-surface">${htmlContent}</div>` }}
             />
           </div>
         </div>

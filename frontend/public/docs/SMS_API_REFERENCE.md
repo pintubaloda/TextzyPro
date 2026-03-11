@@ -1,34 +1,28 @@
-﻿# Textzy SMS API Reference
+# Textzy SMS API Reference
 
-Base URL:
-- `https://api.textzy.in`
+## Overview
+Textzy SMS API lets each tenant send DLT-compliant SMS through tenant-scoped credentials. Public API requests stay simple while Textzy handles provider routing, audit logging, compliance checks, and delivery reporting.
 
-## 1. Public SMS API
+Base URL: `https://api.textzy.in`
 
-Use this API when your ERP, CRM, website, or backend wants to send SMS directly through Textzy with tenant-specific API credentials.
+Authentication:
+- `tenantSlug`
+- `user`
+- `password` or `pswd`
+- `apiKey` or `apikey`
 
-Endpoints:
+Supported request formats:
 - `GET /api/public/messages/send`
 - `POST /api/public/messages/send`
 
-## 2. GET Example
+## Public Send Endpoint
 
-```text
-GET https://api.textzy.in/api/public/messages/send
-  ?recipient=919999999999
-  &msg=Your approved DLT message text
-  &user=MONEYART
-  &pswd=YOUR_PASSWORD
-  &apikey=YOUR_API_KEY
-  &channel=sms
-  &sender=MNYART
-  &PE_ID=1601100000000006533
-  &Template_ID=1207171593687982329
-  &tenantSlug=moneyart
+### GET
+```http
+GET https://api.textzy.in/api/public/messages/send?recipient=919999999999&msg=Your approved DLT message text&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&channel=sms&sender=MNYART&PE_ID=1601100000000006533&Template_ID=1207171593687982329&tenantSlug=moneyart
 ```
 
-## 3. POST Example
-
+### POST
 ```json
 {
   "recipient": "919999999999",
@@ -41,37 +35,27 @@ GET https://api.textzy.in/api/public/messages/send
   "sender": "MNYART",
   "peId": "1601100000000006533",
   "templateId": "1207171593687982329",
-  "idempotencyKey": "sms-20260308-0001"
+  "idempotencyKey": "sms-20260311-0001"
 }
 ```
 
-## 4. Required Fields
+## Request Fields
+| Field | Required | Description |
+|---|---|---|
+| `recipient` | Yes | Mobile number with country code |
+| `message` / `msg` | Yes | Exact approved SMS text |
+| `tenantSlug` | Yes | Tenant slug that owns the credentials |
+| `user` | Yes | Tenant API username |
+| `password` / `pswd` | Yes | Tenant API password |
+| `apiKey` / `apikey` | Yes | Tenant API key |
+| `channel` | Yes | Must be `sms` |
+| `sender` | DLT | Approved sender ID |
+| `peId` / `PE_ID` | DLT | Approved entity ID |
+| `templateId` / `Template_ID` | DLT | Approved template ID |
+| `idempotencyKey` | No | Recommended deduplication key |
 
-- `recipient`: mobile number with country code
-- `message` or `msg`: exact approved SMS text
-- `tenantSlug`: target tenant slug
-- `user`: tenant API username
-- `password` or `pswd`: tenant API password
-- `apiKey` or `apikey`: tenant API key
-- `sender`: approved sender ID
-- `peId` or `PE_ID`: approved entity ID
-- `templateId` or `Template_ID`: approved template ID
-
-## 5. Optional Fields
-
-- `idempotencyKey`
-- `channel`
-
-## 6. Security Model
-
-- every tenant has its own API username, password, and API key
-- `tenantSlug` is mandatory
-- credentials are validated against that tenant only
-- optional IP whitelist can be applied per tenant
-- HTTPS is required
-
-## 7. Success Response
-
+## Responses
+### Accepted
 ```json
 {
   "jobId": "5d64f8bf-4c1f-4e59-92a9-4a0f5a8c992e",
@@ -79,8 +63,7 @@ GET https://api.textzy.in/api/public/messages/send
 }
 ```
 
-## 8. Error Response
-
+### Error
 ```json
 {
   "message": "Invalid authorization.",
@@ -88,60 +71,26 @@ GET https://api.textzy.in/api/public/messages/send
 }
 ```
 
-Common codes:
-- `400` request rejected
-- `401` invalid authorization
-- `403` access denied
-- `422` missing DLT field
-- `429` rate limit exceeded
-- `503` gateway temporarily unavailable
+## Delivery Statuses
+- `accepted`
+- `queued` / `sent`
+- `delivered`
+- `failed` / `rejected`
 
-## 9. DLT Rules
-
-For India SMS traffic, the following must match approved DLT data:
-
-- sender ID
-- entity ID / `PE_ID`
-- template ID / `Template_ID`
-- final SMS text
-
-## 10. Template Registry
-
-Endpoints:
+## Registry Endpoints
 - `GET /api/sms/templates`
 - `POST /api/sms/templates`
-- `PUT /api/sms/templates/{id}`
-- `DELETE /api/sms/templates/{id}`
-- `POST /api/sms/templates/{id}/status`
 - `POST /api/sms/templates/import-approved-csv`
-
-## 11. Sender Registry
-
-Endpoints:
 - `GET /api/sms/senders`
-- `GET /api/sms/senders/stats`
 - `POST /api/sms/senders`
-- `PUT /api/sms/senders/{id}`
-- `DELETE /api/sms/senders/{id}`
 
-## 12. Delivery Reporting
+## Segment Rules
+- English GSM: `1-160` chars = 1 SMS, multipart uses `153`
+- Unicode / regional: `1-70` chars = 1 SMS, multipart uses `67`
 
-Tenant SMS reports and delivery ledgers show message progress such as:
-
-- `accepted`
-- `queued`
-- `sent`
-- `delivered`
-- `failed`
-- `rejected`
-
-## 13. Segment Logic
-
-- English GSM:
-  - `1-160` characters = 1 SMS
-  - multipart uses `153` characters per segment
-- Unicode / regional:
-  - `1-70` characters = 1 SMS
-  - multipart uses `67` characters per segment
-
-
+## Implementation Checklist
+- Generate tenant API credentials in Integrations
+- Save sender IDs and approved templates
+- Use idempotency keys for retry-safe sends
+- Monitor delivery report and SMS ledger
+- Enable IP whitelist for fixed-source traffic
