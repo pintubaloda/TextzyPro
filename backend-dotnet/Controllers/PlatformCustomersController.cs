@@ -447,6 +447,7 @@ public class PlatformCustomersController(
                 apiPassword = string.Empty,
                 apiKey = string.Empty,
                 apiIpWhitelist = string.Empty,
+                ownerGroupSmsProviderRoute = "tata",
                 taxRatePercent = 18m,
                 isTaxExempt = false,
                 isReverseCharge = false,
@@ -468,6 +469,7 @@ public class PlatformCustomersController(
             apiPassword = crypto.Decrypt(profile.ApiPasswordEncrypted),
             apiKey = crypto.Decrypt(profile.ApiKeyEncrypted),
             apiIpWhitelist = profile.ApiIpWhitelist,
+            ownerGroupSmsProviderRoute = await db.TenantOwnerGroups.AsNoTracking().Where(x => x.Id == tenant.OwnerGroupId).Select(x => x.SmsProviderRoute).FirstOrDefaultAsync(ct) ?? "tata",
             taxRatePercent = profile.TaxRatePercent,
             isTaxExempt = profile.IsTaxExempt,
             isReverseCharge = profile.IsReverseCharge,
@@ -523,6 +525,16 @@ public class PlatformCustomersController(
         profile.IsReverseCharge = request.IsReverseCharge;
         profile.UpdatedAtUtc = now;
 
+        if (tenant.OwnerGroupId.HasValue && tenant.OwnerGroupId.Value != Guid.Empty)
+        {
+            var ownerGroup = await db.TenantOwnerGroups.FirstOrDefaultAsync(x => x.Id == tenant.OwnerGroupId.Value, ct);
+            if (ownerGroup is not null)
+            {
+                ownerGroup.SmsProviderRoute = NormalizeSmsProvider(request.OwnerGroupSmsProviderRoute);
+                ownerGroup.UpdatedAtUtc = now;
+            }
+        }
+
         if (profile.PublicApiEnabled)
         {
             if (string.IsNullOrWhiteSpace(profile.ApiUsername)) return BadRequest("API username is required when public API is enabled.");
@@ -550,6 +562,7 @@ public class PlatformCustomersController(
             apiPassword = crypto.Decrypt(profile.ApiPasswordEncrypted),
             apiKey = crypto.Decrypt(profile.ApiKeyEncrypted),
             apiIpWhitelist = profile.ApiIpWhitelist,
+            ownerGroupSmsProviderRoute = await db.TenantOwnerGroups.AsNoTracking().Where(x => x.Id == tenant.OwnerGroupId).Select(x => x.SmsProviderRoute).FirstOrDefaultAsync(ct) ?? "tata",
             taxRatePercent = profile.TaxRatePercent,
             isTaxExempt = profile.IsTaxExempt,
             isReverseCharge = profile.IsReverseCharge,
@@ -1015,9 +1028,16 @@ public class PlatformCustomersController(
         public string ApiPassword { get; set; } = string.Empty;
         public string ApiKey { get; set; } = string.Empty;
         public string ApiIpWhitelist { get; set; } = string.Empty;
+        public string OwnerGroupSmsProviderRoute { get; set; } = "tata";
         public decimal TaxRatePercent { get; set; } = 18m;
         public bool IsTaxExempt { get; set; }
         public bool IsReverseCharge { get; set; }
+    }
+
+    private static string NormalizeSmsProvider(string? provider)
+    {
+        var value = (provider ?? "tata").Trim().ToLowerInvariant();
+        return value == "equence" ? "equence" : "tata";
     }
 
     private bool HasFreshStepUp()

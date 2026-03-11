@@ -174,7 +174,9 @@ builder.Services.AddScoped<IRazorpayPaymentValidator, RazorpayPaymentValidator>(
 builder.Services.AddScoped<InvoiceAttachmentService>();
 builder.Services.AddScoped<BillingGuardService>();
 builder.Services.AddScoped<SecurityControlService>();
-builder.Services.AddScoped<IMessageProvider, TataSmsMessageProvider>();
+builder.Services.AddScoped<TataSmsMessageProvider>();
+builder.Services.AddScoped<EquenceSmsMessageProvider>();
+builder.Services.AddScoped<IMessageProvider, SmsProviderRouter>();
 builder.Services.AddScoped<MessagingService>();
 builder.Services.AddScoped<TriggerEvaluationService>();
 builder.Services.AddScoped<WorkflowExecutionEngine>();
@@ -355,12 +357,14 @@ static void EnsureControlAuthSchema(ControlDbContext db)
             "Id" uuid PRIMARY KEY,
             "OwnerUserId" uuid NOT NULL,
             "Name" text NOT NULL,
+            "SmsProviderRoute" text NOT NULL DEFAULT 'tata',
             "IsActive" boolean NOT NULL DEFAULT true,
             "CreatedAtUtc" timestamp with time zone NOT NULL,
             "UpdatedAtUtc" timestamp with time zone NOT NULL
         );
         """);
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_TenantOwnerGroups_OwnerUserId" ON "TenantOwnerGroups" ("OwnerUserId");""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantOwnerGroups" ADD COLUMN IF NOT EXISTS "SmsProviderRoute" text NOT NULL DEFAULT 'tata';""");
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "TenantCompanyProfiles" (

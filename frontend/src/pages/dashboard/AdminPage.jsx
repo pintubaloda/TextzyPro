@@ -147,6 +147,7 @@ export default function AdminPage() {
     apiPassword: "",
     apiKey: "",
     apiIpWhitelist: "",
+    ownerGroupSmsProviderRoute: "tata",
     taxRatePercent: 18,
     isTaxExempt: false,
     isReverseCharge: false,
@@ -203,6 +204,7 @@ export default function AdminPage() {
         apiPassword: customerCompanySettings?.apiPassword || "",
         apiKey: customerCompanySettings?.apiKey || "",
         apiIpWhitelist: customerCompanySettings?.apiIpWhitelist || "",
+        ownerGroupSmsProviderRoute: customerCompanySettings?.ownerGroupSmsProviderRoute || "tata",
         taxRatePercent: Number(customerCompanySettings?.taxRatePercent ?? 18),
         isTaxExempt: !!customerCompanySettings?.isTaxExempt,
         isReverseCharge: !!customerCompanySettings?.isReverseCharge,
@@ -664,6 +666,22 @@ export default function AdminPage() {
                   />
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Owner Group SMS Route</Label>
+                    <Select
+                      value={companySettings.ownerGroupSmsProviderRoute || "tata"}
+                      onValueChange={(value) => setCompanySettings((prev) => ({ ...prev, ownerGroupSmsProviderRoute: value }))}
+                    >
+                      <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select SMS route" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tata">Tata</SelectItem>
+                        <SelectItem value="equence">Equence</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-slate-500">
+                      All tenants under this owner group will use the selected SMS route by default.
+                    </p>
+                  </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <Label>API Username</Label>
@@ -753,6 +771,7 @@ export default function AdminPage() {
                       apiPassword: updated?.apiPassword || "",
                       apiKey: updated?.apiKey || "",
                       apiIpWhitelist: updated?.apiIpWhitelist || "",
+                      ownerGroupSmsProviderRoute: updated?.ownerGroupSmsProviderRoute || "tata",
                       taxRatePercent: Number(updated?.taxRatePercent ?? 18),
                       isTaxExempt: !!updated?.isTaxExempt,
                       isReverseCharge: !!updated?.isReverseCharge,

@@ -167,6 +167,12 @@ const PlatformSettingsPage = () => {
     tataBaseUrl: "https://smsgw.tatatel.co.in:9095/campaignService/campaigns/qs",
     tataUsername: "",
     tataPassword: "",
+    equenceBaseUrl: "https://api.equence.in/pushsms",
+    equenceUsername: "",
+    equencePassword: "",
+    equencePriority: "2",
+    equenceExpValidity: "60",
+    equenceAppsPort: "65000",
     defaultSenderAddress: "",
     defaultPeId: "",
     defaultTemplateId: "",
@@ -176,6 +182,7 @@ const PlatformSettingsPage = () => {
   });
   const [smsGatewayLogs, setSmsGatewayLogs] = useState([]);
   const [smsGatewayLogFilters, setSmsGatewayLogFilters] = useState({
+    provider: "all",
     tenantId: "",
     isSuccess: "all",
     recipientContains: "",
@@ -299,6 +306,18 @@ const PlatformSettingsPage = () => {
   );
 
   const setTab = (next) => setSearchParams({ tab: next });
+  const refreshSmsGatewayLogs = async (override = {}) => {
+    if (!isSuperAdmin) return;
+    const filters = { ...smsGatewayLogFilters, ...override };
+    const rows = await getPlatformSmsGatewayLogs({
+      provider: !filters.provider || filters.provider === "all" ? "" : filters.provider,
+      tenantId: filters.tenantId,
+      isSuccess: filters.isSuccess === "all" ? "" : filters.isSuccess === "success",
+      recipientContains: filters.recipientContains,
+      limit: Number(filters.limit || 200),
+    }).catch(() => []);
+    setSmsGatewayLogs(rows || []);
+  };
   const saveMobileAppSettings = async () => {
     await savePlatformSettings("mobile-app", {
       appName: appConfig.appName || "",
@@ -493,7 +512,7 @@ const PlatformSettingsPage = () => {
             getPlatformCustomers("").catch(() => []),
             isSuperAdmin
               ? getPlatformSmsGatewayLogs({
-                  provider: "tata",
+                  provider: "",
                   tenantId: smsGatewayLogFilters.tenantId,
                   isSuccess: smsGatewayLogFilters.isSuccess === "all" ? "" : smsGatewayLogFilters.isSuccess === "success",
                   recipientContains: smsGatewayLogFilters.recipientContains,
@@ -505,10 +524,16 @@ const PlatformSettingsPage = () => {
           if (!active) return;
           setSmsGateway((prev) => ({
             ...prev,
-            provider: "tata",
+            provider: values.provider || "tata",
             tataBaseUrl: values.tataBaseUrl || prev.tataBaseUrl,
             tataUsername: values.tataUsername || "",
             tataPassword: values.tataPassword || "",
+            equenceBaseUrl: values.equenceBaseUrl || prev.equenceBaseUrl,
+            equenceUsername: values.equenceUsername || "",
+            equencePassword: values.equencePassword || "",
+            equencePriority: values.equencePriority || "2",
+            equenceExpValidity: values.equenceExpValidity || "60",
+            equenceAppsPort: values.equenceAppsPort || "65000",
             defaultSenderAddress: values.defaultSenderAddress || "",
             defaultPeId: values.defaultPeId || "",
             defaultTemplateId: values.defaultTemplateId || "",
@@ -1649,15 +1674,25 @@ const PlatformSettingsPage = () => {
       {tab === "sms-gateway" && (
         <Card className="border-slate-200">
           <CardHeader>
-            <CardTitle>Professional SMS Gateway Setup (TATA)</CardTitle>
+            <CardTitle>Professional SMS Gateway Setup</CardTitle>
             <CardDescription>
-              Industry-style control panel with DLT-safe defaults. Tenant sender/entity/template mappings still override platform defaults automatically.
+              Manage Tata and Equence with DLT-safe defaults. Owner-group routing can override the platform default provider automatically.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="md:col-span-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
               <div className="text-sm font-semibold text-orange-700">Provider Mode</div>
-              <div className="mt-1 text-sm text-slate-700">TATA SMS only (MSG91-like professional setup flow, single provider active).</div>
+              <div className="mt-1 text-sm text-slate-700">Choose the default provider. Owner-group route overrides can still direct traffic to Tata or Equence user wise.</div>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Default Provider</Label>
+              <Select value={smsGateway.provider || "tata"} onValueChange={(value) => setSmsGateway((p) => ({ ...p, provider: value }))}>
+                <SelectTrigger><SelectValue placeholder="Select provider" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tata">Tata</SelectItem>
+                  <SelectItem value="equence">Equence</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>TATA Base URL</Label>
@@ -1675,6 +1710,22 @@ const PlatformSettingsPage = () => {
               <Label>PassWord</Label>
               <Input type="password" value={smsGateway.tataPassword} onChange={(e) => setSmsGateway((p) => ({ ...p, tataPassword: e.target.value }))} />
             </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Equence Base URL</Label>
+              <Input
+                value={smsGateway.equenceBaseUrl}
+                onChange={(e) => setSmsGateway((p) => ({ ...p, equenceBaseUrl: e.target.value }))}
+                placeholder="https://api.equence.in/pushsms"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Equence Username</Label>
+              <Input value={smsGateway.equenceUsername} onChange={(e) => setSmsGateway((p) => ({ ...p, equenceUsername: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Equence Password</Label>
+              <Input type="password" value={smsGateway.equencePassword} onChange={(e) => setSmsGateway((p) => ({ ...p, equencePassword: e.target.value }))} />
+            </div>
             <div className="space-y-2">
               <Label>senderAddress</Label>
               <Input value={smsGateway.defaultSenderAddress} onChange={(e) => setSmsGateway((p) => ({ ...p, defaultSenderAddress: e.target.value }))} />
@@ -1691,6 +1742,18 @@ const PlatformSettingsPage = () => {
               <Label>Timeout (ms)</Label>
               <Input value={smsGateway.timeoutMs} onChange={(e) => setSmsGateway((p) => ({ ...p, timeoutMs: e.target.value }))} />
             </div>
+            <div className="space-y-2">
+              <Label>Equence Priority</Label>
+              <Input value={smsGateway.equencePriority} onChange={(e) => setSmsGateway((p) => ({ ...p, equencePriority: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Equence expValidity</Label>
+              <Input value={smsGateway.equenceExpValidity} onChange={(e) => setSmsGateway((p) => ({ ...p, equenceExpValidity: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Equence appsPort</Label>
+              <Input value={smsGateway.equenceAppsPort} onChange={(e) => setSmsGateway((p) => ({ ...p, equenceAppsPort: e.target.value }))} />
+            </div>
             <div className="md:col-span-2 flex gap-2">
               <Button
                 className="bg-orange-500 hover:bg-orange-600"
@@ -1703,6 +1766,12 @@ const PlatformSettingsPage = () => {
                       tataBaseUrl: smsGateway.tataBaseUrl || "",
                       tataUsername: smsGateway.tataUsername || "",
                       tataPassword: smsGateway.tataPassword || "",
+                      equenceBaseUrl: smsGateway.equenceBaseUrl || "",
+                      equenceUsername: smsGateway.equenceUsername || "",
+                      equencePassword: smsGateway.equencePassword || "",
+                      equencePriority: smsGateway.equencePriority || "2",
+                      equenceExpValidity: smsGateway.equenceExpValidity || "60",
+                      equenceAppsPort: smsGateway.equenceAppsPort || "65000",
                       defaultSenderAddress: smsGateway.defaultSenderAddress || "",
                       defaultPeId: smsGateway.defaultPeId || "",
                       defaultTemplateId: smsGateway.defaultTemplateId || "",
@@ -1752,18 +1821,11 @@ const PlatformSettingsPage = () => {
                         templateId: smsGateway.defaultTemplateId || "",
                       });
                       if (isSuperAdmin) {
-                        const rows = await getPlatformSmsGatewayLogs({
-                          provider: "tata",
-                          tenantId: smsGatewayLogFilters.tenantId,
-                          isSuccess: smsGatewayLogFilters.isSuccess === "all" ? "" : smsGatewayLogFilters.isSuccess === "success",
-                          recipientContains: smsGatewayLogFilters.recipientContains,
-                          limit: Number(smsGatewayLogFilters.limit || 200),
-                        }).catch(() => []);
-                        setSmsGatewayLogs(rows || []);
+                        await refreshSmsGatewayLogs({ provider: smsGateway.provider || "tata" });
                       }
-                      toast.success("TATA test SMS submitted");
+                      toast.success(`${(smsGateway.provider || "tata").toUpperCase()} test SMS submitted`);
                     } catch (e) {
-                      toast.error(e?.message || "TATA test SMS failed");
+                      toast.error(e?.message || `${(smsGateway.provider || "tata").toUpperCase()} test SMS failed`);
                     } finally {
                       setLoading(false);
                     }
@@ -1777,24 +1839,26 @@ const PlatformSettingsPage = () => {
             {isSuperAdmin ? (
             <div className="md:col-span-2 mt-2 rounded-xl border border-slate-200 bg-white p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-900">TATA Request/Response Report</p>
+                <p className="text-sm font-semibold text-slate-900">SMS Gateway Request/Response Report</p>
                 <Button
                   variant="outline"
-                  onClick={async () => {
-                    const rows = await getPlatformSmsGatewayLogs({
-                      provider: "tata",
-                      tenantId: smsGatewayLogFilters.tenantId,
-                      isSuccess: smsGatewayLogFilters.isSuccess === "all" ? "" : smsGatewayLogFilters.isSuccess === "success",
-                      recipientContains: smsGatewayLogFilters.recipientContains,
-                      limit: Number(smsGatewayLogFilters.limit || 200),
-                    }).catch(() => []);
-                    setSmsGatewayLogs(rows || []);
-                  }}
+                  onClick={async () => refreshSmsGatewayLogs()}
                 >
                   Refresh Logs
                 </Button>
               </div>
-              <div className="grid gap-2 md:grid-cols-5">
+              <div className="grid gap-2 md:grid-cols-5 xl:grid-cols-6">
+                <Select
+                  value={smsGatewayLogFilters.provider}
+                  onValueChange={(v) => setSmsGatewayLogFilters((p) => ({ ...p, provider: v }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Provider" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All providers</SelectItem>
+                    <SelectItem value="tata">Tata</SelectItem>
+                    <SelectItem value="equence">Equence</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select
                   value={smsGatewayLogFilters.tenantId || "all"}
                   onValueChange={(v) => setSmsGatewayLogFilters((p) => ({ ...p, tenantId: v === "all" ? "" : v }))}
@@ -1889,7 +1953,7 @@ const PlatformSettingsPage = () => {
                     ))}
                     {(smsGatewayLogs || []).length === 0 && (
                       <tr>
-                        <td colSpan={10} className="px-3 py-6 text-center text-slate-500">No Tata logs found.</td>
+                        <td colSpan={10} className="px-3 py-6 text-center text-slate-500">No SMS gateway logs found.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1898,7 +1962,7 @@ const PlatformSettingsPage = () => {
             </div>
             ) : (
               <div className="md:col-span-2 mt-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                Tata request/response report is visible only to super admin.
+                SMS gateway request/response report is visible only to super admin.
               </div>
             )}
           </CardContent>
