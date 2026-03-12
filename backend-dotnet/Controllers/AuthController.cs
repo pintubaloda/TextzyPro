@@ -1389,10 +1389,8 @@ public class AuthController(
     private static string CreateOpaqueToken(int byteLength)
     {
         var tokenBytes = RandomNumberGenerator.GetBytes(byteLength);
-        return Convert.ToBase64String(tokenBytes)
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
+        // Hex avoids URL/querystring filtering issues (e.g., '--') and is URL-safe without encoding.
+        return Convert.ToHexString(tokenBytes);
     }
 
     private static string GenerateNumericCode(int len)

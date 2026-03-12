@@ -558,7 +558,8 @@ public class TeamController(
     private static string CreateOpaqueToken()
     {
         var bytes = RandomNumberGenerator.GetBytes(32);
-        return Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        // Hex avoids URL/querystring filtering issues (e.g., '--') and is URL-safe without encoding.
+        return Convert.ToHexString(bytes);
     }
 
     private static string HashToken(string token)
