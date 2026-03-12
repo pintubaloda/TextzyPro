@@ -30,6 +30,8 @@ public class AuthMiddleware(RequestDelegate next)
         }
 
         var path = context.Request.Path.Value ?? string.Empty;
+        var isHealthPath = path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase)
+            || path.Equals("/api/ping", StringComparison.OrdinalIgnoreCase);
         var isAuthPath = path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/auth/two-factor", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/auth/email-verification", StringComparison.OrdinalIgnoreCase)
@@ -44,9 +46,9 @@ public class AuthMiddleware(RequestDelegate next)
         var isWabaWebhookPath = path.StartsWith("/api/waba/webhook", StringComparison.OrdinalIgnoreCase);
         var isPaymentWebhookPath = path.StartsWith("/api/payments/webhook", StringComparison.OrdinalIgnoreCase);
         var isEmailWebhookPath = path.StartsWith("/api/email/webhook", StringComparison.OrdinalIgnoreCase);
-        var isCsrfExemptPath = isAuthPath || isAuthRefreshPath || isProjectPath || isPublicTenantPath || isSwaggerPath || isHubPath || isWabaWebhookPath || isPaymentWebhookPath || isEmailWebhookPath;
+        var isCsrfExemptPath = isHealthPath || isAuthPath || isAuthRefreshPath || isProjectPath || isPublicTenantPath || isSwaggerPath || isHubPath || isWabaWebhookPath || isPaymentWebhookPath || isEmailWebhookPath;
 
-        if (isAuthPath || isPublicTenantPath || isSwaggerPath || isWabaWebhookPath || isPaymentWebhookPath || isEmailWebhookPath)
+        if (isHealthPath || isAuthPath || isPublicTenantPath || isSwaggerPath || isWabaWebhookPath || isPaymentWebhookPath || isEmailWebhookPath)
         {
             await _next(context);
             return;

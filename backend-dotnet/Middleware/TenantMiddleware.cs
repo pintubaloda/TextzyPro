@@ -23,6 +23,8 @@ public class TenantMiddleware(RequestDelegate next)
 
         var path = context.Request.Path.Value ?? string.Empty;
         var isSwaggerPath = path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase);
+        var isHealthPath = path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase);
+        var isPingPath = path.Equals("/api/ping", StringComparison.OrdinalIgnoreCase);
         var isHubPath = path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase);
         var isWabaWebhook = path.StartsWith("/api/waba/webhook", StringComparison.OrdinalIgnoreCase);
         var isPaymentWebhook = path.StartsWith("/api/payments/webhook", StringComparison.OrdinalIgnoreCase);
@@ -64,7 +66,7 @@ public class TenantMiddleware(RequestDelegate next)
             return;
         }
 
-        if (isSwaggerPath || isHubPath || isWabaWebhook || isPaymentWebhook || isAuthPath || (isPublicPath && !isPublicMessagesSendPath))
+        if (isSwaggerPath || isHealthPath || isPingPath || isHubPath || isWabaWebhook || isPaymentWebhook || isAuthPath || (isPublicPath && !isPublicMessagesSendPath))
         {
             await _next(context);
             return;
