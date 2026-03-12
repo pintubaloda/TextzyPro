@@ -355,15 +355,31 @@ public class PlatformCustomersController(
             }
         }
 
+        var visibleUserIds = users.Select(u => u.Id).ToList();
+        var effectiveOwnerUserIds = visibleUserIds.Count == 0
+            ? new HashSet<Guid>()
+            : (await db.TenantOwnerGroups.AsNoTracking()
+                .Where(x => x.IsActive && visibleUserIds.Contains(x.OwnerUserId))
+                .Select(x => x.OwnerUserId)
+                .Distinct()
+                .ToListAsync(ct))
+            .ToHashSet();
+
         var rows = users.Select(u =>
         {
             var m = memberships.Where(x => x.UserId == u.Id).ToList();
-            var roles = m
+            var tenantRoles = m
                 .Select(x => (x.Role ?? string.Empty).Trim().ToLowerInvariant())
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct()
                 .OrderBy(x => x)
                 .ToList();
+            var effectiveOwner = tenantRoles.Contains(RolePermissionCatalog.Owner, StringComparer.OrdinalIgnoreCase)
+                || effectiveOwnerUserIds.Contains(u.Id);
+            var platformRoles = u.IsSuperAdmin
+                ? new[] { RolePermissionCatalog.SuperAdmin }
+                : Array.Empty<string>();
+            var roles = tenantRoles.ToList();
             if (u.IsSuperAdmin && !roles.Contains(RolePermissionCatalog.SuperAdmin, StringComparer.OrdinalIgnoreCase))
             {
                 roles.Insert(0, RolePermissionCatalog.SuperAdmin);
@@ -376,6 +392,9 @@ public class PlatformCustomersController(
                 email = u.Email,
                 isActive = u.IsActive,
                 isSuperAdmin = u.IsSuperAdmin,
+                platformRoles,
+                tenantRoles,
+                effectiveOwner,
                 tenantCount = m.Select(x => x.TenantId).Distinct().Count(),
                 roles,
                 rolePreview = string.Join(", ", roles),

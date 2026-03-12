@@ -308,7 +308,7 @@ export default function AdminPage() {
     return {
       total: rows.length,
       superAdmins: rows.filter((user) => user?.isSuperAdmin).length,
-      owners: rows.filter((user) => Array.isArray(user?.roles) && user.roles.includes("owner")).length,
+      owners: rows.filter((user) => user?.effectiveOwner).length,
       active: rows.filter((user) => user?.isActive).length,
     };
   }, [platformDirectoryUsers]);
@@ -649,7 +649,7 @@ export default function AdminPage() {
           </div>
 
           <SectionTable
-            headers={["User", "Roles", "Tenant Count", "Type", "Status"]}
+            headers={["User", "Platform Role", "Tenant Roles", "Effective Owner", "Tenant Count", "Status"]}
             empty="No platform users found for the current search."
             rows={platformDirectoryUsers.map((user) => (
               <tr key={user.userId} className="border-t border-slate-100">
@@ -657,13 +657,20 @@ export default function AdminPage() {
                   <div className="font-semibold text-slate-900">{user.name}</div>
                   <div className="text-xs text-slate-500">{user.email}</div>
                 </td>
-                <td className="px-4 py-3 text-slate-700">{user.rolePreview || (user.isSuperAdmin ? "super_admin" : "-")}</td>
-                <td className="px-4 py-3 text-slate-700">{Number(user.tenantCount || 0).toLocaleString()}</td>
                 <td className="px-4 py-3">
                   <Badge variant="outline" className={user.isSuperAdmin ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-700"}>
-                    {user.isSuperAdmin ? "Platform Owner" : "Tenant User"}
+                    {user.isSuperAdmin ? "super_admin" : "-"}
                   </Badge>
                 </td>
+                <td className="px-4 py-3 text-slate-700">
+                  {Array.isArray(user.tenantRoles) && user.tenantRoles.length ? user.tenantRoles.join(", ") : "-"}
+                </td>
+                <td className="px-4 py-3">
+                  <Badge variant="outline" className={user.effectiveOwner ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700"}>
+                    {user.effectiveOwner ? "Yes" : "No"}
+                  </Badge>
+                </td>
+                <td className="px-4 py-3 text-slate-700">{Number(user.tenantCount || 0).toLocaleString()}</td>
                 <td className="px-4 py-3">
                   <Badge variant="outline" className={user.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>
                     {user.isActive ? "Active" : "Inactive"}
