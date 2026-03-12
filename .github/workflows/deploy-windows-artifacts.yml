@@ -15,7 +15,8 @@ env:
   TEXTZY_FRONTEND_SITE_NAME: textzy.in
   TEXTZY_BACKEND_SITE_NAME: api.textzy.in
   TEXTZY_FRONTEND_APP_POOL: textzy.in
-  TEXTZY_BACKEND_APP_POOL: api.textzy.in
+  # IIS app pool name (NOT the site name)
+  TEXTZY_BACKEND_APP_POOL: api-textzy-in
   TEXTZY_FRONTEND_API_BASE: https://api.textzy.in
 
 jobs:

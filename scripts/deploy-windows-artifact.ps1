@@ -24,6 +24,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-AppCmdPath {
+    $path = Join-Path $env:windir "System32\\inetsrv\\appcmd.exe"
+    if (Test-Path $path) { return $path }
+    return $null
+}
+
 function Assert-PathExists {
     param([string]$PathValue, [string]$Label)
     if ([string]::IsNullOrWhiteSpace($PathValue)) {
@@ -98,6 +104,17 @@ function Stop-IisTarget {
         [string]$AppPool
     )
 
+    $appcmd = Get-AppCmdPath
+    if ($appcmd) {
+        if (-not [string]::IsNullOrWhiteSpace($SiteName)) {
+            & $appcmd stop site /site.name:"$SiteName" 2>$null | Out-Null
+        }
+        if (-not [string]::IsNullOrWhiteSpace($AppPool)) {
+            & $appcmd stop apppool /apppool.name:"$AppPool" 2>$null | Out-Null
+        }
+        return
+    }
+
     Import-Module WebAdministration -ErrorAction SilentlyContinue
 
     if (-not [string]::IsNullOrWhiteSpace($SiteName)) {
@@ -118,6 +135,17 @@ function Start-IisTarget {
         [string]$SiteName,
         [string]$AppPool
     )
+
+    $appcmd = Get-AppCmdPath
+    if ($appcmd) {
+        if (-not [string]::IsNullOrWhiteSpace($SiteName)) {
+            & $appcmd start site /site.name:"$SiteName" 2>$null | Out-Null
+        }
+        if (-not [string]::IsNullOrWhiteSpace($AppPool)) {
+            & $appcmd start apppool /apppool.name:"$AppPool" 2>$null | Out-Null
+        }
+        return
+    }
 
     Import-Module WebAdministration -ErrorAction SilentlyContinue
 
@@ -181,6 +209,13 @@ New-Item -ItemType Directory -Path $backendReleasePath -Force | Out-Null
 Copy-ArtifactToRelease -Source $FrontendArtifactPath -Target $frontendReleasePath
 Copy-ArtifactToRelease -Source $BackendArtifactPath -Target $backendReleasePath
 
+$backendDllName = "Textzy.Api.dll"
+$backendReleaseDll = Join-Path $backendReleasePath $backendDllName
+if (-not (Test-Path $backendReleaseDll)) {
+    throw "Backend artifact missing $backendDllName at $backendReleaseDll"
+}
+$backendReleaseStamp = (Get-Item $backendReleaseDll).LastWriteTimeUtc
+
 $offlineFile = Write-AppOffline -Target $BackendTargetPath
 try {
     Deploy-Artifact -Source $frontendReleasePath -Target $FrontendTargetPath
@@ -192,6 +227,15 @@ try {
     Stop-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
     Start-Sleep -Seconds 5
     Deploy-Artifact -Source $backendReleasePath -Target $BackendTargetPath
+
+    $backendTargetDll = Join-Path $BackendTargetPath $backendDllName
+    if (-not (Test-Path $backendTargetDll)) {
+        throw "Backend target missing $backendDllName after deploy at $backendTargetDll"
+    }
+    $backendTargetStamp = (Get-Item $backendTargetDll).LastWriteTimeUtc
+    if ($backendTargetStamp -lt $backendReleaseStamp) {
+        throw "Backend deploy did not update $backendDllName. target=$backendTargetStamp artifact=$backendReleaseStamp"
+    }
 }
 finally {
     if (Test-Path $offlineFile) {
