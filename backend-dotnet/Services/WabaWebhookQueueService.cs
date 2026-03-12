@@ -34,7 +34,7 @@ public class WabaWebhookQueueService(IConfiguration config, ILogger<WabaWebhookQ
     private readonly string _rabbitVhost = config["WebhookQueue:RabbitMq:VHost"] ?? string.Empty;
     private readonly string _rabbitUser = config["WebhookQueue:RabbitMq:Username"] ?? string.Empty;
     private readonly string _rabbitPass = config["WebhookQueue:RabbitMq:Password"] ?? string.Empty;
-    private readonly bool _rabbitUseTls = bool.TryParse(config["WebhookQueue:RabbitMq:UseTls"], out var t1) ? t1 : true;
+    private readonly bool _rabbitUseTls = InferRabbitUseTls(config["WebhookQueue:RabbitMq:UseTls"], config["WebhookQueue:RabbitMq:ConnectionString"] ?? config["RABBITMQ_URL"]);
     private readonly string _sqsQueueUrl = config["WebhookQueue:Sqs:QueueUrl"] ?? config["AWS_SQS_WEBHOOK_QUEUE_URL"] ?? string.Empty;
     private readonly Lazy<ConnectionMultiplexer?> _redis = new(() =>
     {
@@ -59,7 +59,7 @@ public class WabaWebhookQueueService(IConfiguration config, ILogger<WabaWebhookQ
             var vhost = config["WebhookQueue:RabbitMq:VHost"] ?? string.Empty;
             var user = config["WebhookQueue:RabbitMq:Username"] ?? string.Empty;
             var pass = config["WebhookQueue:RabbitMq:Password"] ?? string.Empty;
-            var useTls = bool.TryParse(config["WebhookQueue:RabbitMq:UseTls"], out var tlsFlag) ? tlsFlag : true;
+            var useTls = InferRabbitUseTls(config["WebhookQueue:RabbitMq:UseTls"], conn);
             return BuildRabbitConnection(conn, vhost, user, pass, useTls);
         }
         catch
@@ -118,6 +118,13 @@ public class WabaWebhookQueueService(IConfiguration config, ILogger<WabaWebhookQ
     {
         if (string.IsNullOrWhiteSpace(_rabbitConn)) return ("rabbitmq", null);
         return ("rabbitmq", _rabbitConnLazy.Value is not null && _rabbitConnLazy.Value.IsOpen);
+    }
+
+    private static bool InferRabbitUseTls(string? configuredFlag, string? connectionString)
+    {
+        if (bool.TryParse(configuredFlag, out var configured)) return configured;
+        return !string.IsNullOrWhiteSpace(connectionString) &&
+               connectionString.TrimStart().StartsWith("amqps://", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IConnection? BuildRabbitConnection(string connectionString, string vhost, string user, string pass, bool useTls)
