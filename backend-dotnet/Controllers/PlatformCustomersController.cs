@@ -285,7 +285,11 @@ public class PlatformCustomersController(
     }
 
     [HttpGet("users")]
-    public async Task<IActionResult> Users([FromQuery] string q = "", [FromQuery] bool ownersOnly = false, CancellationToken ct = default)
+    public async Task<IActionResult> Users(
+        [FromQuery] string q = "",
+        [FromQuery] bool ownersOnly = false,
+        [FromQuery] bool includeSuperAdmins = false,
+        CancellationToken ct = default)
     {
         if (!auth.IsAuthenticated) return Unauthorized();
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
@@ -345,20 +349,37 @@ public class PlatformCustomersController(
                 ? new List<TenantUser>()
                 : await db.TenantUsers.AsNoTracking().Where(x => userIds.Contains(x.UserId)).ToListAsync(ct);
 
-            users = users.Where(u => !u.IsSuperAdmin).ToList();
+            if (!includeSuperAdmins)
+            {
+                users = users.Where(u => !u.IsSuperAdmin).ToList();
+            }
         }
 
         var rows = users.Select(u =>
         {
             var m = memberships.Where(x => x.UserId == u.Id).ToList();
+            var roles = m
+                .Select(x => (x.Role ?? string.Empty).Trim().ToLowerInvariant())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct()
+                .OrderBy(x => x)
+                .ToList();
+            if (u.IsSuperAdmin && !roles.Contains(RolePermissionCatalog.SuperAdmin, StringComparer.OrdinalIgnoreCase))
+            {
+                roles.Insert(0, RolePermissionCatalog.SuperAdmin);
+            }
+
             return new
             {
                 userId = u.Id,
                 name = string.IsNullOrWhiteSpace(u.FullName) ? u.Email : u.FullName,
                 email = u.Email,
                 isActive = u.IsActive,
+                isSuperAdmin = u.IsSuperAdmin,
                 tenantCount = m.Select(x => x.TenantId).Distinct().Count(),
-                rolePreview = string.Join(", ", m.Select(x => x.Role).Distinct().OrderBy(x => x))
+                roles,
+                rolePreview = string.Join(", ", roles),
+                createdAtUtc = u.CreatedAtUtc
             };
         });
 

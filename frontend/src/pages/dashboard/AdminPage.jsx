@@ -124,7 +124,9 @@ function SectionTable({ headers, rows, empty }) {
 
 export default function AdminPage() {
   const [query, setQuery] = useState("");
+  const [platformUserQuery, setPlatformUserQuery] = useState("");
   const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [loadingDirectory, setLoadingDirectory] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -163,6 +165,7 @@ export default function AdminPage() {
   });
   const [savingCompanySettings, setSavingCompanySettings] = useState(false);
   const [platformUsers, setPlatformUsers] = useState([]);
+  const [platformDirectoryUsers, setPlatformDirectoryUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [userTenantReport, setUserTenantReport] = useState(null);
   const [docViewer, setDocViewer] = useState({ open: false, type: "sms" });
@@ -192,6 +195,19 @@ export default function AdminPage() {
       setPlatformUsers([]);
     } finally {
       setLoadingCustomers(false);
+    }
+  }, []);
+
+  const loadPlatformDirectory = useCallback(async (search = "") => {
+    try {
+      setLoadingDirectory(true);
+      const data = await getPlatformUsers(search, false, true);
+      setPlatformDirectoryUsers(Array.isArray(data) ? data : []);
+    } catch (error) {
+      toast.error(error?.message || "Failed to load platform user directory");
+      setPlatformDirectoryUsers([]);
+    } finally {
+      setLoadingDirectory(false);
     }
   }, []);
 
@@ -250,6 +266,10 @@ export default function AdminPage() {
   }, [loadOwners]);
 
   useEffect(() => {
+    loadPlatformDirectory("");
+  }, [loadPlatformDirectory]);
+
+  useEffect(() => {
     (async () => {
       try {
         const data = await listPlatformBillingPlans();
@@ -282,6 +302,16 @@ export default function AdminPage() {
     () => platformUsers.find((user) => user.userId === selectedUserId) || null,
     [platformUsers, selectedUserId],
   );
+
+  const platformDirectorySummary = useMemo(() => {
+    const rows = Array.isArray(platformDirectoryUsers) ? platformDirectoryUsers : [];
+    return {
+      total: rows.length,
+      superAdmins: rows.filter((user) => user?.isSuperAdmin).length,
+      owners: rows.filter((user) => Array.isArray(user?.roles) && user.roles.includes("owner")).length,
+      active: rows.filter((user) => user?.isActive).length,
+    };
+  }, [platformDirectoryUsers]);
 
   const userCompanyRows = useMemo(() => {
     if (userTenantReport?.groups?.length) {
@@ -567,6 +597,81 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle className="text-xl">Platform User Directory</CardTitle>
+              <CardDescription>Temporary production view to inspect every user account, role mapping, tenant coverage, and platform-owner access.</CardDescription>
+            </div>
+            <div className="flex w-full flex-col gap-3 md:flex-row lg:w-auto">
+              <Input
+                value={platformUserQuery}
+                onChange={(event) => setPlatformUserQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") loadPlatformDirectory(platformUserQuery);
+                }}
+                placeholder="Search name or email"
+                className="h-11 min-w-[280px] rounded-xl border-slate-300"
+              />
+              <Button variant="outline" className="h-11 rounded-xl" onClick={() => loadPlatformDirectory(platformUserQuery)} disabled={loadingDirectory}>
+                <RefreshCcw className={`mr-2 h-4 w-4 ${loadingDirectory ? "animate-spin" : ""}`} />
+                Refresh users
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Visible Users</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.total.toLocaleString()}</p>
+              <p className="text-sm text-slate-500">Current API result set</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Platform Owners</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.superAdmins.toLocaleString()}</p>
+              <p className="text-sm text-slate-500">`super_admin` accounts included</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tenant Owners</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.owners.toLocaleString()}</p>
+              <p className="text-sm text-slate-500">Users with the `owner` workspace role</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Active Accounts</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.active.toLocaleString()}</p>
+              <p className="text-sm text-slate-500">Users currently marked active</p>
+            </div>
+          </div>
+
+          <SectionTable
+            headers={["User", "Roles", "Tenant Count", "Type", "Status"]}
+            empty="No platform users found for the current search."
+            rows={platformDirectoryUsers.map((user) => (
+              <tr key={user.userId} className="border-t border-slate-100">
+                <td className="px-4 py-3">
+                  <div className="font-semibold text-slate-900">{user.name}</div>
+                  <div className="text-xs text-slate-500">{user.email}</div>
+                </td>
+                <td className="px-4 py-3 text-slate-700">{user.rolePreview || (user.isSuperAdmin ? "super_admin" : "-")}</td>
+                <td className="px-4 py-3 text-slate-700">{Number(user.tenantCount || 0).toLocaleString()}</td>
+                <td className="px-4 py-3">
+                  <Badge variant="outline" className={user.isSuperAdmin ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-700"}>
+                    {user.isSuperAdmin ? "Platform Owner" : "Tenant User"}
+                  </Badge>
+                </td>
+                <td className="px-4 py-3">
+                  <Badge variant="outline" className={user.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>
+                    {user.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </td>
+              </tr>
+            ))}
+          />
         </CardContent>
       </Card>
 
