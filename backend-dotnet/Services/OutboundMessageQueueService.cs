@@ -59,8 +59,12 @@ public class OutboundMessageQueueService(IConfiguration config, ILogger<Outbound
             var useTls = InferRabbitUseTls(config["OutboundQueue:RabbitMq:UseTls"], conn);
             return BuildRabbitConnection(conn, vhost, user, pass, useTls);
         }
-        catch
+        catch (Exception ex)
         {
+            // Use locals only: field initializers can't reference other instance fields.
+            var conn = config["OutboundQueue:RabbitMq:ConnectionString"] ?? config["RABBITMQ_URL"] ?? string.Empty;
+            var useTls = InferRabbitUseTls(config["OutboundQueue:RabbitMq:UseTls"], conn);
+            logger.LogError(ex, "Outbound RabbitMQ connection init failed. conn={ConnectionString}, useTls={UseTls}", RedactRabbitConnectionString(conn), useTls);
             return null;
         }
     });
@@ -132,6 +136,20 @@ public class OutboundMessageQueueService(IConfiguration config, ILogger<Outbound
             "rabbit" => "rabbitmq",
             _ => value
         };
+    }
+
+    private static string RedactRabbitConnectionString(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+        if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return "<invalid-uri>";
+        if (string.IsNullOrWhiteSpace(uri.UserInfo)) return uri.ToString();
+        var user = uri.UserInfo.Split(':', 2)[0];
+        var builder = new UriBuilder(uri)
+        {
+            UserName = user,
+            Password = "*****"
+        };
+        return builder.Uri.ToString();
     }
 
     private static IConnection? BuildRabbitConnection(string connectionString, string vhost, string user, string pass, bool useTls)
