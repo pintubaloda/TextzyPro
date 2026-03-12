@@ -381,9 +381,13 @@ export default function AdminPage() {
       setSelectedTenantId("");
       return;
     }
-    const validTenant = ownerCustomers.some((item) => item.tenantId === selectedTenantId);
+    // selectedTenantId can be set from either the owner portfolio or the searched user's tenant list.
+    // Don't auto-reset it if it belongs to the searched user but is not yet under the selected owner.
+    const validTenant =
+      ownerCustomers.some((item) => item.tenantId === selectedTenantId) ||
+      searchedUserCompanies.some((item) => item.tenantId === selectedTenantId);
     if (!validTenant) setSelectedTenantId(ownerCustomers[0].tenantId);
-  }, [ownerCustomers, selectedTenantId, selectedUserId]);
+  }, [ownerCustomers, searchedUserCompanies, selectedTenantId, selectedUserId]);
 
   useEffect(() => {
     if (!selectedPlatformSearchUserId) {
