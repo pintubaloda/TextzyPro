@@ -24,7 +24,7 @@ public class WabaWebhookQueueService(IConfiguration config, ILogger<WabaWebhookQ
 {
     private readonly Channel<WabaWebhookQueueItem> _channel = Channel.CreateUnbounded<WabaWebhookQueueItem>();
     private int _memoryDepth = 0;
-    private readonly string _provider = (config["WebhookQueue:Provider"] ?? "memory").Trim().ToLowerInvariant();
+    private readonly string _provider = NormalizeProvider(config["WebhookQueue:Provider"]);
     private readonly string _redisConn = config["WebhookQueue:RedisConnection"] ?? config["REDIS_URL"] ?? string.Empty;
     private readonly string _redisKey = config["WebhookQueue:RedisListKey"] ?? "textzy:webhook:queue";
     private readonly string _rabbitConn = config["WebhookQueue:RabbitMq:ConnectionString"] ?? config["RABBITMQ_URL"] ?? string.Empty;
@@ -125,6 +125,16 @@ public class WabaWebhookQueueService(IConfiguration config, ILogger<WabaWebhookQ
         if (bool.TryParse(configuredFlag, out var configured)) return configured;
         return !string.IsNullOrWhiteSpace(connectionString) &&
                connectionString.TrimStart().StartsWith("amqps://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeProvider(string? provider)
+    {
+        var value = (provider ?? "memory").Trim().ToLowerInvariant();
+        return value switch
+        {
+            "rabbit" => "rabbitmq",
+            _ => value
+        };
     }
 
     private static IConnection? BuildRabbitConnection(string connectionString, string vhost, string user, string pass, bool useTls)

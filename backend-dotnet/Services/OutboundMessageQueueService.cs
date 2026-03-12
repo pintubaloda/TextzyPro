@@ -21,7 +21,7 @@ public class OutboundMessageQueueService(IConfiguration config, ILogger<Outbound
 {
     private readonly Channel<OutboundMessageQueueItem> _memory = Channel.CreateUnbounded<OutboundMessageQueueItem>();
     private int _memoryDepth = 0;
-    private readonly string _provider = (config["OutboundQueue:Provider"] ?? "memory").Trim().ToLowerInvariant();
+    private readonly string _provider = NormalizeProvider(config["OutboundQueue:Provider"]);
     private readonly string _redisConn = config["OutboundQueue:RedisConnection"] ?? config["REDIS_URL"] ?? string.Empty;
     private readonly string _redisKey = config["OutboundQueue:RedisListKey"] ?? "textzy:outbound:queue";
     private readonly string _rabbitConn = config["OutboundQueue:RabbitMq:ConnectionString"] ?? config["RABBITMQ_URL"] ?? string.Empty;
@@ -122,6 +122,16 @@ public class OutboundMessageQueueService(IConfiguration config, ILogger<Outbound
         if (bool.TryParse(configuredFlag, out var configured)) return configured;
         return !string.IsNullOrWhiteSpace(connectionString) &&
                connectionString.TrimStart().StartsWith("amqps://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeProvider(string? provider)
+    {
+        var value = (provider ?? "memory").Trim().ToLowerInvariant();
+        return value switch
+        {
+            "rabbit" => "rabbitmq",
+            _ => value
+        };
     }
 
     private static IConnection? BuildRabbitConnection(string connectionString, string vhost, string user, string pass, bool useTls)
