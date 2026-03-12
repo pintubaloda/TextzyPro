@@ -1537,7 +1537,7 @@ public class BillingController(
             if (string.IsNullOrWhiteSpace(recipient.email)) return;
             var attachments = invoice is null
                 ? null
-                : new[] { await invoiceAttachmentService.BuildPdfAttachmentAsync(invoice, Request, ct) };
+                : await invoiceAttachmentService.BuildInvoiceAttachmentsAsync(invoice, Request, ct);
             await emailService.SendBillingEventAsync(recipient.email, recipient.name, recipient.companyName, title, description, details, ct, attachments);
         }
         catch (Exception ex)

@@ -10,6 +10,17 @@ public sealed class InvoiceAttachmentService(
     SecretCryptoService crypto,
     IConfiguration config)
 {
+    public async Task<EmailAttachment[]> BuildInvoiceAttachmentsAsync(BillingInvoice invoice, HttpRequest? request, CancellationToken ct = default)
+    {
+        var format = (config["Billing:InvoiceAttachmentFormat"] ?? config["INVOICE_ATTACHMENT_FORMAT"] ?? "html").Trim().ToLowerInvariant();
+        return format switch
+        {
+            "pdf" => [await BuildPdfAttachmentAsync(invoice, request, ct)],
+            "both" => new[] { await BuildHtmlAttachmentAsync(invoice, request, ct), await BuildPdfAttachmentAsync(invoice, request, ct) },
+            _ => [await BuildHtmlAttachmentAsync(invoice, request, ct)],
+        };
+    }
+
     public async Task<EmailAttachment> BuildPdfAttachmentAsync(BillingInvoice invoice, HttpRequest? request, CancellationToken ct = default)
     {
         var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == invoice.TenantId, ct);
@@ -30,6 +41,7 @@ public sealed class InvoiceAttachmentService(
             new InvoiceSellerProfile
             {
                 PlatformName = branding.PlatformName,
+                LogoUrl = branding.LogoUrl,
                 LegalName = branding.LegalName,
                 Address = branding.Address,
                 Gstin = branding.Gstin,
@@ -56,6 +68,57 @@ public sealed class InvoiceAttachmentService(
 
         var fileName = string.IsNullOrWhiteSpace(invoice.InvoiceNo) ? invoice.Id.ToString("N") : SanitizeFileName(invoice.InvoiceNo);
         return new EmailAttachment($"{fileName}.pdf", "application/pdf", bytes);
+    }
+
+    public async Task<EmailAttachment> BuildHtmlAttachmentAsync(BillingInvoice invoice, HttpRequest? request, CancellationToken ct = default)
+    {
+        var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == invoice.TenantId, ct);
+        var profile = await db.TenantCompanyProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.TenantId == invoice.TenantId, ct);
+        var branding = await GetPlatformBrandingAsync(ct);
+        var integrityHash = await EnsureInvoiceIntegrityHashAsync(invoice, ct);
+        var verificationUrl = BuildPublicInvoiceVerificationUrl(invoice.Id, integrityHash, request);
+        var qrCodeUrl = BuildQrCodeUrl(verificationUrl);
+
+        var companyName = string.IsNullOrWhiteSpace(profile?.CompanyName)
+            ? (tenant?.Name ?? "Textzy Workspace")
+            : profile!.CompanyName;
+        var legalName = string.IsNullOrWhiteSpace(profile?.LegalName)
+            ? companyName
+            : profile!.LegalName;
+
+        var html = InvoiceDocumentRenderer.BuildInvoiceHtml(
+            invoice,
+            new InvoiceSellerProfile
+            {
+                PlatformName = branding.PlatformName,
+                LogoUrl = branding.LogoUrl,
+                LegalName = branding.LegalName,
+                Address = branding.Address,
+                Gstin = branding.Gstin,
+                Pan = branding.Pan,
+                Cin = branding.Cin,
+                BillingEmail = branding.BillingEmail,
+                BillingPhone = branding.BillingPhone,
+                Website = branding.Website,
+                InvoiceFooter = branding.InvoiceFooter
+            },
+            new InvoiceBuyerProfile
+            {
+                CompanyName = companyName,
+                LegalName = legalName,
+                BillingEmail = profile?.BillingEmail ?? string.Empty,
+                Address = profile?.Address ?? string.Empty,
+                Gstin = profile?.Gstin ?? string.Empty,
+                Pan = profile?.Pan ?? string.Empty
+            },
+            profile?.TaxRatePercent ?? 18m,
+            profile?.IsTaxExempt ?? false,
+            profile?.IsReverseCharge ?? false,
+            verificationUrl,
+            qrCodeUrl);
+
+        var fileName = string.IsNullOrWhiteSpace(invoice.InvoiceNo) ? invoice.Id.ToString("N") : SanitizeFileName(invoice.InvoiceNo);
+        return new EmailAttachment($"{fileName}.html", "text/html; charset=utf-8", System.Text.Encoding.UTF8.GetBytes(html));
     }
 
     private async Task<string> EnsureInvoiceIntegrityHashAsync(BillingInvoice invoice, CancellationToken ct)
@@ -95,6 +158,7 @@ public sealed class InvoiceAttachmentService(
         return new PlatformBrandingSnapshot
         {
             PlatformName = string.IsNullOrWhiteSpace(platformName) ? "Textzy" : platformName,
+            LogoUrl = ResolveLogoUrl(values.TryGetValue("logoUrl", out var logoUrl) ? logoUrl : string.Empty),
             LegalName = string.IsNullOrWhiteSpace(legalName) ? (string.IsNullOrWhiteSpace(platformName) ? "Textzy" : platformName) : legalName,
             Gstin = (values.TryGetValue("gstin", out var gstin) ? gstin : string.Empty).Trim(),
             Pan = (values.TryGetValue("pan", out var pan) ? pan : string.Empty).Trim(),
@@ -116,6 +180,9 @@ public sealed class InvoiceAttachmentService(
 
         return $"{baseUrl}/api/public/invoices/verify?invoiceId={Uri.EscapeDataString(invoiceId.ToString())}&hash={Uri.EscapeDataString(integrityHash ?? string.Empty)}";
     }
+
+    private static string BuildQrCodeUrl(string verificationUrl)
+        => $"https://api.qrserver.com/v1/create-qr-code/?size=180x180&ecc=M&data={Uri.EscapeDataString(verificationUrl ?? string.Empty)}";
 
     private static string? NormalizeBaseUrl(string? raw)
     {
@@ -139,6 +206,29 @@ public sealed class InvoiceAttachmentService(
         return builder.Uri.ToString().TrimEnd('/');
     }
 
+    private static string ResolveLogoUrl(string? configuredUrl)
+    {
+        var explicitUrl = (configuredUrl ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+            return explicitUrl;
+
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Assets", "textzy-landing-logo.svg"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Assets", "textzy-landing-logo.svg"),
+            Path.Combine(AppContext.BaseDirectory, "Assets", "textzy-logo-full.png"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Assets", "textzy-logo-full.png")
+        };
+
+        foreach (var path in candidates)
+        {
+            if (File.Exists(path))
+                return path;
+        }
+
+        return string.Empty;
+    }
+
     private static string SanitizeFileName(string value)
     {
         var invalid = Path.GetInvalidFileNameChars();
@@ -154,6 +244,7 @@ public sealed class InvoiceAttachmentService(
     private sealed class PlatformBrandingSnapshot
     {
         public string PlatformName { get; init; } = "Textzy";
+        public string LogoUrl { get; init; } = string.Empty;
         public string LegalName { get; init; } = "Textzy";
         public string Gstin { get; init; } = string.Empty;
         public string Pan { get; init; } = string.Empty;

@@ -407,7 +407,7 @@ public class PlatformPurchasesController(
             : invoice.Description.Trim();
         var currency = string.IsNullOrWhiteSpace(attempt?.Currency) ? "INR" : attempt!.Currency.Trim().ToUpperInvariant();
         var companyName = string.IsNullOrWhiteSpace(profile?.CompanyName) ? (tenant?.Name ?? "Textzy Workspace") : profile!.CompanyName;
-        var attachments = new[] { await invoiceAttachmentService.BuildPdfAttachmentAsync(invoice, Request, ct) };
+        var attachments = await invoiceAttachmentService.BuildInvoiceAttachmentsAsync(invoice, Request, ct);
 
         await emailService.SendBillingEventAsync(
             recipient.email,
