@@ -190,7 +190,8 @@ export default function AdminPage() {
   const loadOwners = useCallback(async () => {
     try {
       setLoadingCustomers(true);
-      const data = await getPlatformUsers("", false);
+      // Only show platform owners + effective owners (no support/admin-only users).
+      const data = await getPlatformUsers("", false, false, true);
       const rows = Array.isArray(data) ? data : [];
       setPlatformUsers(rows);
       setSelectedUserId((prev) => (prev && rows.some((user) => user.userId === prev) ? prev : ""));
@@ -205,7 +206,8 @@ export default function AdminPage() {
   const loadPlatformUserSearch = useCallback(async (search = "") => {
     try {
       setLoadingUserSearch(true);
-      const data = await getPlatformUsers(search, false, true, true);
+      // Search is scoped to effective owners only, matching the owner dropdown filtering.
+      const data = await getPlatformUsers(search, false, false, true);
       const rows = Array.isArray(data) ? data : [];
       setPlatformSearchResults(rows);
       setSelectedPlatformSearchUserId((prev) => (prev && rows.some((user) => user.userId === prev) ? prev : rows[0]?.userId || ""));
