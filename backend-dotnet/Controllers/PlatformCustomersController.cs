@@ -289,6 +289,7 @@ public class PlatformCustomersController(
         [FromQuery] string q = "",
         [FromQuery] bool ownersOnly = false,
         [FromQuery] bool includeSuperAdmins = false,
+        [FromQuery] bool effectiveOwnersOnly = false,
         CancellationToken ct = default)
     {
         if (!auth.IsAuthenticated) return Unauthorized();
@@ -298,7 +299,7 @@ public class PlatformCustomersController(
         List<User> users;
         List<TenantUser> memberships;
 
-        if (ownersOnly)
+        if (ownersOnly || effectiveOwnersOnly)
         {
             var ownerMembershipUserIds = await db.TenantUsers.AsNoTracking()
                 .Where(x => x.Role.ToLower() == "owner")
@@ -314,6 +315,17 @@ public class PlatformCustomersController(
                 .Concat(ownerGroupUserIds)
                 .Distinct()
                 .ToList();
+            if (effectiveOwnersOnly)
+            {
+                var superAdminIds = await db.Users.AsNoTracking()
+                    .Where(u => u.IsSuperAdmin)
+                    .Select(u => u.Id)
+                    .ToListAsync(ct);
+                ownerUserIds = ownerUserIds
+                    .Concat(superAdminIds)
+                    .Distinct()
+                    .ToList();
+            }
 
             var ownerQuery = db.Users.AsQueryable().Where(u => ownerUserIds.Contains(u.Id));
             if (!string.IsNullOrWhiteSpace(search))

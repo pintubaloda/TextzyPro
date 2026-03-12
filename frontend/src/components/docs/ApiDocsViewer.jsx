@@ -63,11 +63,12 @@ function enhanceDocument(doc) {
 
 export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }) {
   const docMeta = useMemo(() => getDoc(type), [type]);
-  const contentRef = useRef(null);
   const [sections, setSections] = useState([]);
   const [activeSection, setActiveSection] = useState("");
   const [htmlContent, setHtmlContent] = useState("");
   const [loading, setLoading] = useState(false);
+  const topLevelSections = useMemo(() => sections.filter((section) => section.level === 2), [sections]);
+  const contentRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -212,6 +213,20 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
               <DialogDescription className="max-w-3xl text-sm text-slate-600">
                 {docMeta.description}
               </DialogDescription>
+              <div className="grid gap-3 pt-2 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/70 bg-white/75 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Primary Sections</p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">{topLevelSections.length || "-"}</p>
+                </div>
+                <div className="rounded-2xl border border-white/70 bg-white/75 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Formats</p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">HTML + Markdown</p>
+                </div>
+                <div className="rounded-2xl border border-white/70 bg-white/75 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Best Use</p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">Integrate Faster</p>
+                </div>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant={type === "sms" ? "default" : "outline"} className={type === "sms" ? "bg-orange-500 hover:bg-orange-600" : ""} onClick={() => handleTypeChange("sms")}>
@@ -268,6 +283,27 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
                 Loading documentation…
               </div>
             ) : null}
+            <div className="border-b border-slate-200 bg-white px-4 py-3 xl:hidden">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quick Jump</p>
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {sections.length ? sections.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => jumpToSection(section.id)}
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      activeSection === section.id
+                        ? "border-orange-200 bg-orange-50 text-orange-700"
+                        : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    {section.label}
+                  </button>
+                )) : (
+                  <span className="text-sm text-slate-500">{loading ? "Loading sections..." : "No sections available."}</span>
+                )}
+              </div>
+            </div>
             <div
               ref={contentRef}
               className="h-full overflow-y-auto bg-white"

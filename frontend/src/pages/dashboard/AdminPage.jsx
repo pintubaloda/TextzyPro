@@ -205,7 +205,7 @@ export default function AdminPage() {
   const loadPlatformUserSearch = useCallback(async (search = "") => {
     try {
       setLoadingUserSearch(true);
-      const data = await getPlatformUsers(search, false, true);
+      const data = await getPlatformUsers(search, false, true, true);
       const rows = Array.isArray(data) ? data : [];
       setPlatformSearchResults(rows);
       setSelectedPlatformSearchUserId((prev) => (prev && rows.some((user) => user.userId === prev) ? prev : rows[0]?.userId || ""));

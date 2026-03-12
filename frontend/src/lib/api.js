@@ -1273,11 +1273,12 @@ export async function getPlatformCustomers(q = '', ownerUserId = '') {
   return Array.isArray(data) ? data : (data?.items || [])
 }
 
-export async function getPlatformUsers(q = '', ownersOnly = false, includeSuperAdmins = false) {
+export async function getPlatformUsers(q = '', ownersOnly = false, includeSuperAdmins = false, effectiveOwnersOnly = false) {
   const qs = new URLSearchParams()
   if (q) qs.set('q', q)
   if (ownersOnly) qs.set('ownersOnly', 'true')
   if (includeSuperAdmins) qs.set('includeSuperAdmins', 'true')
+  if (effectiveOwnersOnly) qs.set('effectiveOwnersOnly', 'true')
   return apiGet(`/api/platform/customers/users${qs.toString() ? `?${qs.toString()}` : ''}`)
 }
 
