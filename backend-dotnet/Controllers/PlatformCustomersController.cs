@@ -1323,7 +1323,8 @@ public class PlatformCustomersController(
         if (!userTenantIds.Contains(targetTenantId)) userTenantIds.Add(targetTenantId);
 
         var otherGroupIds = await db.Tenants.AsNoTracking()
-            .Where(t => userTenantIds.Contains(t.Id) && t.OwnerGroupId.HasValue)
+            // Ignore the target tenant's current owner-group because the assignment will move it.
+            .Where(t => userTenantIds.Contains(t.Id) && t.Id != targetTenantId && t.OwnerGroupId.HasValue)
             .Select(t => t.OwnerGroupId!.Value)
             .Distinct()
             .ToListAsync(ct);
