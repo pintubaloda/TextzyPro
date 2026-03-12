@@ -482,6 +482,83 @@ public class PlatformCustomersController(
         });
     }
 
+    [HttpPut("{tenantId:guid}/effective-owner")]
+    public async Task<IActionResult> AssignEffectiveOwner(Guid tenantId, [FromBody] PlatformEffectiveOwnerRequest request, CancellationToken ct = default)
+    {
+        if (!auth.IsAuthenticated) return Unauthorized();
+        if (!rbac.HasPermission(PlatformSettingsWrite)) return Forbid();
+        if (tenantId == Guid.Empty) return BadRequest("tenantId is required.");
+        if (request.UserId == Guid.Empty) return BadRequest("userId is required.");
+
+        var tenant = await db.Tenants.FirstOrDefaultAsync(x => x.Id == tenantId, ct);
+        if (tenant is null) return NotFound("Tenant not found.");
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Id == request.UserId, ct);
+        if (user is null) return NotFound("User not found.");
+
+        var membership = await db.TenantUsers.FirstOrDefaultAsync(
+            x => x.TenantId == tenantId && x.UserId == request.UserId,
+            ct);
+        if (membership is null)
+        {
+            membership = new TenantUser
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                UserId = request.UserId,
+                Role = RolePermissionCatalog.Owner,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            db.TenantUsers.Add(membership);
+        }
+        else
+        {
+            membership.Role = RolePermissionCatalog.Owner;
+        }
+
+        var targetGroup = await db.TenantOwnerGroups.FirstOrDefaultAsync(
+            x => x.OwnerUserId == request.UserId && x.IsActive,
+            ct);
+        if (targetGroup is null)
+        {
+            targetGroup = new TenantOwnerGroup
+            {
+                Id = Guid.NewGuid(),
+                OwnerUserId = request.UserId,
+                Name = $"{tenant.Name} Group",
+                IsActive = true,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            };
+            db.TenantOwnerGroups.Add(targetGroup);
+        }
+        else
+        {
+            targetGroup.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        if (!await CanUserJoinOwnerGroupAsync(request.UserId, targetGroup.Id, tenantId, ct))
+            return BadRequest("User belongs to another tenant owner group and cannot be assigned as effective owner for this tenant.");
+
+        tenant.OwnerGroupId = targetGroup.Id;
+        var profile = await db.TenantCompanyProfiles.FirstOrDefaultAsync(x => x.TenantId == tenantId, ct);
+        if (profile is not null) profile.OwnerGroupId = targetGroup.Id;
+
+        await db.SaveChangesAsync(ct);
+        await audit.WriteAsync(
+            "platform.customer.effective_owner.updated",
+            $"tenant={tenantId}; targetUser={request.UserId}; ownerGroup={targetGroup.Id}",
+            ct);
+
+        return Ok(new
+        {
+            tenantId,
+            userId = user.Id,
+            ownerGroupId = targetGroup.Id,
+            effectiveOwnerUserId = user.Id
+        });
+    }
+
     [HttpGet("{tenantId:guid}")]
     public async Task<IActionResult> Details(Guid tenantId, CancellationToken ct)
     {
@@ -1217,6 +1294,29 @@ public class PlatformCustomersController(
         public decimal TaxRatePercent { get; set; } = 18m;
         public bool IsTaxExempt { get; set; }
         public bool IsReverseCharge { get; set; }
+    }
+
+    public sealed class PlatformEffectiveOwnerRequest
+    {
+        public Guid UserId { get; set; }
+    }
+
+    private async Task<bool> CanUserJoinOwnerGroupAsync(Guid userId, Guid tenantOwnerGroupId, Guid targetTenantId, CancellationToken ct)
+    {
+        var userTenantIds = await db.TenantUsers.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => x.TenantId)
+            .Distinct()
+            .ToListAsync(ct);
+        if (!userTenantIds.Contains(targetTenantId)) userTenantIds.Add(targetTenantId);
+
+        var otherGroupIds = await db.Tenants.AsNoTracking()
+            .Where(t => userTenantIds.Contains(t.Id) && t.OwnerGroupId.HasValue)
+            .Select(t => t.OwnerGroupId!.Value)
+            .Distinct()
+            .ToListAsync(ct);
+
+        return otherGroupIds.Count == 0 || (otherGroupIds.Count == 1 && otherGroupIds[0] == tenantOwnerGroupId);
     }
 
     private static string NormalizeSmsProvider(string? provider)

@@ -1291,6 +1291,10 @@ export async function getPlatformUserTenants(userId) {
   return apiGet(`/api/platform/customers/user-tenants?userId=${encodeURIComponent(userId)}`)
 }
 
+export async function assignPlatformEffectiveOwner(tenantId, userId) {
+  return apiPut(`/api/platform/customers/${encodeURIComponent(tenantId)}/effective-owner`, { userId })
+}
+
 export async function getPlatformCustomerDetails(tenantId) {
   return apiGet(`/api/platform/customers/${tenantId}`)
 }

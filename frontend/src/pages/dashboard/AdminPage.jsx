@@ -40,6 +40,7 @@ import {
   getPlatformSecurityReport,
   getPlatformUserTenants,
   listPlatformBillingPlans,
+  assignPlatformEffectiveOwner,
   savePlatformCustomerCompanySettings,
   savePlatformCustomerFeatures,
 } from "@/lib/api";
@@ -126,7 +127,7 @@ export default function AdminPage() {
   const [query, setQuery] = useState("");
   const [platformUserQuery, setPlatformUserQuery] = useState("");
   const [loadingCustomers, setLoadingCustomers] = useState(false);
-  const [loadingDirectory, setLoadingDirectory] = useState(false);
+  const [loadingUserSearch, setLoadingUserSearch] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [selectedTenantId, setSelectedTenantId] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -165,7 +166,10 @@ export default function AdminPage() {
   });
   const [savingCompanySettings, setSavingCompanySettings] = useState(false);
   const [platformUsers, setPlatformUsers] = useState([]);
-  const [platformDirectoryUsers, setPlatformDirectoryUsers] = useState([]);
+  const [platformSearchResults, setPlatformSearchResults] = useState([]);
+  const [selectedPlatformSearchUserId, setSelectedPlatformSearchUserId] = useState("");
+  const [platformSearchUserReport, setPlatformSearchUserReport] = useState(null);
+  const [assigningEffectiveOwner, setAssigningEffectiveOwner] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [userTenantReport, setUserTenantReport] = useState(null);
   const [docViewer, setDocViewer] = useState({ open: false, type: "sms" });
@@ -198,16 +202,19 @@ export default function AdminPage() {
     }
   }, []);
 
-  const loadPlatformDirectory = useCallback(async (search = "") => {
+  const loadPlatformUserSearch = useCallback(async (search = "") => {
     try {
-      setLoadingDirectory(true);
+      setLoadingUserSearch(true);
       const data = await getPlatformUsers(search, false, true);
-      setPlatformDirectoryUsers(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      setPlatformSearchResults(rows);
+      setSelectedPlatformSearchUserId((prev) => (prev && rows.some((user) => user.userId === prev) ? prev : rows[0]?.userId || ""));
     } catch (error) {
-      toast.error(error?.message || "Failed to load platform user directory");
-      setPlatformDirectoryUsers([]);
+      toast.error(error?.message || "Failed to load platform users");
+      setPlatformSearchResults([]);
+      setSelectedPlatformSearchUserId("");
     } finally {
-      setLoadingDirectory(false);
+      setLoadingUserSearch(false);
     }
   }, []);
 
@@ -266,10 +273,6 @@ export default function AdminPage() {
   }, [loadOwners]);
 
   useEffect(() => {
-    loadPlatformDirectory("");
-  }, [loadPlatformDirectory]);
-
-  useEffect(() => {
     (async () => {
       try {
         const data = await listPlatformBillingPlans();
@@ -303,15 +306,10 @@ export default function AdminPage() {
     [platformUsers, selectedUserId],
   );
 
-  const platformDirectorySummary = useMemo(() => {
-    const rows = Array.isArray(platformDirectoryUsers) ? platformDirectoryUsers : [];
-    return {
-      total: rows.length,
-      superAdmins: rows.filter((user) => user?.isSuperAdmin).length,
-      owners: rows.filter((user) => user?.effectiveOwner).length,
-      active: rows.filter((user) => user?.isActive).length,
-    };
-  }, [platformDirectoryUsers]);
+  const selectedPlatformSearchUser = useMemo(
+    () => platformSearchResults.find((user) => user.userId === selectedPlatformSearchUserId) || null,
+    [platformSearchResults, selectedPlatformSearchUserId],
+  );
 
   const userCompanyRows = useMemo(() => {
     if (userTenantReport?.groups?.length) {
@@ -379,6 +377,36 @@ export default function AdminPage() {
     const validTenant = ownerCustomers.some((item) => item.tenantId === selectedTenantId);
     if (!validTenant) setSelectedTenantId(ownerCustomers[0].tenantId);
   }, [ownerCustomers, selectedTenantId, selectedUserId]);
+
+  useEffect(() => {
+    if (!selectedPlatformSearchUserId) {
+      setPlatformSearchUserReport(null);
+      return;
+    }
+    getPlatformUserTenants(selectedPlatformSearchUserId)
+      .then((data) => setPlatformSearchUserReport(data || null))
+      .catch(() => setPlatformSearchUserReport(null));
+  }, [selectedPlatformSearchUserId]);
+
+  const onAssignEffectiveOwner = useCallback(async () => {
+    if (!selectedPlatformSearchUser || !selectedTenantId) return;
+    try {
+      setAssigningEffectiveOwner(true);
+      await assignPlatformEffectiveOwner(selectedTenantId, selectedPlatformSearchUser.userId);
+      toast.success("Effective owner updated for the selected tenant.");
+      await Promise.all([
+        loadOwners(),
+        loadPlatformUserSearch(platformUserQuery),
+        loadCustomers(query, selectedUserId),
+      ]);
+      const report = await getPlatformUserTenants(selectedPlatformSearchUser.userId).catch(() => null);
+      setPlatformSearchUserReport(report || null);
+    } catch (error) {
+      toast.error(error?.message || "Failed to update effective owner");
+    } finally {
+      setAssigningEffectiveOwner(false);
+    }
+  }, [loadCustomers, loadOwners, loadPlatformUserSearch, platformUserQuery, query, selectedPlatformSearchUser, selectedTenantId, selectedUserId]);
 
   useEffect(() => {
     let ignore = false;
@@ -555,7 +583,7 @@ export default function AdminPage() {
 
       <Card className="border-slate-200 shadow-sm">
         <CardContent className="pt-6">
-          <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="grid gap-4 xl:grid-cols-[320px_360px_minmax(0,1fr)]">
             <div className="space-y-3">
               <Label>Owner Workspace</Label>
               <Select value={selectedUserId} onValueChange={setSelectedUserId}>
@@ -572,6 +600,44 @@ export default function AdminPage() {
               </Select>
               <p className="text-xs text-slate-500">
                 Pick one owner and the whole page will scope to that owner’s tenants, billing, invoices, routes, and activity.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Label>Search User By Email</Label>
+              <div className="flex gap-3">
+                <Input
+                  value={platformUserQuery}
+                  onChange={(event) => setPlatformUserQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") loadPlatformUserSearch(platformUserQuery);
+                  }}
+                  placeholder="name@example.com"
+                  className="h-12 rounded-xl border-slate-300"
+                />
+                <Button
+                  variant="outline"
+                  className="h-12 rounded-xl"
+                  onClick={() => loadPlatformUserSearch(platformUserQuery)}
+                  disabled={loadingUserSearch || !platformUserQuery.trim()}
+                >
+                  <RefreshCcw className={`mr-2 h-4 w-4 ${loadingUserSearch ? "animate-spin" : ""}`} />
+                  Search
+                </Button>
+              </div>
+              <Select value={selectedPlatformSearchUserId} onValueChange={setSelectedPlatformSearchUserId} disabled={!platformSearchResults.length}>
+                <SelectTrigger className="h-12 rounded-xl">
+                  <SelectValue placeholder="Select searched user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {platformSearchResults.map((user) => (
+                    <SelectItem key={user.userId} value={user.userId}>
+                      {user.name} ({user.email})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Search any account by email, inspect their current tenant access, then assign them as the effective owner for the selected tenant.
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -602,83 +668,113 @@ export default function AdminPage() {
 
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle className="text-xl">Platform User Directory</CardTitle>
-              <CardDescription>Temporary production view to inspect every user account, role mapping, tenant coverage, and platform-owner access.</CardDescription>
-            </div>
-            <div className="flex w-full flex-col gap-3 md:flex-row lg:w-auto">
-              <Input
-                value={platformUserQuery}
-                onChange={(event) => setPlatformUserQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") loadPlatformDirectory(platformUserQuery);
-                }}
-                placeholder="Search name or email"
-                className="h-11 min-w-[280px] rounded-xl border-slate-300"
-              />
-              <Button variant="outline" className="h-11 rounded-xl" onClick={() => loadPlatformDirectory(platformUserQuery)} disabled={loadingDirectory}>
-                <RefreshCcw className={`mr-2 h-4 w-4 ${loadingDirectory ? "animate-spin" : ""}`} />
-                Refresh users
-              </Button>
-            </div>
-          </div>
+          <CardTitle className="text-xl">Effective Owner Control</CardTitle>
+          <CardDescription>Search a user by email, review their current access, and assign them as the effective owner for the selected tenant.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Visible Users</p>
-              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.total.toLocaleString()}</p>
-              <p className="text-sm text-slate-500">Current API result set</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Selected User</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">{selectedPlatformSearchUser?.name || "No user selected"}</p>
+              <p className="text-sm text-slate-500">{selectedPlatformSearchUser?.email || "Search by email to inspect an account"}</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Platform Owners</p>
-              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.superAdmins.toLocaleString()}</p>
-              <p className="text-sm text-slate-500">`super_admin` accounts included</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Platform Role</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">
+                {selectedPlatformSearchUser?.isSuperAdmin ? "super_admin" : "-"}
+              </p>
+              <p className="text-sm text-slate-500">Platform access is separate from tenant ownership</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tenant Owners</p>
-              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.owners.toLocaleString()}</p>
-              <p className="text-sm text-slate-500">Users with the `owner` workspace role</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tenant Roles</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">
+                {selectedPlatformSearchUser?.tenantRoles?.length ? selectedPlatformSearchUser.tenantRoles.join(", ") : "-"}
+              </p>
+              <p className="text-sm text-slate-500">Roles from tenant memberships only</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Active Accounts</p>
-              <p className="mt-2 text-lg font-bold text-slate-950">{platformDirectorySummary.active.toLocaleString()}</p>
-              <p className="text-sm text-slate-500">Users currently marked active</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Effective Owner</p>
+              <p className="mt-2 text-lg font-bold text-slate-950">
+                {selectedPlatformSearchUser ? (selectedPlatformSearchUser.effectiveOwner ? "Yes" : "No") : "-"}
+              </p>
+              <p className="text-sm text-slate-500">Includes owner-group mapping, not only the tenant role label</p>
             </div>
           </div>
 
-          <SectionTable
-            headers={["User", "Platform Role", "Tenant Roles", "Effective Owner", "Tenant Count", "Status"]}
-            empty="No platform users found for the current search."
-            rows={platformDirectoryUsers.map((user) => (
-              <tr key={user.userId} className="border-t border-slate-100">
-                <td className="px-4 py-3">
-                  <div className="font-semibold text-slate-900">{user.name}</div>
-                  <div className="text-xs text-slate-500">{user.email}</div>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant="outline" className={user.isSuperAdmin ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-700"}>
-                    {user.isSuperAdmin ? "super_admin" : "-"}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3 text-slate-700">
-                  {Array.isArray(user.tenantRoles) && user.tenantRoles.length ? user.tenantRoles.join(", ") : "-"}
-                </td>
-                <td className="px-4 py-3">
-                  <Badge variant="outline" className={user.effectiveOwner ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700"}>
-                    {user.effectiveOwner ? "Yes" : "No"}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3 text-slate-700">{Number(user.tenantCount || 0).toLocaleString()}</td>
-                <td className="px-4 py-3">
-                  <Badge variant="outline" className={user.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>
-                    {user.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                </td>
-              </tr>
-            ))}
-          />
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <SectionTable
+              headers={["User", "Platform Role", "Tenant Roles", "Effective Owner", "Tenant Count", "Status"]}
+              empty="Search for a user by email to inspect role details."
+              rows={selectedPlatformSearchUser ? [(
+                <tr key={selectedPlatformSearchUser.userId} className="border-t border-slate-100">
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-slate-900">{selectedPlatformSearchUser.name}</div>
+                    <div className="text-xs text-slate-500">{selectedPlatformSearchUser.email}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="outline" className={selectedPlatformSearchUser.isSuperAdmin ? "border-orange-200 bg-orange-50 text-orange-700" : "border-slate-200 bg-white text-slate-700"}>
+                      {selectedPlatformSearchUser.isSuperAdmin ? "super_admin" : "-"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">
+                    {selectedPlatformSearchUser.tenantRoles?.length ? selectedPlatformSearchUser.tenantRoles.join(", ") : "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="outline" className={selectedPlatformSearchUser.effectiveOwner ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700"}>
+                      {selectedPlatformSearchUser.effectiveOwner ? "Yes" : "No"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">{Number(platformSearchUserReport?.tenantCount ?? selectedPlatformSearchUser.tenantCount ?? 0).toLocaleString()}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant="outline" className={selectedPlatformSearchUser.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}>
+                      {selectedPlatformSearchUser.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </td>
+                </tr>
+              )] : []}
+            />
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tenant Ownership Control</p>
+              {selectedPlatformSearchUser ? (
+                <div className="mt-3 space-y-3">
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Selected tenant</span>
+                      <span className="font-medium text-slate-900">{selectedCustomer?.tenantName || "No tenant selected"}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Owner groups under user</span>
+                      <span className="font-medium text-slate-900">{Number(platformSearchUserReport?.ownerGroupCount || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Membership in selected tenant</span>
+                      <span className="font-medium text-slate-900">
+                        {selectedTenantId && platformSearchUserReport?.groups?.some((group) => (group.companies || []).some((company) => company.tenantId === selectedTenantId))
+                          ? "Existing member"
+                          : selectedTenantId
+                            ? "Will be added as owner"
+                            : "Select a tenant first"}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    className="h-11 w-full rounded-xl bg-orange-500 hover:bg-orange-600"
+                    onClick={onAssignEffectiveOwner}
+                    disabled={assigningEffectiveOwner || !selectedTenantId}
+                  >
+                    Assign Effective Owner
+                  </Button>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">Search by email and select a user to manage tenant effective ownership.</p>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
