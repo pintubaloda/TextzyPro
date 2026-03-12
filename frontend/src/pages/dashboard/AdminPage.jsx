@@ -311,6 +311,11 @@ export default function AdminPage() {
     [platformSearchResults, selectedPlatformSearchUserId],
   );
 
+  const searchedUserCompanies = useMemo(() => {
+    if (!platformSearchUserReport?.groups?.length) return [];
+    return (platformSearchUserReport.groups || []).flatMap((group) => group.companies || []);
+  }, [platformSearchUserReport]);
+
   const userCompanyRows = useMemo(() => {
     if (userTenantReport?.groups?.length) {
       return (userTenantReport.groups || []).flatMap((group) => group.companies || []);
@@ -672,6 +677,24 @@ export default function AdminPage() {
           <CardDescription>Search a user by email, review their current access, and assign them as the effective owner for the selected tenant.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Step 1</p>
+              <p className="mt-2 text-base font-bold text-slate-950">Search target user</p>
+              <p className="text-sm text-slate-600">Find the person by email and confirm their current tenant access.</p>
+            </div>
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Step 2</p>
+              <p className="mt-2 text-base font-bold text-slate-950">Pick a tenant</p>
+              <p className="text-sm text-slate-600">Select the tenant either from the current owner portfolio or from the searched user’s tenant list below.</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Step 3</p>
+              <p className="mt-2 text-base font-bold text-slate-950">Assign effective owner</p>
+              <p className="text-sm text-slate-600">The selected tenant will move under the searched user’s owner group and that user will be set to `owner`.</p>
+            </div>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Selected User</p>
@@ -700,6 +723,42 @@ export default function AdminPage() {
               <p className="text-sm text-slate-500">Includes owner-group mapping, not only the tenant role label</p>
             </div>
           </div>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg">Searched User Tenant Access</CardTitle>
+              <CardDescription>
+                {selectedPlatformSearchUser
+                  ? `${Number(searchedUserCompanies.length || 0).toLocaleString()} tenants found for the searched user. Click any row to make it the selected tenant.`
+                  : "Search a user first to inspect their current tenant memberships."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SectionTable
+                headers={["Tenant", "Role", "Plan", "Billing", "Action"]}
+                empty="No tenant memberships found for the searched user."
+                rows={searchedUserCompanies.map((company) => {
+                  const active = company.tenantId === selectedTenantId;
+                  return (
+                    <tr key={company.tenantId} className={`border-t border-slate-100 ${active ? "bg-blue-50/70" : ""}`}>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-900">{company.companyName || company.tenantName}</div>
+                        <div className="text-xs text-slate-500">{company.tenantSlug}</div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700 capitalize">{company.role || "-"}</td>
+                      <td className="px-4 py-3 text-slate-700">{company.planName || "No Plan"}</td>
+                      <td className="px-4 py-3 text-slate-700">{company.billingStatus || "-"}</td>
+                      <td className="px-4 py-3">
+                        <Button variant={active ? "default" : "outline"} className={`h-9 rounded-lg ${active ? "bg-blue-600 hover:bg-blue-700" : ""}`} onClick={() => setSelectedTenantId(company.tenantId)}>
+                          {active ? "Selected" : "Use this tenant"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              />
+            </CardContent>
+          </Card>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
             <SectionTable
@@ -741,7 +800,7 @@ export default function AdminPage() {
                   <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-slate-500">Selected tenant</span>
-                      <span className="font-medium text-slate-900">{selectedCustomer?.tenantName || "No tenant selected"}</span>
+                      <span className="font-medium text-slate-900">{selectedCustomer?.tenantName || searchedUserCompanies.find((company) => company.tenantId === selectedTenantId)?.tenantName || "No tenant selected"}</span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
