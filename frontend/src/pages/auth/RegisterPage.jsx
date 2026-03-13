@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessageSquare, Eye, EyeOff, ArrowRight, Check } from "lucide-react";
 import { toast } from "sonner";
-import { authRegister, initializeMe } from "@/lib/api";
+import { authRegister, getPublicPlans, initializeMe } from "@/lib/api";
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -38,6 +38,33 @@ const RegisterPage = () => {
     "Other",
   ];
 
+  const planCode = (searchParams.get("plan") || "starter").trim().toLowerCase();
+  const [planMeta, setPlanMeta] = useState({ name: "", limits: {}, features: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await getPublicPlans();
+        const normalized = Array.isArray(rows) ? rows : [];
+        const match = normalized.find((p) => String(p?.code || "").trim().toLowerCase() === planCode)
+          || normalized.find((p) => String(p?.code || "").trim().toLowerCase() === "starter");
+        if (!match) return;
+        if (cancelled) return;
+        setPlanMeta({
+          name: String(match?.name || "").trim(),
+          limits: match?.limits && typeof match.limits === "object" ? match.limits : {},
+          features: Array.isArray(match?.features) ? match.features : [],
+        });
+      } catch {
+        // keep fallback content
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [planCode]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.agreeTerms) {
@@ -46,7 +73,6 @@ const RegisterPage = () => {
     }
     setLoading(true);
 
-    const planCode = (searchParams.get("plan") || "starter").trim().toLowerCase();
     try {
       await authRegister({
         companyName: formData.companyName,
@@ -75,12 +101,22 @@ const RegisterPage = () => {
     }
   };
 
-  const benefits = [
-    "1,000 free WhatsApp messages",
-    "5,000 free SMS credits",
-    "Full DLT compliance support",
-    "24/7 customer support",
-  ];
+  const benefits = useMemo(() => {
+    const limits = planMeta?.limits && typeof planMeta.limits === "object" ? planMeta.limits : {};
+    const wa = Number(limits?.whatsappMessages || 0);
+    const sms = Number(limits?.smsCredits || 0);
+
+    const rows = [];
+    if (wa > 0) rows.push(`${wa.toLocaleString()} free WhatsApp messages`);
+    if (sms > 0) rows.push(`${sms.toLocaleString()} free SMS credits`);
+    if (rows.length === 0) {
+      // Safe fallback if backend plan limits/features are missing.
+      rows.push("Starter plan features included");
+    }
+    rows.push("Full DLT compliance support");
+    rows.push("24/7 customer support");
+    return rows;
+  }, [planMeta]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex" data-testid="register-page">
