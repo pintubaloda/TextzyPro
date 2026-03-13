@@ -46,7 +46,7 @@ public class BillingLifecycleWorker(
         var dunningReminderDays = ResolveDayOffsets(config["Billing:DunningReminderDays"] ?? config["BILLING_DUNNING_REMINDER_DAYS"], [1, 3, 5]);
 
         var activeOrDue = await db.TenantSubscriptions
-            .Where(x => x.Status == "active" || x.Status == "past_due")
+            .Where(x => x.Status == "active" || x.Status == "trial" || x.Status == "trialing" || x.Status == "past_due")
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
 
@@ -54,8 +54,63 @@ public class BillingLifecycleWorker(
         {
             if (sub.RenewAtUtc >= DateTime.MaxValue.AddDays(-2)) continue;
 
+            // Automatic enforcement: when RenewAtUtc passes, mark as past_due (but don't hard-lock until grace ends).
+            // This covers cases where no payment webhook arrives (e.g., user never started checkout).
+            if ((string.Equals(sub.Status, "active", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(sub.Status, "trial", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(sub.Status, "trialing", StringComparison.OrdinalIgnoreCase)) &&
+                now >= sub.RenewAtUtc)
+            {
+                var key = $"tenant={sub.TenantId};renew={sub.RenewAtUtc:yyyy-MM-dd};status={sub.Status}";
+                var alreadyMarked = await db.AuditLogs.AsNoTracking()
+                    .AnyAsync(x => x.TenantId == sub.TenantId && x.Action == "billing.status.past_due" && x.Details == key, ct);
+                if (!alreadyMarked)
+                {
+                    var previousStatus = sub.Status;
+                    sub.Status = "past_due";
+                    sub.UpdatedAtUtc = now;
+
+                    var recipient = await ResolveRecipientAsync(db, sub.TenantId, ct);
+                    if (!string.IsNullOrWhiteSpace(recipient.email))
+                    {
+                        var title = string.Equals(previousStatus, "active", StringComparison.OrdinalIgnoreCase)
+                            ? "Subscription payment pending"
+                            : "Trial ended";
+                        var desc = string.Equals(previousStatus, "active", StringComparison.OrdinalIgnoreCase)
+                            ? "Your renewal date has passed. Please complete payment to avoid service suspension."
+                            : "Your free trial has ended. Please upgrade to continue using the service.";
+                        await email.SendBillingEventAsync(
+                            recipient.email,
+                            recipient.name,
+                            recipient.companyName,
+                            title,
+                            desc,
+                            new Dictionary<string, string>
+                            {
+                                ["Renewal Date"] = sub.RenewAtUtc.ToString("yyyy-MM-dd"),
+                                ["Status"] = "past_due",
+                                ["Billing Cycle"] = sub.BillingCycle
+                            },
+                            ct);
+                    }
+
+                    db.AuditLogs.Add(new AuditLog
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = sub.TenantId,
+                        ActorUserId = Guid.Empty,
+                        Action = "billing.status.past_due",
+                        Details = key,
+                        CreatedAtUtc = now
+                    });
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+
             var daysLeft = (int)Math.Floor((sub.RenewAtUtc - now).TotalDays);
-            if (string.Equals(sub.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+            if ((string.Equals(sub.Status, "active", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(sub.Status, "trial", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(sub.Status, "trialing", StringComparison.OrdinalIgnoreCase)) &&
                 renewalReminderDays.Contains(daysLeft))
             {
                 var key = $"tenant={sub.TenantId};renew={sub.RenewAtUtc:yyyy-MM-dd};days={daysLeft}";
@@ -66,12 +121,16 @@ public class BillingLifecycleWorker(
                     var recipient = await ResolveRecipientAsync(db, sub.TenantId, ct);
                     if (!string.IsNullOrWhiteSpace(recipient.email))
                     {
+                        var isTrial = string.Equals(sub.Status, "trial", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(sub.Status, "trialing", StringComparison.OrdinalIgnoreCase);
                         await email.SendBillingEventAsync(
                             recipient.email,
                             recipient.name,
                             recipient.companyName,
-                            "Renewal reminder",
-                            $"Your subscription renews in {Math.Max(daysLeft, 0)} day(s).",
+                            isTrial ? "Trial ending soon" : "Renewal reminder",
+                            isTrial
+                                ? $"Your trial ends in {Math.Max(daysLeft, 0)} day(s). Upgrade to avoid interruption."
+                                : $"Your subscription renews in {Math.Max(daysLeft, 0)} day(s).",
                             new Dictionary<string, string>
                             {
                                 ["Renewal Date"] = sub.RenewAtUtc.ToString("yyyy-MM-dd"),
