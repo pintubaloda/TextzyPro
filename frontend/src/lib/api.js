@@ -547,6 +547,35 @@ export async function authLogin({ email, password, tenantSlug, emailVerification
   return data
 }
 
+export async function authRegister({ companyName, fullName, email, phone, password, industry, planCode }) {
+  const res = await fetch(`${API_BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      companyName: companyName || '',
+      fullName: fullName || '',
+      email: email || '',
+      phone: phone || '',
+      password: password || '',
+      industry: industry || '',
+      planCode: planCode || 'starter'
+    })
+  })
+  persistCsrfFromResponse(res)
+  if (!res.ok) {
+    const msg = await readErrorMessage(res, 'Registration failed')
+    throw new Error(msg)
+  }
+  const raw = await res.text()
+  if (!raw || !raw.trim()) return {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new Error('Registration response is not valid JSON. Check backend proxy/deployment.')
+  }
+}
+
 export async function verifyLoginTwoFactor({ challengeToken, code, tenantSlug }) {
   const headers = { 'Content-Type': 'application/json' }
   if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug

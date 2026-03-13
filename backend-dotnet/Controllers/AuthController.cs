@@ -63,6 +63,174 @@ public class AuthController(
         "/hubs/inbox"
     ];
 
+    [HttpPost("register")]
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request, CancellationToken ct)
+    {
+        string companyName;
+        string fullName;
+        string email;
+        string phone;
+        string password;
+        string industry;
+        string planCode;
+
+        try
+        {
+            companyName = InputGuardService.RequireTrimmed(request.CompanyName, "Company name", 120);
+            fullName = InputGuardService.RequireTrimmed(request.FullName, "Full name", 120);
+            email = InputGuardService.RequireTrimmed(request.Email, "Email", 320).ToLowerInvariant();
+            phone = InputGuardService.RequireTrimmed(request.Phone, "Phone", 40);
+            password = InputGuardService.RequireTrimmed(request.Password, "Password", 256);
+            industry = (request.Industry ?? string.Empty).Trim();
+            planCode = string.IsNullOrWhiteSpace(request.PlanCode) ? "starter" : request.PlanCode.Trim().ToLowerInvariant();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+
+        if (password.Length < 8)
+            return BadRequest("Password must be at least 8 characters.");
+
+        if (await db.Users.AnyAsync(u => u.Email.ToLower() == email, ct))
+            return Conflict("Email already registered.");
+
+        // Only allow self-serve plans we can safely trial. Anything else falls back to starter.
+        if (planCode is not ("starter" or "growth"))
+            planCode = "starter";
+
+        var plan = await db.BillingPlans.FirstOrDefaultAsync(x => x.Code == planCode && x.IsActive, ct)
+            ?? await db.BillingPlans.FirstOrDefaultAsync(x => x.Code == "starter" && x.IsActive, ct);
+        if (plan is null)
+            return StatusCode(StatusCodes.Status500InternalServerError, "No billing plans are configured.");
+
+        var now = DateTime.UtcNow;
+        var baseSlug = NormalizeSlug(companyName);
+        if (string.IsNullOrWhiteSpace(baseSlug))
+            return BadRequest("Invalid company name.");
+
+        var slug = baseSlug;
+        var index = 2;
+        while (await db.Tenants.AnyAsync(t => t.Slug == slug, ct))
+            slug = $"{baseSlug}-{index++}";
+
+        var seedConnection = !string.IsNullOrWhiteSpace(tenancy.DataConnectionString)
+            ? tenancy.DataConnectionString
+            : db.Tenants.OrderBy(t => t.CreatedAtUtc).Select(t => t.DataConnectionString).FirstOrDefault()
+              ?? db.Database.GetConnectionString()
+              ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(seedConnection))
+            return BadRequest("Unable to resolve project data connection.");
+
+        var userId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        var (hash, salt) = hasher.HashPassword(password);
+        var user = new User
+        {
+            Id = userId,
+            Email = email,
+            PasswordHash = hash,
+            PasswordSalt = salt,
+            FullName = fullName,
+            IsActive = true,
+            IsSuperAdmin = false,
+            EmailVerifiedAtUtc = now,
+            CreatedAtUtc = now
+        };
+        db.Users.Add(user);
+
+        var ownerGroupId = await EnsureOwnerGroupForUserAsync(userId, companyName, ct);
+
+        try
+        {
+            using var tenantDb = SeedData.CreateTenantDbContext(seedConnection);
+            tenantDb.Database.EnsureCreated();
+            SeedData.InitializeTenant(tenantDb, tenantId);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest($"Project DB initialization failed: {ex.Message}");
+        }
+
+        var tenant = new Tenant
+        {
+            Id = tenantId,
+            Name = companyName,
+            Slug = slug,
+            OwnerGroupId = ownerGroupId,
+            DataConnectionString = seedConnection,
+            CreatedAtUtc = now
+        };
+        db.Tenants.Add(tenant);
+        db.TenantUsers.Add(new TenantUser
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            UserId = userId,
+            Role = RolePermissionCatalog.Owner,
+            CreatedAtUtc = now
+        });
+
+        db.TenantCompanyProfiles.Add(new TenantCompanyProfile
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            OwnerGroupId = ownerGroupId,
+            CompanyName = companyName,
+            LegalName = companyName,
+            Industry = industry,
+            BillingEmail = email,
+            BillingPhone = phone,
+            IsActive = true,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        // Starter (and Growth) are granted a 7-day trial on self-serve signup.
+        db.TenantSubscriptions.Add(new TenantSubscription
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            PlanId = plan.Id,
+            Status = "trial",
+            BillingCycle = "monthly",
+            StartedAtUtc = now,
+            RenewAtUtc = now.AddDays(7),
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        string token;
+        try
+        {
+            token = await sessions.CreateSessionAsync(userId, tenantId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+        }
+
+        authCookie.SetToken(HttpContext, token);
+        authCookie.EnsureCsrfToken(HttpContext);
+        WriteAuthHeaders(token);
+        var permissions = await BuildEffectivePermissionsAsync(userId, tenantId, RolePermissionCatalog.Owner, ct);
+
+        return Ok(new
+        {
+            accessToken = token,
+            tenantSlug = tenant.Slug,
+            projectName = tenant.Name,
+            role = RolePermissionCatalog.Owner,
+            permissions
+        });
+    }
+
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
     {

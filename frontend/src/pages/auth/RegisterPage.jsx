@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,9 +8,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessageSquare, Eye, EyeOff, ArrowRight, Check } from "lucide-react";
 import { toast } from "sonner";
+import { authRegister, initializeMe } from "@/lib/api";
 
 const RegisterPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -43,12 +45,34 @@ const RegisterPage = () => {
       return;
     }
     setLoading(true);
-    
-    setTimeout(() => {
+
+    const planCode = (searchParams.get("plan") || "starter").trim().toLowerCase();
+    try {
+      await authRegister({
+        companyName: formData.companyName,
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
+        industry: formData.industry,
+        planCode,
+      });
+      const me = await initializeMe();
+      if (!me?.email) {
+        throw new Error("Account created but session init failed. Please try logging in.");
+      }
+      toast.success("Account created successfully! Select your workspace...");
+      navigate("/projects", { replace: true });
+      setTimeout(() => {
+        if (window.location.pathname !== "/projects") {
+          window.location.assign("/projects");
+        }
+      }, 120);
+    } catch (err) {
+      toast.error(err?.message || "Registration failed. Please try again.");
+    } finally {
       setLoading(false);
-      toast.success("Account created successfully! Welcome to Textzy.");
-      navigate("/dashboard");
-    }, 1500);
+    }
   };
 
   const benefits = [
@@ -70,7 +94,7 @@ const RegisterPage = () => {
             Start Your Free Trial Today
           </h2>
           <p className="text-orange-100 text-lg mb-8">
-            No credit card required. Get instant access to all features for 14 days.
+            No credit card required. Get instant access to all features for 7 days.
           </p>
           
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 text-left">
@@ -119,7 +143,7 @@ const RegisterPage = () => {
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl font-heading">Create your account</CardTitle>
               <CardDescription>
-                Start your 14-day free trial. No credit card required.
+                Start your 7-day free trial. No credit card required.
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -67,9 +67,11 @@ const LandingPage = () => {
 
   const [pricingPlans, setPricingPlans] = useState([
     {
+      code: "starter",
       name: "Starter",
-      price: "₹2,999",
-      period: "/month",
+      price: "Trial",
+      period: "/7 days",
+      taxLabel: "7-day trial",
       description: "Perfect for small businesses getting started",
       features: [
         "1,000 WhatsApp messages/month",
@@ -82,6 +84,7 @@ const LandingPage = () => {
       popular: false,
     },
     {
+      code: "growth",
       name: "Growth",
       price: "₹9,999",
       period: "/month",
@@ -99,6 +102,7 @@ const LandingPage = () => {
       popular: true,
     },
     {
+      code: "enterprise",
       name: "Enterprise",
       price: "Custom",
       period: "",
@@ -125,21 +129,39 @@ const LandingPage = () => {
         const activeRows = rows
           .filter((p) => p?.isActive !== false)
           .sort((a, b) => (a?.sortOrder || 0) - (b?.sortOrder || 0));
-        setPricingPlans(activeRows.map((p) => ({
-          code: p.code,
-          name: p.name,
-          price: Number(p.priceMonthly || 0) <= 0 ? "Custom" : `₹${Number(p.priceMonthly || 0).toLocaleString()}`,
-          period: Number(p.priceMonthly || 0) <= 0 ? "" : String(p.pricingModel || "").toLowerCase() === "usage_pack" ? "/pack" : "/month",
-          taxLabel: String(p.taxMode || "exclusive").toLowerCase() === "inclusive" ? "incl. GST" : "+ GST",
-          description: p.code === "starter" ? "Perfect for small businesses getting started" : p.code === "growth" ? "For growing businesses with higher volumes" : "For large organizations with custom needs",
-          features: Array.isArray(p.features) && p.features.length > 0 ? p.features : [
+        setPricingPlans(activeRows.map((p) => {
+          const code = String(p.code || "").trim().toLowerCase();
+          const features = Array.isArray(p.features) && p.features.length > 0 ? p.features : [
             `${Number(p?.limits?.whatsappMessages || 0).toLocaleString()} WhatsApp messages`,
             `${Number(p?.limits?.smsCredits || 0).toLocaleString()} SMS credits`,
             `${Number(p?.limits?.contacts || 0).toLocaleString()} contacts`,
             `${Number(p?.limits?.teamMembers || 0).toLocaleString()} team members`,
-          ],
-          popular: p.code === "growth"
-        })));
+          ];
+
+          if (code === "starter") {
+            return {
+              code,
+              name: p.name || "Starter",
+              price: "Trial",
+              period: "/7 days",
+              taxLabel: "7-day trial",
+              description: "Perfect for small businesses getting started",
+              features,
+              popular: false
+            };
+          }
+
+          return {
+            code,
+            name: p.name,
+            price: Number(p.priceMonthly || 0) <= 0 ? "Custom" : `₹${Number(p.priceMonthly || 0).toLocaleString()}`,
+            period: Number(p.priceMonthly || 0) <= 0 ? "" : String(p.pricingModel || "").toLowerCase() === "usage_pack" ? "/pack" : "/month",
+            taxLabel: String(p.taxMode || "exclusive").toLowerCase() === "inclusive" ? "incl. GST" : "+ GST",
+            description: code === "growth" ? "For growing businesses with higher volumes" : "For large organizations with custom needs",
+            features,
+            popular: code === "growth"
+          };
+        }));
       } catch {
         // keep fallback plans
       }
@@ -211,7 +233,7 @@ const LandingPage = () => {
                   Login
                 </Button>
               </Link>
-              <Link to="/register">
+              <Link to="/register?plan=starter">
                 <Button className="bg-orange-500 hover:bg-orange-600 text-white" data-testid="get-started-btn">
                   Get Started Free
                 </Button>
@@ -249,7 +271,7 @@ const LandingPage = () => {
                 <Link to="/login" className="block">
                   <Button variant="outline" className="w-full">Login</Button>
                 </Link>
-                <Link to="/register" className="block">
+                <Link to="/register?plan=starter" className="block">
                   <Button className="w-full bg-orange-500 hover:bg-orange-600">Get Started Free</Button>
                 </Link>
               </div>
@@ -282,7 +304,7 @@ const LandingPage = () => {
                 and grow your business with WhatsApp Business API and DLT-compliant SMS.
               </p>
               <div className="flex flex-wrap gap-4">
-                <Link to="/register">
+                <Link to="/register?plan=starter">
                   <Button size="lg" className="bg-orange-500 hover:bg-orange-600 text-white gap-2 h-12 px-6" data-testid="hero-cta-btn">
                     Start Free Trial <ArrowRight className="w-4 h-4" />
                   </Button>
@@ -554,16 +576,33 @@ const LandingPage = () => {
                       </li>
                     ))}
                   </ul>
-                  <Button
-                    className={`w-full mt-auto ${
-                      plan.popular
-                        ? "bg-orange-500 hover:bg-orange-600 text-white"
-                        : "bg-slate-100 hover:bg-slate-200 text-slate-900"
-                    }`}
-                    data-testid={`pricing-btn-${plan.name.toLowerCase()}`}
-                  >
-                    {plan.name === "Enterprise" ? "Contact Sales" : "Get Started"}
-                  </Button>
+                  {plan.name === "Enterprise" ? (
+                    <a href="#contact">
+                      <Button
+                        className={`w-full mt-auto ${
+                          plan.popular
+                            ? "bg-orange-500 hover:bg-orange-600 text-white"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-900"
+                        }`}
+                        data-testid={`pricing-btn-${plan.name.toLowerCase()}`}
+                      >
+                        Contact Sales
+                      </Button>
+                    </a>
+                  ) : (
+                    <Link to={`/register?plan=${encodeURIComponent(plan.code || plan.name.toLowerCase())}`}>
+                      <Button
+                        className={`w-full mt-auto ${
+                          plan.popular
+                            ? "bg-orange-500 hover:bg-orange-600 text-white"
+                            : "bg-slate-100 hover:bg-slate-200 text-slate-900"
+                        }`}
+                        data-testid={`pricing-btn-${plan.name.toLowerCase()}`}
+                      >
+                        Get Started
+                      </Button>
+                    </Link>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -664,7 +703,7 @@ const LandingPage = () => {
             Join 5,000+ Indian businesses already using Textzy to engage customers on WhatsApp and SMS.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <Link to="/register">
+            <Link to="/register?plan=starter">
               <Button size="lg" className="bg-white text-orange-600 hover:bg-orange-50 h-12 px-8" data-testid="cta-start-btn">
                 Start Free Trial
               </Button>
