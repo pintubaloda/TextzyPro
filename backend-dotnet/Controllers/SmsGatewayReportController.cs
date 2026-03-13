@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Textzy.Api.Data;
 using Textzy.Api.Services;
 using static Textzy.Api.Services.PermissionCatalog;
@@ -24,7 +25,7 @@ public class SmsGatewayReportController(
     }
 
     [HttpGet]
-    public async Task<IActionResult> List([FromQuery] bool? isSuccess, [FromQuery] int limit = 200, CancellationToken ct = default)
+    public async Task<IActionResult> List([FromQuery] bool? isSuccess, [FromQuery] bool includeRaw = false, [FromQuery] int limit = 200, CancellationToken ct = default)
     {
         if (!rbac.HasPermission(TemplatesRead)) return Forbid();
         if (!await IsEnabledForTenantAsync(ct)) return Forbid();
@@ -35,7 +36,7 @@ public class SmsGatewayReportController(
         var q = controlDb.SmsGatewayRequestLogs.AsNoTracking().Where(x => x.TenantId == tenantId);
         if (isSuccess.HasValue) q = q.Where(x => x.IsSuccess == isSuccess.Value);
 
-        var rows = await q
+        var rawRows = await q
             .OrderByDescending(x => x.CreatedAtUtc)
             .Take(Math.Clamp(limit, 1, 500))
             .Select(x => new
@@ -58,6 +59,31 @@ public class SmsGatewayReportController(
                 x.ProviderMessageId
             })
             .ToListAsync(ct);
+
+        var rows = rawRows.Select(x =>
+        {
+            var summary = BuildResponseSummary(x.Provider, x.ProviderMessageId, x.ResponseBody, x.Error);
+            return new
+            {
+                x.Id,
+                x.CreatedAtUtc,
+                x.Provider,
+                x.Recipient,
+                x.Sender,
+                x.PeId,
+                x.TemplateId,
+                x.HttpMethod,
+                x.RequestUrlMasked,
+                x.decodedMessage,
+                x.HttpStatusCode,
+                responseSummary = summary,
+                responseBody = includeRaw ? x.ResponseBody : string.Empty,
+                x.IsSuccess,
+                x.Error,
+                x.DurationMs,
+                x.ProviderMessageId
+            };
+        }).ToList();
 
         return Ok(rows);
     }
@@ -94,5 +120,77 @@ public class SmsGatewayReportController(
             }
         }
         return string.Empty;
+    }
+
+    private static string BuildResponseSummary(string provider, string? providerMessageId, string? responseBody, string? error)
+    {
+        var p = (provider ?? string.Empty).Trim().ToLowerInvariant();
+        if (p != "tata")
+            return Truncate(string.IsNullOrWhiteSpace(responseBody) ? (error ?? string.Empty) : responseBody!, 200);
+
+        var jobId = (providerMessageId ?? string.Empty).Trim();
+        int? recipientCnt = null;
+        int? totalCnt = null;
+
+        if (!string.IsNullOrWhiteSpace(responseBody))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(responseBody);
+                var root = doc.RootElement;
+                jobId = FirstNonEmpty(
+                    jobId,
+                    ReadString(root, "jobId"),
+                    ReadString(root, "jobid"),
+                    ReadString(root, "campaignId"),
+                    ReadString(root, "cusTmId"));
+                recipientCnt = ReadInt(root, "recepientCnt") ?? ReadInt(root, "recipientCnt");
+                totalCnt = ReadInt(root, "totalCnt");
+            }
+            catch
+            {
+                // Ignore parsing failures; fall back to providerMessageId.
+            }
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(jobId)) parts.Add($"jobId:{jobId}");
+        if (recipientCnt.HasValue || totalCnt.HasValue)
+        {
+            if (recipientCnt.HasValue && totalCnt.HasValue) parts.Add($"sent:{recipientCnt}/{totalCnt}");
+            else if (recipientCnt.HasValue) parts.Add($"sent:{recipientCnt}");
+            else parts.Add($"total:{totalCnt}");
+        }
+        if (parts.Count > 0) return string.Join(" ", parts);
+        return Truncate(string.IsNullOrWhiteSpace(responseBody) ? (error ?? string.Empty) : responseBody!, 200);
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var v in values)
+        {
+            if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+        }
+        return string.Empty;
+    }
+
+    private static string? ReadString(JsonElement root, string name)
+        => root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String
+            ? p.GetString()
+            : null;
+
+    private static int? ReadInt(JsonElement root, string name)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty(name, out var p)) return null;
+        if (p.ValueKind == JsonValueKind.Number && p.TryGetInt32(out var n)) return n;
+        if (p.ValueKind == JsonValueKind.String && int.TryParse(p.GetString(), out var s)) return s;
+        return null;
+    }
+
+    private static string Truncate(string value, int max)
+    {
+        var v = value ?? string.Empty;
+        if (v.Length <= max) return v;
+        return v[..max];
     }
 }

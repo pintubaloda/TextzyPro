@@ -590,7 +590,12 @@ const SmsSetupPage = () => {
                     <TableCell className="font-mono">{row.sender || "-"}</TableCell>
                     <TableCell className="font-mono text-xs">{row.templateId || "-"}</TableCell>
                     <TableCell className="max-w-[320px] truncate" title={row.decodedMessage || row.requestUrlMasked || ""}>{row.decodedMessage || "-"}</TableCell>
-                    <TableCell className="max-w-[320px] truncate text-xs" title={row.responseBody || row.error || ""}>{row.responseBody || row.error || "-"}</TableCell>
+                    <TableCell
+                      className="max-w-[320px] truncate text-xs"
+                      title={row.responseSummary || row.responseBody || row.error || ""}
+                    >
+                      {row.responseSummary || row.responseBody || row.error || "-"}
+                    </TableCell>
                   </TableRow>)}
                 </TableBody>
               </Table>

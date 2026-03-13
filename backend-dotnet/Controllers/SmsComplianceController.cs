@@ -21,8 +21,10 @@ public class SmsComplianceController(TenantDbContext db, TenancyContext tenancy,
         var optOuts = await db.SmsOptOuts.AsNoTracking()
             .CountAsync(x => x.TenantId == tenancy.TenantId && x.IsActive, ct);
         var today = DateTime.UtcNow.Date;
-        var sentToday = await db.Messages.AsNoTracking()
-            .CountAsync(x => x.TenantId == tenancy.TenantId && x.Channel == ChannelType.Sms && x.CreatedAtUtc >= today, ct);
+        // Count billing ledger entries instead of Messages. This works for test sends and any provider paths that
+        // write ledger rows but may not create a Messages row.
+        var sentToday = await db.SmsBillingLedgers.AsNoTracking()
+            .CountAsync(x => x.TenantId == tenancy.TenantId && x.CreatedAtUtc >= today, ct);
         var deliveredToday = await db.MessageEvents.AsNoTracking()
             .CountAsync(x => x.TenantId == tenancy.TenantId && x.EventType == "sms.dlr.delivered" && x.CreatedAtUtc >= today, ct);
         var failedToday = await db.MessageEvents.AsNoTracking()
