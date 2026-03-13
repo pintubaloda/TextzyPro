@@ -1167,7 +1167,11 @@ const InboxPage = () => {
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(`${baseUrl}/hubs/inbox?tenantSlug=${encodeURIComponent(realtimeTenantSlug)}`, {
         withCredentials: true,
-        transport: signalR.HttpTransportType.ServerSentEvents | signalR.HttpTransportType.LongPolling,
+        // Prefer WebSockets for lowest latency; fall back to SSE/LongPolling when unavailable.
+        transport:
+          signalR.HttpTransportType.WebSockets |
+          signalR.HttpTransportType.ServerSentEvents |
+          signalR.HttpTransportType.LongPolling,
       })
       .withAutomaticReconnect()
       .build();
