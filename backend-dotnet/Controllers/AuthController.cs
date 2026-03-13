@@ -681,6 +681,14 @@ public class AuthController(
     [HttpGet("forgot-password/link")]
     public async Task<IActionResult> OpenPasswordResetLink([FromQuery] string verificationId, [FromQuery] string token, CancellationToken ct)
     {
+        // Preferred UX: handle reset in the frontend UI. Keep this endpoint for backward-compatible links.
+        var frontend = GetFrontendBaseUrl();
+        if (!string.IsNullOrWhiteSpace(frontend))
+        {
+            var url = $"{frontend}/reset-password?verificationId={Uri.EscapeDataString((verificationId ?? string.Empty).Trim())}&token={Uri.EscapeDataString((token ?? string.Empty).Trim())}";
+            return Redirect(url);
+        }
+
         if (!Guid.TryParse((verificationId ?? string.Empty).Trim(), out var id))
             return Content(BuildPasswordResetHtml("Invalid password reset link.", false, null), "text/html; charset=utf-8");
 
@@ -704,6 +712,46 @@ public class AuthController(
         }
 
         return Content(BuildPasswordResetFormHtml(row.Id, token ?? string.Empty), "text/html; charset=utf-8");
+    }
+
+    [HttpPost("forgot-password/reset-json")]
+    public async Task<IActionResult> ResetPasswordJson([FromBody] ResetPasswordRequest request, CancellationToken ct)
+    {
+        var verificationIdRaw = (request.VerificationId ?? string.Empty).Trim();
+        var tokenRaw = (request.Token ?? string.Empty).Trim();
+        var password = (request.Password ?? string.Empty).Trim();
+        var confirm = (request.ConfirmPassword ?? string.Empty).Trim();
+
+        if (!Guid.TryParse(verificationIdRaw, out var id))
+            return BadRequest("Invalid verificationId.");
+        if (string.IsNullOrWhiteSpace(tokenRaw))
+            return BadRequest("Invalid token.");
+        if (password.Length < 8)
+            return BadRequest("Password must be at least 8 characters.");
+        if (!string.Equals(password, confirm, StringComparison.Ordinal))
+            return BadRequest("Passwords do not match.");
+
+        var row = await db.EmailOtpVerifications.FirstOrDefaultAsync(x => x.Id == id && x.Purpose == "forgot-password", ct);
+        if (row is null) return NotFound("Password reset session not found.");
+
+        var now = DateTime.UtcNow;
+        if (row.ConsumedAtUtc is not null) return BadRequest("This reset link is already used.");
+        if (row.ExpiresAtUtc <= now) return BadRequest("Password reset link expired.");
+        if (!string.Equals(HashToken(tokenRaw), row.LinkTokenHash, StringComparison.Ordinal))
+            return BadRequest("Invalid reset link token.");
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Email.ToLower() == row.Email.ToLower() && x.IsActive, ct);
+        if (user is null) return BadRequest("Account not found.");
+
+        var (hash, salt) = hasher.HashPassword(password);
+        user.PasswordHash = hash;
+        user.PasswordSalt = salt;
+
+        row.ConsumedAtUtc = now;
+        row.Status = "consumed";
+        await db.SaveChangesAsync(ct);
+
+        return Ok(new { ok = true });
     }
 
     [HttpPost("forgot-password/reset")]
@@ -1766,20 +1814,22 @@ public class AuthController(
 
     private string BuildPasswordResetLink(Guid verificationId, string token)
     {
-        var scheme = Request.IsHttps
-            ? Request.Scheme
-            : (string.Equals(Request.Headers["X-Forwarded-Proto"].FirstOrDefault(), "https", StringComparison.OrdinalIgnoreCase)
-                ? "https"
-                : Request.Scheme);
-        var host = Request.Host.Value;
-        return $"{scheme}://{host}/api/auth/forgot-password/link?verificationId={verificationId}&token={Uri.EscapeDataString(token)}";
+        var baseUrl = GetFrontendBaseUrl();
+        if (string.IsNullOrWhiteSpace(baseUrl)) baseUrl = "https://textzy.in";
+        return $"{baseUrl}/reset-password?verificationId={verificationId}&token={Uri.EscapeDataString(token)}";
     }
 
-    private string GetFrontendLoginUrl()
+    private string GetFrontendBaseUrl()
     {
         var baseUrl = (config["Frontend:BaseUrl"] ?? config["FRONTEND_BASE_URL"] ?? "https://textzy.in").Trim();
         if (string.IsNullOrWhiteSpace(baseUrl)) baseUrl = "https://textzy.in";
         baseUrl = baseUrl.TrimEnd('/');
+        return baseUrl;
+    }
+
+    private string GetFrontendLoginUrl()
+    {
+        var baseUrl = GetFrontendBaseUrl();
         return $"{baseUrl}/login";
     }
 

@@ -12,6 +12,7 @@ const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
 const ProjectSelectPage = lazy(() => import("@/pages/auth/ProjectSelectPage"));
 const RegisterPage = lazy(() => import("@/pages/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("@/pages/auth/ResetPasswordPage"));
 const AcceptInvitePage = lazy(() => import("@/pages/auth/AcceptInvitePage"));
 const AboutPage = lazy(() => import("@/pages/static/AboutPage"));
 const ContactPage = lazy(() => import("@/pages/static/ContactPage"));
@@ -94,6 +95,7 @@ function App() {
             <Route path="/projects" element={<ProjectSelectPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/accept-invite" element={<AcceptInvitePage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/contact" element={<ContactPage />} />

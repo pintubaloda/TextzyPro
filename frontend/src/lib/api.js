@@ -622,6 +622,25 @@ export async function authRequestPasswordReset({ email }) {
   return res.json()
 }
 
+export async function authResetPassword({ verificationId, token, password, confirmPassword }) {
+  const res = await fetch(`${API_BASE}/api/auth/forgot-password/reset-json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      verificationId: verificationId || '',
+      token: token || '',
+      password: password || '',
+      confirmPassword: confirmPassword || ''
+    })
+  })
+  if (!res.ok) {
+    const msg = await readErrorMessage(res, 'Failed to reset password')
+    throw new Error(msg)
+  }
+  return res.json()
+}
+
 export async function authEmailOtpStatus({ email, verificationId, purpose = 'login' }) {
   const q = new URLSearchParams()
   q.set('verificationId', verificationId || '')
