@@ -21,6 +21,13 @@ public interface IEmailService
         int linkExpiryMinutes,
         CancellationToken ct = default);
 
+    Task SendPasswordResetAsync(
+        string toEmail,
+        string displayName,
+        string resetLink,
+        int linkExpiryMinutes,
+        CancellationToken ct = default);
+
     Task SendBillingEventAsync(
         string toEmail,
         string displayName,

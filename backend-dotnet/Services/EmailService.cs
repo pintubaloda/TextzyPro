@@ -410,6 +410,66 @@ public class EmailService(
         await SendEmailAsync(toEmail, $"Textzy verification required ({purpose})", html, plain, ct);
     }
 
+    public async Task SendPasswordResetAsync(
+        string toEmail,
+        string displayName,
+        string resetLink,
+        int linkExpiryMinutes,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail)) return;
+        var safeName = string.IsNullOrWhiteSpace(displayName) ? "there" : WebUtility.HtmlEncode(displayName);
+        var safeResetLink = WebUtility.HtmlEncode(resetLink);
+        var html = $"""
+            <!doctype html>
+            <html lang="en">
+            <body style="margin:0;padding:0;background:#f7f7fb;font-family:Segoe UI,Arial,sans-serif;color:#111827;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 8px 30px rgba(17,24,39,.08);">
+                      <tr>
+                        <td style="background:#f97316;padding:18px 24px;color:#fff;font-weight:700;font-size:20px;">Reset your Textzy password</td>
+                      </tr>
+                      <tr>
+                        <td style="padding:24px;">
+                          <p style="margin:0 0 12px;">Hi {safeName},</p>
+                          <p style="margin:0 0 16px;line-height:1.6;">
+                            We received a request to reset your Textzy password. Click the button below to set a new password.
+                          </p>
+                          <div style="text-align:center;margin:18px 0 22px;">
+                            <a href="{safeResetLink}" style="display:inline-block;background:#f97316;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:700;">Reset Password</a>
+                          </div>
+                          <p style="margin:0 0 8px;color:#4b5563;">Link expires in <strong>{linkExpiryMinutes} minutes</strong>.</p>
+                          <p style="margin:0;color:#dc2626;font-size:13px;">If you did not request this, you can ignore this email.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:14px 24px;background:#f9fafb;color:#6b7280;font-size:12px;">
+                          Powered by Moneyart Private Limited
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """;
+
+        var plain = $"""
+            Hi {(string.IsNullOrWhiteSpace(displayName) ? "there" : displayName)},
+
+            Reset your Textzy password using this link:
+            {resetLink}
+
+            This link expires in {linkExpiryMinutes} minutes.
+            If you did not request this, ignore this email.
+            """;
+
+        await SendEmailAsync(toEmail, "Reset your Textzy password", html, plain, ct);
+    }
+
     public async Task SendBillingEventAsync(
         string toEmail,
         string displayName,

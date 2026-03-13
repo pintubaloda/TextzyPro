@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MessageSquare, ArrowLeft, Mail, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
+import { authRequestPasswordReset } from "@/lib/api";
 
 const ForgotPasswordPage = () => {
   const [email, setEmail] = useState("");
@@ -15,12 +16,16 @@ const ForgotPasswordPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
-    setTimeout(() => {
-      setLoading(false);
+
+    try {
+      await authRequestPasswordReset({ email });
       setSubmitted(true);
-      toast.success("Password reset link sent to your email!");
-    }, 1500);
+      toast.success("If that email exists, we sent a password reset link.");
+    } catch (err) {
+      toast.error(err?.message || "Failed to send reset email. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

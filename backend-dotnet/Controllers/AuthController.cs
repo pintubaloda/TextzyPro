@@ -37,6 +37,7 @@ public class AuthController(
     private const int LoginTwoFactorChallengeExpiryMinutes = 10;
     private const int StepUpChallengeExpiryMinutes = 10;
     private const int StepUpFreshMinutes = 10;
+    private const int PasswordResetLinkExpiryMinutes = 30;
 
     private static readonly string[] DefaultAppApiCatalog =
     [
@@ -597,6 +598,157 @@ public class AuthController(
                 row.Purpose,
                 row.OtpExpiresAtUtc),
             "text/html; charset=utf-8");
+    }
+
+    [HttpPost("forgot-password/request")]
+    public async Task<IActionResult> RequestPasswordReset([FromBody] RequestPasswordResetRequest request, CancellationToken ct)
+    {
+        string email;
+        try
+        {
+            email = InputGuardService.RequireTrimmed(request.Email, "Email", 320).ToLowerInvariant();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+
+        var now = DateTime.UtcNow;
+        var purpose = "forgot-password";
+
+        var requestsInHour = await db.EmailOtpVerifications
+            .CountAsync(x => x.Email.ToLower() == email && x.Purpose == purpose && x.CreatedAtUtc >= now.AddHours(-1), ct);
+        if (requestsInHour >= 8)
+            return StatusCode(StatusCodes.Status429TooManyRequests, "Too many reset requests. Try again later.");
+
+        var latest = await db.EmailOtpVerifications
+            .Where(x => x.Email.ToLower() == email && x.Purpose == purpose)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+        if (latest is not null && (now - latest.LastSentAtUtc).TotalSeconds < EmailOtpResendCooldownSeconds)
+            return StatusCode(StatusCodes.Status429TooManyRequests, $"Please wait {EmailOtpResendCooldownSeconds} seconds before requesting another reset email.");
+
+        // Do not leak whether the email exists.
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Email.ToLower() == email && x.IsActive, ct);
+        if (user is null)
+        {
+            return Ok(new { ok = true, message = "If that email exists, a reset link has been sent." });
+        }
+
+        var linkToken = CreateOpaqueToken(32);
+        var row = new EmailOtpVerification
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            Purpose = purpose,
+            Status = "email_sent",
+            OtpHash = string.Empty,
+            OtpDisplayEncrypted = string.Empty,
+            VerificationCode = string.Empty,
+            LinkTokenHash = HashToken(linkToken),
+            IsVerified = false,
+            AttemptCount = 0,
+            MaxAttempts = EmailOtpMaxAttempts,
+            CreatedAtUtc = now,
+            ExpiresAtUtc = now.AddMinutes(PasswordResetLinkExpiryMinutes),
+            OtpExpiresAtUtc = null,
+            LinkOpenedAtUtc = null,
+            OtpIssuedAtUtc = null,
+            LastSentAtUtc = now
+        };
+        db.EmailOtpVerifications.Add(row);
+        await db.SaveChangesAsync(ct);
+
+        var resetLink = BuildPasswordResetLink(row.Id, linkToken);
+        try
+        {
+            await emailService.SendPasswordResetAsync(
+                email,
+                user.FullName ?? string.Empty,
+                resetLink,
+                PasswordResetLinkExpiryMinutes,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Password reset email failed for {Email}: {Error}", email, redactor.RedactText(ex.Message));
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, "Email service is not configured. Contact support.");
+        }
+
+        return Ok(new { ok = true, message = "If that email exists, a reset link has been sent." });
+    }
+
+    [HttpGet("forgot-password/link")]
+    public async Task<IActionResult> OpenPasswordResetLink([FromQuery] string verificationId, [FromQuery] string token, CancellationToken ct)
+    {
+        if (!Guid.TryParse((verificationId ?? string.Empty).Trim(), out var id))
+            return Content(BuildPasswordResetHtml("Invalid password reset link.", false, null), "text/html; charset=utf-8");
+
+        var row = await db.EmailOtpVerifications.FirstOrDefaultAsync(x => x.Id == id && x.Purpose == "forgot-password", ct);
+        if (row is null)
+            return Content(BuildPasswordResetHtml("Password reset session not found.", false, null), "text/html; charset=utf-8");
+
+        var now = DateTime.UtcNow;
+        if (row.ConsumedAtUtc is not null)
+            return Content(BuildPasswordResetHtml("This password reset link is already used.", false, null), "text/html; charset=utf-8");
+        if (row.ExpiresAtUtc <= now)
+            return Content(BuildPasswordResetHtml("Password reset link expired. Request a new email.", false, null), "text/html; charset=utf-8");
+        if (!string.Equals(HashToken((token ?? string.Empty).Trim()), row.LinkTokenHash, StringComparison.Ordinal))
+            return Content(BuildPasswordResetHtml("Invalid password reset link token.", false, null), "text/html; charset=utf-8");
+
+        if (row.LinkOpenedAtUtc is null)
+        {
+            row.LinkOpenedAtUtc = now;
+            row.Status = "link_opened";
+            await db.SaveChangesAsync(ct);
+        }
+
+        return Content(BuildPasswordResetFormHtml(row.Id, token ?? string.Empty), "text/html; charset=utf-8");
+    }
+
+    [HttpPost("forgot-password/reset")]
+    [Consumes("application/x-www-form-urlencoded", "multipart/form-data")]
+    public async Task<IActionResult> ResetPassword([FromForm] PasswordResetForm request, CancellationToken ct)
+    {
+        var verificationIdRaw = (request.VerificationId ?? string.Empty).Trim();
+        var tokenRaw = (request.Token ?? string.Empty).Trim();
+        var password = (request.Password ?? string.Empty).Trim();
+        var confirm = (request.ConfirmPassword ?? string.Empty).Trim();
+
+        if (!Guid.TryParse(verificationIdRaw, out var id))
+            return Content(BuildPasswordResetHtml("Invalid password reset request.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+        if (string.IsNullOrWhiteSpace(tokenRaw))
+            return Content(BuildPasswordResetHtml("Invalid password reset request.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+        if (password.Length < 8)
+            return Content(BuildPasswordResetHtml("Password must be at least 8 characters.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+        if (!string.Equals(password, confirm, StringComparison.Ordinal))
+            return Content(BuildPasswordResetHtml("Passwords do not match.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+
+        var row = await db.EmailOtpVerifications.FirstOrDefaultAsync(x => x.Id == id && x.Purpose == "forgot-password", ct);
+        if (row is null)
+            return Content(BuildPasswordResetHtml("Password reset session not found.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+
+        var now = DateTime.UtcNow;
+        if (row.ConsumedAtUtc is not null)
+            return Content(BuildPasswordResetHtml("This password reset link is already used.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+        if (row.ExpiresAtUtc <= now)
+            return Content(BuildPasswordResetHtml("Password reset link expired. Request a new email.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+        if (!string.Equals(HashToken(tokenRaw), row.LinkTokenHash, StringComparison.Ordinal))
+            return Content(BuildPasswordResetHtml("Invalid password reset link token.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Email.ToLower() == row.Email.ToLower() && x.IsActive, ct);
+        if (user is null)
+            return Content(BuildPasswordResetHtml("Account not found.", false, GetFrontendLoginUrl()), "text/html; charset=utf-8");
+
+        var (hash, salt) = hasher.HashPassword(password);
+        user.PasswordHash = hash;
+        user.PasswordSalt = salt;
+
+        row.ConsumedAtUtc = now;
+        row.Status = "consumed";
+        await db.SaveChangesAsync(ct);
+
+        return Content(BuildPasswordResetHtml("Password updated successfully. You can now login.", true, GetFrontendLoginUrl()), "text/html; charset=utf-8");
     }
 
     [HttpPost("email-verification/verify")]
@@ -1610,6 +1762,104 @@ public class AuthController(
                 : Request.Scheme);
         var host = Request.Host.Value;
         return $"{scheme}://{host}/api/auth/email-verification/link?verificationId={verificationId}&purpose={Uri.EscapeDataString(purpose)}&token={Uri.EscapeDataString(token)}";
+    }
+
+    private string BuildPasswordResetLink(Guid verificationId, string token)
+    {
+        var scheme = Request.IsHttps
+            ? Request.Scheme
+            : (string.Equals(Request.Headers["X-Forwarded-Proto"].FirstOrDefault(), "https", StringComparison.OrdinalIgnoreCase)
+                ? "https"
+                : Request.Scheme);
+        var host = Request.Host.Value;
+        return $"{scheme}://{host}/api/auth/forgot-password/link?verificationId={verificationId}&token={Uri.EscapeDataString(token)}";
+    }
+
+    private string GetFrontendLoginUrl()
+    {
+        var baseUrl = (config["Frontend:BaseUrl"] ?? config["FRONTEND_BASE_URL"] ?? "https://textzy.in").Trim();
+        if (string.IsNullOrWhiteSpace(baseUrl)) baseUrl = "https://textzy.in";
+        baseUrl = baseUrl.TrimEnd('/');
+        return $"{baseUrl}/login";
+    }
+
+    private static string BuildPasswordResetHtml(string message, bool success, string? loginUrl)
+    {
+        var safeMessage = System.Net.WebUtility.HtmlEncode(message);
+        var safeLogin = string.IsNullOrWhiteSpace(loginUrl) ? string.Empty : System.Net.WebUtility.HtmlEncode(loginUrl);
+        var action = success
+            ? (string.IsNullOrWhiteSpace(safeLogin) ? "" : $"<div style=\"margin-top:18px;\"><a href=\"{safeLogin}\" style=\"display:inline-block;background:#f97316;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700;\">Go to Login</a></div>")
+            : "";
+        var title = success ? "Password updated" : "Password reset";
+        return $"""
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>{title}</title>
+        </head>
+        <body style="margin:0;background:#fff7ed;font-family:Segoe UI,Arial,sans-serif;color:#1f2937;">
+          <div style="max-width:560px;margin:44px auto;padding:0 16px;">
+            <div style="background:#ffffff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.08);overflow:hidden;">
+              <div style="background:#f97316;color:#fff;padding:16px 20px;font-size:20px;font-weight:700;">{title}</div>
+              <div style="padding:20px;">
+                <div style="font-size:16px;line-height:1.5;">{safeMessage}</div>
+                {action}
+              </div>
+              <div style="padding:14px 20px;background:#f9fafb;color:#6b7280;font-size:12px;">Powered by Moneyart Private Limited</div>
+            </div>
+          </div>
+        </body>
+        </html>
+        """;
+    }
+
+    private static string BuildPasswordResetFormHtml(Guid verificationId, string token)
+    {
+        var vid = verificationId.ToString();
+        var safeVid = System.Net.WebUtility.HtmlEncode(vid);
+        var safeToken = System.Net.WebUtility.HtmlEncode(token ?? string.Empty);
+        return $"""
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Reset Password</title>
+        </head>
+        <body style="margin:0;background:#fff7ed;font-family:Segoe UI,Arial,sans-serif;color:#1f2937;">
+          <div style="max-width:560px;margin:44px auto;padding:0 16px;">
+            <div style="background:#ffffff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.08);overflow:hidden;">
+              <div style="background:#f97316;color:#fff;padding:16px 20px;font-size:20px;font-weight:700;">Reset your password</div>
+              <div style="padding:20px;">
+                <form method="post" action="/api/auth/forgot-password/reset">
+                  <input type="hidden" name="verificationId" value="{safeVid}" />
+                  <input type="hidden" name="token" value="{safeToken}" />
+                  <label style="display:block;margin:0 0 6px;font-weight:600;">New password</label>
+                  <input name="password" type="password" minlength="8" required style="width:100%;padding:12px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;" />
+                  <div style="height:12px;"></div>
+                  <label style="display:block;margin:0 0 6px;font-weight:600;">Confirm password</label>
+                  <input name="confirmPassword" type="password" minlength="8" required style="width:100%;padding:12px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;" />
+                  <div style="height:16px;"></div>
+                  <button type="submit" style="width:100%;background:#f97316;color:#fff;border:none;padding:12px 20px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;">Update password</button>
+                  <div style="margin-top:10px;color:#6b7280;font-size:12px;">Minimum 8 characters.</div>
+                </form>
+              </div>
+              <div style="padding:14px 20px;background:#f9fafb;color:#6b7280;font-size:12px;">Powered by Moneyart Private Limited</div>
+            </div>
+          </div>
+        </body>
+        </html>
+        """;
+    }
+
+    public sealed class PasswordResetForm
+    {
+        public string VerificationId { get; set; } = string.Empty;
+        public string Token { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
     }
 
     private static string GetVerificationState(EmailOtpVerification row, DateTime now)

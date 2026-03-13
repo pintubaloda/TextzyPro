@@ -608,6 +608,20 @@ export async function authRequestEmailOtp({ email, purpose = 'login' }) {
   return res.json()
 }
 
+export async function authRequestPasswordReset({ email }) {
+  const res = await fetch(`${API_BASE}/api/auth/forgot-password/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email: email || '' })
+  })
+  if (!res.ok) {
+    const msg = await readErrorMessage(res, 'Failed to send password reset email')
+    throw new Error(msg)
+  }
+  return res.json()
+}
+
 export async function authEmailOtpStatus({ email, verificationId, purpose = 'login' }) {
   const q = new URLSearchParams()
   q.set('verificationId', verificationId || '')
