@@ -5,6 +5,8 @@ public class PlatformRequestLog
     public Guid Id { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public string RequestId { get; set; } = string.Empty;
+    public string TraceId { get; set; } = string.Empty;
+    public string SpanId { get; set; } = string.Empty;
     public string Method { get; set; } = string.Empty;
     public string Path { get; set; } = string.Empty;
     public string QueryString { get; set; } = string.Empty;

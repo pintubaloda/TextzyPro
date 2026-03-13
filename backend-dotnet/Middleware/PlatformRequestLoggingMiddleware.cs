@@ -10,6 +10,7 @@ namespace Textzy.Api.Middleware;
 public class PlatformRequestLoggingMiddleware(RequestDelegate next)
 {
     private const int MaxBodyChars = 8000;
+    private const int SlowRequestWarnMs = 1200;
     private static int _writeCounter;
     private static readonly HashSet<string> SkipPaths = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -113,12 +114,16 @@ public class PlatformRequestLoggingMiddleware(RequestDelegate next)
         var method = context.Request.Method ?? string.Empty;
         var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? string.Empty;
         var userAgent = context.Request.Headers.UserAgent.ToString();
+        var traceId = Activity.Current?.TraceId.ToString() ?? string.Empty;
+        var spanId = Activity.Current?.SpanId.ToString() ?? string.Empty;
 
         db.PlatformRequestLogs.Add(new Models.PlatformRequestLog
         {
             Id = Guid.NewGuid(),
             CreatedAtUtc = DateTime.UtcNow,
             RequestId = context.TraceIdentifier,
+            TraceId = traceId,
+            SpanId = spanId,
             Method = method,
             Path = path,
             QueryString = query,
@@ -134,6 +139,23 @@ public class PlatformRequestLoggingMiddleware(RequestDelegate next)
         });
 
         await db.SaveChangesAsync();
+
+        // Emit minimal ops-friendly app logs for SLO debugging (prod logs are Warning+).
+        // Keep it bounded to slow/error paths only to avoid turning prod logs noisy.
+        if (context.Response.StatusCode >= 500 || durationMs >= SlowRequestWarnMs)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("RequestOps");
+            logger.LogWarning(
+                "request: method={Method} path={Path} status={StatusCode} durationMs={DurationMs} tenantId={TenantId} userId={UserId} traceId={TraceId} clientIp={ClientIp}",
+                method,
+                path,
+                context.Response.StatusCode,
+                durationMs,
+                tenancy?.TenantId,
+                auth?.UserId,
+                traceId,
+                clientIp);
+        }
 
         // Keep log table bounded for platform safety; run cleanup periodically.
         if (Interlocked.Increment(ref _writeCounter) % 200 == 0)

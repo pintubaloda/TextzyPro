@@ -45,16 +45,20 @@ builder.Services.AddRateLimiter(options =>
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var bucket = path switch
         {
+            var p when p.StartsWith("/api/auth/register") => "auth-register",
             var p when p.StartsWith("/api/auth/login") => "auth-login",
             var p when p.StartsWith("/api/auth/refresh") => "auth-refresh",
+            var p when p.StartsWith("/api/auth/forgot-password/") => "auth-forgot-password",
             var p when p.StartsWith("/api/waba/webhook") => "waba-webhook",
             _ => "default"
         };
 
         var permitLimit = bucket switch
         {
+            "auth-register" => 8,
             "auth-login" => 20,
             "auth-refresh" => 60,
+            "auth-forgot-password" => 20,
             "waba-webhook" => 1200,
             _ => 600
         };
@@ -632,6 +636,8 @@ static void EnsureControlAuthSchema(ControlDbContext db)
             "Id" uuid PRIMARY KEY,
             "CreatedAtUtc" timestamp with time zone NOT NULL,
             "RequestId" text NOT NULL,
+            "TraceId" text NOT NULL DEFAULT '',
+            "SpanId" text NOT NULL DEFAULT '',
             "Method" text NOT NULL,
             "Path" text NOT NULL,
             "QueryString" text NOT NULL,
@@ -646,10 +652,13 @@ static void EnsureControlAuthSchema(ControlDbContext db)
             "Error" text NOT NULL
         );
         """);
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "PlatformRequestLogs" ADD COLUMN IF NOT EXISTS "TraceId" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "PlatformRequestLogs" ADD COLUMN IF NOT EXISTS "SpanId" text NOT NULL DEFAULT '';""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_PlatformRequestLogs_CreatedAtUtc" ON "PlatformRequestLogs" ("CreatedAtUtc");""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_PlatformRequestLogs_Path_CreatedAtUtc" ON "PlatformRequestLogs" ("Path","CreatedAtUtc");""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_PlatformRequestLogs_StatusCode_CreatedAtUtc" ON "PlatformRequestLogs" ("StatusCode","CreatedAtUtc");""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_PlatformRequestLogs_TenantId_CreatedAtUtc" ON "PlatformRequestLogs" ("TenantId","CreatedAtUtc");""");
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_PlatformRequestLogs_TraceId_CreatedAtUtc" ON "PlatformRequestLogs" ("TraceId","CreatedAtUtc");""");
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "SmsGatewayRequestLogs" (
             "Id" uuid PRIMARY KEY,
