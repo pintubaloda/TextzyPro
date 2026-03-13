@@ -33,8 +33,10 @@ public class AuthMiddleware(RequestDelegate next)
         var isHealthPath = path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase)
             || path.Equals("/api/ping", StringComparison.OrdinalIgnoreCase);
         var isAuthPath = path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/auth/register", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/auth/two-factor", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/auth/email-verification", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/auth/forgot-password", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/auth/accept-invite", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/auth/invite-preview", StringComparison.OrdinalIgnoreCase);
         var isAuthRefreshPath = path.StartsWith("/api/auth/refresh", StringComparison.OrdinalIgnoreCase);
