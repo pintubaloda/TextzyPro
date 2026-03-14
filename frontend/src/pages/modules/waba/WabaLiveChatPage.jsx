@@ -41,7 +41,14 @@ export default function WabaLiveChatPage() {
       import.meta.env.VITE_API_BASE ||
       'https://textzy-backend-production.up.railway.app'
     const connection = new signalR.HubConnectionBuilder()
-      .withUrl(`${baseUrl}/hubs/inbox`)
+      .withUrl(`${baseUrl}/hubs/inbox`, {
+        withCredentials: true,
+        // Prefer WebSockets (lowest latency). Keep SSE/LongPolling as fallbacks for restrictive networks.
+        transport:
+          signalR.HttpTransportType.WebSockets |
+          signalR.HttpTransportType.ServerSentEvents |
+          signalR.HttpTransportType.LongPolling,
+      })
       .withAutomaticReconnect()
       .build()
 

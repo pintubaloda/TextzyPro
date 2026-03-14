@@ -40,7 +40,7 @@ import {
   CornerUpLeft,
 } from "lucide-react";
 import { apiGet, apiGetBlob, apiPost, apiPostForm, buildIdempotencyKey, getAppBootstrap, getNotificationSettings, wabaGetOnboardingStatus } from "@/lib/api";
-import { getSession } from "@/lib/api";
+import { getLastTenantSlug, getSession } from "@/lib/api";
 import { playNotificationTone, isNotificationAudioUnlocked, unlockNotificationAudio, wasNotificationEverEnabled, getNotificationVolume, setNotificationVolume, setNotificationSoundEnabled } from "@/lib/notificationAudio";
 import { requestDesktopNotificationPermission, setRuntimePushConfig, showDesktopNotification, subscribeFcm, subscribePush } from "@/lib/browserNotifications";
 import { toast } from "sonner";
@@ -368,7 +368,8 @@ const InboxPage = () => {
   const notifyDesktopRef = useRef(() => {});
 
   const realtimeSession = getSession();
-  const realtimeTenantSlug = String(realtimeSession?.tenantSlug || "").trim();
+  // Some auth flows rely on HttpOnly cookies; ensure realtime still starts even if session storage is stale.
+  const realtimeTenantSlug = String(realtimeSession?.tenantSlug || getLastTenantSlug() || "").trim();
 
   const mapConversation = (x) => {
     const id = x.id ?? x.Id ?? "";
