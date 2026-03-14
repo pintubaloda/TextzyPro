@@ -498,13 +498,122 @@ const LoginScreen = ({ onLogin }) => {
                   ) : null}
                 </div>
                 {otpSent && (
-                  <p style={{ fontSize:12, color: otpVerified ? C.online : C.textSub, margin:"0 0 8px" }}>
-                    {otpVerified
-                      ? "Email verified successfully."
-                      : otpReady
-                        ? "Verification link confirmed. Enter OTP from email tab."
-                        : "Waiting for user action. Check your email and click Verify Now."}
-                  </p>
+                  <div
+                    style={{
+                      margin: "0 0 10px",
+                      padding: "10px 12px",
+                      borderRadius: 14,
+                      border: `1px solid ${otpVerified ? `${C.online}55` : otpReady ? C.orangeLight2 : C.orangeLight2}`,
+                      background: otpVerified
+                        ? "linear-gradient(180deg,#f0fdf4 0%,#ffffff 100%)"
+                        : otpReady
+                          ? "linear-gradient(180deg,#fff7ed 0%,#ffffff 100%)"
+                          : "linear-gradient(180deg,#fff7ed 0%,#ffffff 100%)",
+                      boxShadow: otpVerified
+                        ? "0 10px 26px rgba(34,197,94,0.10)"
+                        : "0 10px 26px rgba(249,115,22,0.10)",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 12,
+                        background: otpVerified ? "rgba(34,197,94,0.15)" : "rgba(249,115,22,0.14)",
+                        color: otpVerified ? C.online : C.orange,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flex: "0 0 auto",
+                      }}
+                      aria-hidden="true"
+                    >
+                      {otpVerified ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : otpReady ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M22 12h-4l-3 9L9 3 6 12H2" />
+                        </svg>
+                      ) : (
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.orange, boxShadow: `0 0 0 6px rgba(249,115,22,0.18)` }} />
+                      )}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 800, fontSize: 12, color: otpVerified ? C.online : C.textMain }}>
+                        {otpVerified ? "Email verified" : otpReady ? "OTP ready" : "Action required"}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.textSub, marginTop: 2, lineHeight: 1.35 }}>
+                        {otpVerified
+                          ? "Email verified successfully. You can sign in now."
+                          : otpReady
+                            ? "Verification link confirmed. Enter the OTP from your email."
+                            : "Open your email and click Verify Now. We will auto-check every few seconds."}
+                      </div>
+
+                      {!otpVerified && (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => window.open("https://mail.google.com", "_blank", "noopener,noreferrer")}
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: `1px solid ${C.divider}`,
+                              background: "#fff",
+                              fontWeight: 800,
+                              fontSize: 12,
+                              color: C.textMain,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Open email
+                          </button>
+                          <button
+                            type="button"
+                            onClick={refreshOtpStatus}
+                            disabled={otpStatusBusy}
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: `1px solid ${C.divider}`,
+                              background: "#fff",
+                              fontWeight: 800,
+                              fontSize: 12,
+                              color: C.textMain,
+                              cursor: otpStatusBusy ? "not-allowed" : "pointer",
+                              opacity: otpStatusBusy ? 0.75 : 1,
+                            }}
+                          >
+                            {otpStatusBusy ? "Checking..." : "Check now"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={requestOtp}
+                            disabled={otpBusy}
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: 10,
+                              border: "none",
+                              background: C.orange,
+                              fontWeight: 900,
+                              fontSize: 12,
+                              color: "#fff",
+                              cursor: otpBusy ? "not-allowed" : "pointer",
+                              opacity: otpBusy ? 0.85 : 1,
+                            }}
+                          >
+                            {otpBusy ? "Sending..." : "Resend"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </>
             ) : (
@@ -538,20 +647,26 @@ const LoginScreen = ({ onLogin }) => {
               </div>
             )}
             {err&&<p style={{ color:C.danger,fontSize:13,marginBottom:10,textAlign:"center" }}>{err}</p>}
-            <button onClick={submit} disabled={loading || !!twoFactor.challengeToken} style={{
+            <button
+              onClick={submit}
+              disabled={loading || !!twoFactor.challengeToken || (otpSent && !otpVerified)}
+              style={{
               width:"100%", padding:15, borderRadius:14, border:"none",
               background:`linear-gradient(135deg,${C.orange},${C.orangeLight})`,
               color:"#fff", fontWeight:700, fontSize:16,
-              cursor:(loading || twoFactor.challengeToken)?"not-allowed":"pointer", fontFamily:"inherit",
+              cursor:(loading || twoFactor.challengeToken || (otpSent && !otpVerified))?"not-allowed":"pointer", fontFamily:"inherit",
               display:"flex", alignItems:"center", justifyContent:"center", gap:8,
               boxShadow:`0 6px 24px ${C.orange}55`,
-              opacity:(loading || twoFactor.challengeToken)?0.85:1, transition:"opacity 0.2s",
-            }}>
+              opacity:(loading || twoFactor.challengeToken || (otpSent && !otpVerified))?0.85:1, transition:"opacity 0.2s",
+            }}
+            >
               {loading
                 ? <><div style={{ width:20,height:20,border:"2.5px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.7s linear infinite" }}/>Signing in...</>
                 : twoFactor.challengeToken
                   ? <><span>Awaiting authenticator verification</span><I.Shield/></>
-                  : <><span>Sign In</span><I.ArrowRight/></>}
+                  : otpSent && !otpVerified
+                    ? <><span>Verify email to continue</span><I.ArrowRight/></>
+                    : <><span>Sign In</span><I.ArrowRight/></>}
             </button>
             <p style={{ textAlign:"center",marginTop:16,fontSize:12,color:C.textMuted }}>
               <span style={{ display:"inline-flex",alignItems:"center",gap:6 }}><I.Shield/>Secure session | HTTPS only</span>
