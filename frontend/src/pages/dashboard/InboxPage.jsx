@@ -333,6 +333,7 @@ const InboxPage = () => {
     }
   });
   const selectedChatIdRef = useRef(null);
+  const selectedChatPhoneRef = useRef("");
   const meEmailRef = useRef("");
   const playNotificationSoundRef = useRef(() => {});
   const typingTimerRef = useRef(null);
@@ -874,6 +875,7 @@ const InboxPage = () => {
 
   useEffect(() => {
     selectedChatIdRef.current = selectedChat?.id || null;
+    selectedChatPhoneRef.current = selectedChat?.phone || "";
     if (!selectedChat?.id) {
       setMessages([]);
       setReplyToMessage(null);
@@ -882,7 +884,7 @@ const InboxPage = () => {
     setReplyToMessage(null);
     loadThread(selectedChat.id);
     loadNotes(selectedChat.id);
-  }, [selectedChat?.id, loadNotes, loadThread]);
+  }, [selectedChat?.id, selectedChat?.phone, loadNotes, loadThread]);
 
   useEffect(() => {
     if (!endMessageRef.current) return;
@@ -1190,16 +1192,77 @@ const InboxPage = () => {
       const activeId = activeConversationId();
       if (activeId) loadThreadRef.current?.(activeId);
     };
+
+    const normalizePhone = (v) => String(v || "").replace(/[^\d]/g, "");
+    const isSamePhone = (a, b) => {
+      const x = normalizePhone(a);
+      const y = normalizePhone(b);
+      if (!x || !y) return false;
+      // In practice we store numbers with country code; still be resilient to leading zeros.
+      return x === y || x.endsWith(y) || y.endsWith(x);
+    };
+
+    const upsertConversationPreview = (recipient, body, atUtc, unreadDelta = 0) => {
+      const ts = atUtc ? new Date(atUtc) : new Date();
+      const hhmm = ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setConversations((prev) => {
+        const next = prev.map((c) => {
+          if (!isSamePhone(c?.phone, recipient)) return c;
+          const nextUnread = Math.max(0, Number(c.unread || 0) + Number(unreadDelta || 0));
+          return {
+            ...c,
+            lastMessage: String(body || c.lastMessage || "Message"),
+            time: hhmm,
+            unread: nextUnread,
+          };
+        });
+        return next;
+      });
+    };
+
+    const upsertActiveThreadMessage = (evt, fallbackStatus) => {
+      const recipient = evt?.recipient ?? evt?.Recipient ?? "";
+      const activePhone = selectedChatPhoneRef.current;
+      if (!isSamePhone(recipient, activePhone)) return;
+
+      const raw = {
+        Id: evt?.id ?? evt?.Id ?? crypto.randomUUID(),
+        Status: evt?.status ?? evt?.Status ?? fallbackStatus ?? "sent",
+        Body: evt?.body ?? evt?.Body ?? "",
+        MessageType: evt?.messageType ?? evt?.MessageType ?? "session",
+        CreatedAtUtc: evt?.createdAtUtc ?? evt?.CreatedAtUtc ?? new Date().toISOString(),
+        RetryCount: evt?.retryCount ?? evt?.RetryCount ?? 0,
+        NextRetryAtUtc: evt?.nextRetryAtUtc ?? evt?.NextRetryAtUtc ?? null,
+        LastError: evt?.lastError ?? evt?.LastError ?? "",
+        QueueProvider: evt?.queueProvider ?? evt?.QueueProvider ?? "",
+      };
+
+      const msg = mapMessage(raw);
+      setMessages((prev) => {
+        const id = String(msg.id);
+        const idx = prev.findIndex((m) => String(m.id) === id);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], ...msg };
+          return copy;
+        }
+        return [...prev, msg];
+      });
+    };
     connection.on("message.queued", (evt) => {
       const key = `queued:${evt?.id || evt?.recipient || "x"}:${evt?.createdAtUtc || ""}`;
       if (markRealtimeEventSeenRef.current?.(key)) return;
       emitCrossTabEventRef.current?.("message.queued", key);
+      upsertActiveThreadMessage(evt, "queued");
+      upsertConversationPreview(evt?.recipient ?? evt?.Recipient, evt?.body ?? evt?.Body, evt?.createdAtUtc ?? evt?.CreatedAtUtc, 0);
       refreshMessageViews();
     });
     connection.on("message.sent", (evt) => {
       const key = `sent:${evt?.id || evt?.recipient || "x"}:${evt?.createdAtUtc || ""}`;
       if (markRealtimeEventSeenRef.current?.(key)) return;
       emitCrossTabEventRef.current?.("message.sent", key);
+      upsertActiveThreadMessage(evt, "sent");
+      upsertConversationPreview(evt?.recipient ?? evt?.Recipient, evt?.body ?? evt?.Body, evt?.createdAtUtc ?? evt?.CreatedAtUtc, 0);
       refreshMessageViews();
       playNotificationSoundRef.current?.(980);
     });
