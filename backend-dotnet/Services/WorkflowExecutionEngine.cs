@@ -17,6 +17,8 @@ public class WorkflowExecutionEngine(
     SensitiveDataRedactor redactor,
     IOptions<WorkflowRuntimeOptions> runtimeOptions)
 {
+    private const string DelayResumeFeatureKey = "tenant.workflow.delay_resume.enabled";
+
     private const int MaxSubflowDepth = 3;
     private sealed class DelayResumePayload
     {
@@ -735,6 +737,29 @@ public class WorkflowExecutionEngine(
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         });
+
+        // If a tenant ever uses delay nodes, turn on delay-resume scanning for that tenant.
+        // This prevents the delay-resume worker from touching every tenant DB (which creates many connection pools and high idle RAM).
+        var flag = await controlDb.TenantFeatureFlags.FirstOrDefaultAsync(
+            x => x.TenantId == req.TenantId && x.FeatureKey == DelayResumeFeatureKey, ct);
+        if (flag is null)
+        {
+            controlDb.TenantFeatureFlags.Add(new TenantFeatureFlag
+            {
+                Id = Guid.NewGuid(),
+                TenantId = req.TenantId,
+                FeatureKey = DelayResumeFeatureKey,
+                IsEnabled = true,
+                UpdatedAtUtc = DateTime.UtcNow,
+                UpdatedByUserId = Guid.Empty
+            });
+        }
+        else if (!flag.IsEnabled)
+        {
+            flag.IsEnabled = true;
+            flag.UpdatedAtUtc = DateTime.UtcNow;
+            flag.UpdatedByUserId = Guid.Empty;
+        }
 
         controlDb.AuditLogs.Add(new AuditLog
         {

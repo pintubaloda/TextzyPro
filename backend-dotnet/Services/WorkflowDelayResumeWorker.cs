@@ -8,16 +8,20 @@ namespace Textzy.Api.Services;
 
 public class WorkflowDelayResumeWorker(
     IServiceScopeFactory scopeFactory,
+    IConfiguration configuration,
     IOptions<WorkflowRuntimeOptions> runtimeOptions,
     SensitiveDataRedactor redactor,
     ILogger<WorkflowDelayResumeWorker> logger) : BackgroundService
 {
+    private const string DelayResumeFeatureKey = "tenant.workflow.delay_resume.enabled";
     private const int TenantBatchSize = 25;
     private static readonly TimeSpan TenantCacheTtl = TimeSpan.FromMinutes(2);
     private readonly SemaphoreSlim _tenantCacheLock = new(1, 1);
     private List<TenantScanTarget> _tenantCache = [];
     private DateTime _tenantCacheExpiresUtc = DateTime.MinValue;
     private int _tenantCursor;
+    private int _emptyStreak;
+    private TimeSpan _loopDelay = TimeSpan.FromSeconds(3);
 
     private sealed class DelayResumePayload
     {
@@ -38,22 +42,36 @@ public class WorkflowDelayResumeWorker(
         {
             try
             {
-                await ScanAndResumeAsync(stoppingToken);
+                var processed = await ScanAndResumeAsync(stoppingToken);
+                if (processed > 0)
+                {
+                    _emptyStreak = 0;
+                    _loopDelay = TimeSpan.FromSeconds(3);
+                }
+                else
+                {
+                    _emptyStreak = Math.Min(_emptyStreak + 1, 6);
+                    // Backoff aggressively when there's no work. This reduces idle DB connections and RAM from per-tenant pools.
+                    // 3s -> 6s -> 12s -> 24s -> 30s (cap).
+                    var seconds = Math.Min(30, (int)(3 * Math.Pow(2, Math.Min(3, _emptyStreak))));
+                    _loopDelay = TimeSpan.FromSeconds(seconds);
+                }
             }
             catch (Exception ex)
             {
                 logger.LogWarning("Workflow delay-resume scan failed: {Error}", SafeError(ex.Message));
             }
-            await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
+            await Task.Delay(_loopDelay, stoppingToken);
         }
     }
 
-    private async Task ScanAndResumeAsync(CancellationToken ct)
+    private async Task<int> ScanAndResumeAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var controlDb = scope.ServiceProvider.GetRequiredService<ControlDbContext>();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyContext>();
         var now = DateTime.UtcNow;
+        var processedTotal = 0;
 
         var tenants = await GetTenantBatchAsync(controlDb, ct);
         foreach (var tenant in tenants)
@@ -75,6 +93,7 @@ public class WorkflowDelayResumeWorker(
                     .ToListAsync(ct);
                 if (jobs.Count == 0) continue;
 
+                processedTotal += jobs.Count;
                 tenancy.SetTenant(tenant.Id, tenant.Slug, tenantConn);
                 var engine = new WorkflowExecutionEngine(
                     controlDb,
@@ -202,6 +221,8 @@ public class WorkflowDelayResumeWorker(
                 logger.LogWarning("Workflow delay-resume tenant scan failed for tenant={TenantId}: {Error}", tenant.Id, SafeError(ex.Message));
             }
         }
+
+        return processedTotal;
     }
 
     private static string SafeError(string input)
@@ -213,6 +234,10 @@ public class WorkflowDelayResumeWorker(
     private async Task<List<TenantScanTarget>> GetTenantBatchAsync(ControlDbContext controlDb, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
+        // Config gate: in production we only scan tenants that actually use delay nodes (feature flag set by engine).
+        // To force legacy behavior (scan all tenants), set Workflow:DelayResume:ScanAllTenants=true.
+        var scanAllTenants = bool.TryParse(configuration["Workflow:DelayResume:ScanAllTenants"], out var enabled) && enabled;
+
         if (_tenantCache.Count == 0 || now >= _tenantCacheExpiresUtc)
         {
             await _tenantCacheLock.WaitAsync(ct);
@@ -220,15 +245,39 @@ public class WorkflowDelayResumeWorker(
             {
                 if (_tenantCache.Count == 0 || now >= _tenantCacheExpiresUtc)
                 {
-                    _tenantCache = await controlDb.Tenants.AsNoTracking()
-                        .OrderBy(x => x.CreatedAtUtc)
-                        .Select(x => new TenantScanTarget
-                        {
-                            Id = x.Id,
-                            Slug = x.Slug,
-                            DataConnectionString = x.DataConnectionString
-                        })
-                        .ToListAsync(ct);
+                    if (scanAllTenants)
+                    {
+                        _tenantCache = await controlDb.Tenants.AsNoTracking()
+                            .OrderBy(x => x.CreatedAtUtc)
+                            .Select(x => new TenantScanTarget
+                            {
+                                Id = x.Id,
+                                Slug = x.Slug,
+                                DataConnectionString = x.DataConnectionString
+                            })
+                            .ToListAsync(ct);
+                    }
+                    else
+                    {
+                        var enabledTenantIds = await controlDb.TenantFeatureFlags.AsNoTracking()
+                            .Where(x => x.FeatureKey == DelayResumeFeatureKey && x.IsEnabled)
+                            .Select(x => x.TenantId)
+                            .Distinct()
+                            .ToListAsync(ct);
+
+                        _tenantCache = enabledTenantIds.Count == 0
+                            ? []
+                            : await controlDb.Tenants.AsNoTracking()
+                                .Where(x => enabledTenantIds.Contains(x.Id))
+                                .OrderBy(x => x.CreatedAtUtc)
+                                .Select(x => new TenantScanTarget
+                                {
+                                    Id = x.Id,
+                                    Slug = x.Slug,
+                                    DataConnectionString = x.DataConnectionString
+                                })
+                                .ToListAsync(ct);
+                    }
                     _tenantCacheExpiresUtc = now.Add(TenantCacheTtl);
                     _tenantCursor = 0;
                 }
@@ -238,6 +287,8 @@ public class WorkflowDelayResumeWorker(
                 _tenantCacheLock.Release();
             }
         }
+
+        if (_tenantCache.Count == 0) return [];
 
         if (_tenantCache.Count <= TenantBatchSize)
             return _tenantCache;
