@@ -178,6 +178,7 @@ builder.Services.AddScoped<IRazorpayPaymentValidator, RazorpayPaymentValidator>(
 builder.Services.AddScoped<InvoiceAttachmentService>();
 builder.Services.AddScoped<BillingGuardService>();
 builder.Services.AddScoped<SecurityControlService>();
+builder.Services.AddScoped<OpsMetricsService>();
 builder.Services.AddScoped<TataSmsMessageProvider>();
 builder.Services.AddScoped<EquenceSmsMessageProvider>();
 builder.Services.AddScoped<IMessageProvider, SmsProviderRouter>();
