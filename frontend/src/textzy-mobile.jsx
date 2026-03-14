@@ -188,7 +188,10 @@ export default function TextzyMobile() {
   });
 
   const active       = contacts.find(c=>c.id===activeId);
-  const unreadCount  = contacts.filter(c=>c.unread>0).length;
+  const unreadThreadsCount = contacts.filter((c) => Number(c.unread || 0) > 0).length;
+  const unreadMessagesCount = contacts.reduce((sum, c) => sum + Math.max(0, Number(c.unread || 0)), 0);
+  const assignedCount = contacts.filter((c) => !!c.assignedUserId).length;
+  const starredCount = contacts.filter((c) => (c.labels || []).some((l) => String(l).toLowerCase() === "starred")).length;
   const authCtx = { csrfToken: session.csrfToken, tenantSlug: session.tenantSlug };
   const selectedTemplate = templates.find((t) => String(t.id) === String(selectedTemplateId)) || templates[0] || null;
   const templateParamIndexes = extractTemplateParamIndexes(selectedTemplate?.body || "");
@@ -1128,6 +1131,16 @@ export default function TextzyMobile() {
   });
 
   useEffect(() => {
+    try {
+      if (typeof document === "undefined") return;
+      const base = "Textzy";
+      document.title = unreadMessagesCount > 0 ? `(${unreadMessagesCount}) ${base}` : base;
+    } catch {
+      // ignore
+    }
+  }, [unreadMessagesCount]);
+
+  useEffect(() => {
     if (screen !== "app") return;
     if (!authCtx.tenantSlug) return;
     if (contacts.length > 0) return;
@@ -1510,11 +1523,26 @@ export default function TextzyMobile() {
             transition:"all 0.15s",
           }}>
             {t}
-            {t==="Unread"&&unreadCount>0&&(
-              <span style={{ marginLeft:5,background:C.unread,color:"#fff",borderRadius:20,padding:"0 6px",fontSize:11,fontWeight:700 }}>
-                {unreadCount}
+            {t === "All" && contacts.length > 0 ? (
+              <span style={{ marginLeft: 6, background: "rgba(15,23,42,0.08)", color: C.textMain, borderRadius: 999, padding: "0 7px", fontSize: 11, fontWeight: 800 }}>
+                {contacts.length}
               </span>
-            )}
+            ) : null}
+            {t === "Unread" && unreadMessagesCount > 0 ? (
+              <span style={{ marginLeft: 6, background: C.unread, color: "#fff", borderRadius: 999, padding: "0 7px", fontSize: 11, fontWeight: 900, boxShadow: `0 2px 8px ${C.orange}55` }}>
+                {unreadMessagesCount}
+              </span>
+            ) : null}
+            {t === "Assigned" && assignedCount > 0 ? (
+              <span style={{ marginLeft: 6, background: "rgba(59,130,246,0.14)", color: "#1D4ED8", borderRadius: 999, padding: "0 7px", fontSize: 11, fontWeight: 900 }}>
+                {assignedCount}
+              </span>
+            ) : null}
+            {t === "Starred" && starredCount > 0 ? (
+              <span style={{ marginLeft: 6, background: "rgba(234,179,8,0.18)", color: "#92400E", borderRadius: 999, padding: "0 7px", fontSize: 11, fontWeight: 900 }}>
+                {starredCount}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
