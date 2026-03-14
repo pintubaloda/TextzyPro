@@ -1,6 +1,8 @@
 {
   "name": "frontend",
   "version": "0.1.0",
+  "description": "Textzy Desktop - Multi-tenant WhatsApp and SMS platform.",
+  "author": "Textzy",
   "private": true,
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
@@ -62,9 +64,10 @@
     "dev": "craco start",
     "start": "craco start",
     "build": "craco build && node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('build','dist',{recursive:true});\"",
+    "build:desktop": "cross-env PUBLIC_URL=. craco build",
     "desktop:dev": "concurrently -k \"npm:start\" \"npm:electron:dev\"",
     "electron:dev": "wait-on tcp:3000 && electron ./electron/main.cjs",
-    "desktop:build": "npm run build && electron-builder --win nsis --x64",
+    "desktop:build": "npm run build:desktop && electron-builder --win nsis --x64",
     "test": "craco test",
     "postinstall": "node scripts/fix-react-dev-utils.js"
   },
@@ -86,6 +89,7 @@
     "@eslint/js": "9.23.0",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
     "electron": "^37.2.0",
     "electron-builder": "^26.0.12",
     "eslint": "9.23.0",
@@ -98,16 +102,18 @@
     "tailwindcss": "^3.4.17",
     "wait-on": "^8.0.5"
   },
-  "main": "electron/main.cjs",
+  "main": "public/electron.js",
   "build": {
     "appId": "com.textzy.desktop",
     "productName": "Textzy Desktop",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
     "files": [
       "build/**/*",
       "electron/**/*",
+      "public/electron.js",
       "package.json"
     ],
     "win": {

@@ -34,6 +34,7 @@ frontend/node_modules/
 # Frontend build outputs
 frontend/build/
 frontend/dist/
+frontend/release/
 
 # .NET build outputs
 backend-dotnet/bin/
