@@ -289,6 +289,7 @@ public class WabaWebhookWorker(
                     });
                 }
 
+                var pendingAutomations = new List<(string phoneNumberId, TriggerInboundContext ctx)>();
                 foreach (var inbound in parse.Inbound)
                 {
                     var inboundFrom = inbound.From ?? string.Empty;
@@ -493,16 +494,8 @@ public class WabaWebhookWorker(
 
                     if (triggerInbound is not null)
                     {
-                        await RunTriggeredAutomationsAsync(
-                            scope.ServiceProvider,
-                            controlDb,
-                            tenantDb,
-                            resolved.TenantId,
-                            resolved.TenantSlug,
-                            resolved.DataConnectionString,
-                            parse.PhoneNumberId,
-                            triggerInbound,
-                            stoppingToken);
+                        // Defer heavy automation evaluation so the inbox can update immediately after DB save + hub notify.
+                        pendingAutomations.Add((parse.PhoneNumberId, triggerInbound));
                     }
                 }
 
@@ -549,6 +542,40 @@ public class WabaWebhookWorker(
                     CorrelationId: item.Id.ToString("N"),
                     DurationMs: 0,
                     Detail: $"group=tenant:{resolved.TenantSlug}"));
+
+                // Now run automations (can be slow) after we've already updated the inbox via SignalR.
+                foreach (var pending in pendingAutomations)
+                {
+                    try
+                    {
+                        await RunTriggeredAutomationsAsync(
+                            scope.ServiceProvider,
+                            controlDb,
+                            tenantDb,
+                            resolved.TenantId,
+                            resolved.TenantSlug,
+                            resolved.DataConnectionString,
+                            pending.phoneNumberId,
+                            pending.ctx,
+                            stoppingToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(
+                            "WABA automations failed: queueId={QueueId} tenant={TenantSlug} error={Error}",
+                            item.Id,
+                            resolved.TenantSlug,
+                            redactor.RedactText(ex.Message));
+                        debug.Add(new DeliveryDebugSample(
+                            AtUtc: DateTime.UtcNow,
+                            TenantId: resolved.TenantId,
+                            TenantSlug: resolved.TenantSlug,
+                            Kind: "automation.error",
+                            CorrelationId: item.Id.ToString("N"),
+                            DurationMs: 0,
+                            Detail: redactor.RedactText(ex.GetType().Name)));
+                    }
+                }
 
                 if (parse.Inbound.Count > 0)
                 {
