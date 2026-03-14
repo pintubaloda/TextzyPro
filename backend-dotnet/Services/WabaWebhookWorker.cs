@@ -19,6 +19,7 @@ public class WabaWebhookWorker(
     SecretCryptoService crypto,
     TenantSchemaGuardService schemaGuard,
     SensitiveDataRedactor redactor,
+    DeliveryDebugBuffer debug,
     ILogger<WabaWebhookWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan PresenceTtl = TimeSpan.FromMinutes(2);
@@ -510,6 +511,23 @@ public class WabaWebhookWorker(
                 eventRow.ProcessedAtUtc = DateTime.UtcNow;
                 eventRow.LastError = string.Empty;
                 await controlDb.SaveChangesAsync(stoppingToken);
+
+                var processedLagMs = Math.Max(0, (eventRow.ProcessedAtUtc.Value - eventRow.ReceivedAtUtc).TotalMilliseconds);
+                logger.LogInformation(
+                    "WABA webhook processed: queueId={QueueId} tenant={TenantSlug} inbound={InboundCount} statuses={StatusCount} lagMs={LagMs:0.0}",
+                    item.Id,
+                    resolved.TenantSlug,
+                    parse.Inbound.Count,
+                    parse.Statuses.Count,
+                    processedLagMs);
+                debug.Add(new DeliveryDebugSample(
+                    AtUtc: DateTime.UtcNow,
+                    TenantId: resolved.TenantId,
+                    TenantSlug: resolved.TenantSlug,
+                    Kind: "webhook.processed",
+                    CorrelationId: item.Id.ToString("N"),
+                    DurationMs: processedLagMs,
+                    Detail: $"provider=meta inbound={parse.Inbound.Count} statuses={parse.Statuses.Count}"));
                 controlDb.AuditLogs.Add(new AuditLog
                 {
                     Id = Guid.NewGuid(),
@@ -523,6 +541,14 @@ public class WabaWebhookWorker(
 
                 await hub.Clients.Group($"tenant:{resolved.TenantSlug}")
                     .SendAsync("webhook.inbound", new { phoneNumberId = parse.PhoneNumberId, inboundCount = parse.Inbound.Count, statusCount = parse.Statuses.Count }, stoppingToken);
+                debug.Add(new DeliveryDebugSample(
+                    AtUtc: DateTime.UtcNow,
+                    TenantId: resolved.TenantId,
+                    TenantSlug: resolved.TenantSlug,
+                    Kind: "hub.webhook.inbound",
+                    CorrelationId: item.Id.ToString("N"),
+                    DurationMs: 0,
+                    Detail: $"group=tenant:{resolved.TenantSlug}"));
 
                 if (parse.Inbound.Count > 0)
                 {

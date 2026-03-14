@@ -14,6 +14,7 @@ public class OutboundMessageWorker(
     IServiceScopeFactory scopeFactory,
     IHubContext<InboxHub> hub,
     SensitiveDataRedactor redactor,
+    DeliveryDebugBuffer debug,
     ILogger<OutboundMessageWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -63,8 +64,19 @@ public class OutboundMessageWorker(
                 tenantDb.MessageEvents.Add(MessageStateMachine.BuildEvent(tenant.Id, message.Id, message.ProviderMessageId, "outbound", "processing", MessageStateMachine.Processing));
                 await tenantDb.SaveChangesAsync(stoppingToken);
 
+                var queueLagMs = Math.Max(0, (DateTime.UtcNow - message.CreatedAtUtc).TotalMilliseconds);
+                debug.Add(new DeliveryDebugSample(
+                    AtUtc: DateTime.UtcNow,
+                    TenantId: tenant.Id,
+                    TenantSlug: tenant.Slug,
+                    Kind: "outbound.dequeue",
+                    CorrelationId: message.Id.ToString("N"),
+                    DurationMs: queueLagMs,
+                    Detail: $"channel={message.Channel}"));
+
                 try
                 {
+                    var sendSw = System.Diagnostics.Stopwatch.StartNew();
                     string providerId;
                     if (message.Channel == ChannelType.WhatsApp)
                     {
@@ -175,6 +187,15 @@ public class OutboundMessageWorker(
                             },
                             stoppingToken);
                     }
+                    sendSw.Stop();
+                    debug.Add(new DeliveryDebugSample(
+                        AtUtc: DateTime.UtcNow,
+                        TenantId: tenant.Id,
+                        TenantSlug: tenant.Slug,
+                        Kind: "outbound.send",
+                        CorrelationId: message.Id.ToString("N"),
+                        DurationMs: sendSw.Elapsed.TotalMilliseconds,
+                        Detail: $"providerMessageId={(string.IsNullOrWhiteSpace(providerId) ? "" : providerId)}"));
 
                     message.ProviderMessageId = providerId;
                     message.Status = MessageStateMachine.AcceptedByMeta;
@@ -199,6 +220,13 @@ public class OutboundMessageWorker(
                     }
                     tenantDb.MessageEvents.Add(MessageStateMachine.BuildEvent(tenant.Id, message.Id, message.ProviderMessageId, "outbound", "accepted", MessageStateMachine.AcceptedByMeta));
                     await tenantDb.SaveChangesAsync(stoppingToken);
+                    logger.LogInformation(
+                        "Outbound accepted: messageId={MessageId} tenant={TenantSlug} channel={Channel} lagMs={LagMs:0.0} sendMs={SendMs:0.0}",
+                        message.Id,
+                        tenant.Slug,
+                        message.Channel,
+                        queueLagMs,
+                        sendSw.Elapsed.TotalMilliseconds);
                     await hub.Clients.Group($"tenant:{tenant.Slug}").SendAsync("message.sent", new
                     {
                         message.Id,
@@ -208,6 +236,14 @@ public class OutboundMessageWorker(
                         message.Status,
                         message.CreatedAtUtc
                     }, stoppingToken);
+                    debug.Add(new DeliveryDebugSample(
+                        AtUtc: DateTime.UtcNow,
+                        TenantId: tenant.Id,
+                        TenantSlug: tenant.Slug,
+                        Kind: "hub.message.sent",
+                        CorrelationId: message.Id.ToString("N"),
+                        DurationMs: 0,
+                        Detail: $"group=tenant:{tenant.Slug}"));
                 }
                 catch (Exception ex)
                 {
