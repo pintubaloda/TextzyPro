@@ -3,18 +3,17 @@ import ReactDOM from "react-dom/client";
 import "@/index.css";
 import App from "@/App";
 import { ensureServiceWorkerRegistered } from "@/lib/browserNotifications";
+import { getRuntimeFlags } from "@/lib/runtimeFlags";
 
 const TextzyMobile = lazy(() => import("@/textzy-mobile"));
 
-const params = new URLSearchParams(window.location.search);
-const desktopShell = params.get("desktopShell") === "1";
-const mobileShell =
-  params.get("mobileShell") === "1" ||
-  window.location.pathname.startsWith("/mobile-shell") ||
-  window.location.href.includes("mobileShell=1") ||
-  window.location.hash.toLowerCase().includes("mobileshell") ||
-  window.location.hash.toLowerCase().includes("mobile-shell") ||
-  window.navigator.userAgent.includes("TextzyMobileShell/1");
+const { desktopShell, mobileShell } = getRuntimeFlags();
+try {
+  window.__TEXTZY_DESKTOP_SHELL__ = !!desktopShell;
+  window.__TEXTZY_MOBILE_SHELL__ = !!mobileShell;
+} catch {
+  // ignore
+}
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(

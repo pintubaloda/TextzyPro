@@ -42,6 +42,7 @@ import {
 import { apiGet, apiGetBlob, apiPost, apiPostForm, buildIdempotencyKey, getAppBootstrap, getNotificationSettings, wabaGetOnboardingStatus } from "@/lib/api";
 import { getLastTenantSlug, getSession } from "@/lib/api";
 import { playNotificationTone, isNotificationAudioUnlocked, unlockNotificationAudio, wasNotificationEverEnabled, getNotificationVolume, setNotificationVolume, setNotificationSoundEnabled } from "@/lib/notificationAudio";
+import { playDesktopSound } from "@/lib/desktopSounds";
 import { requestDesktopNotificationPermission, setRuntimePushConfig, showDesktopNotification, subscribeFcm, subscribePush } from "@/lib/browserNotifications";
 import { toast } from "sonner";
 
@@ -1265,6 +1266,7 @@ const InboxPage = () => {
       upsertConversationPreview(evt?.recipient ?? evt?.Recipient, evt?.body ?? evt?.Body, evt?.createdAtUtc ?? evt?.CreatedAtUtc, 0);
       refreshMessageViews();
       playNotificationSoundRef.current?.(980);
+      playDesktopSound("sent");
     });
     connection.on("webhook.inbound", (evt) => {
       const key = `inbound:${evt?.phoneNumberId || "x"}:${evt?.inboundCount || 0}:${Date.now() / 1000 | 0}`;
@@ -1275,6 +1277,7 @@ const InboxPage = () => {
       if (activeId) loadThreadRef.current?.(activeId);
       loadSlaRef.current?.();
       playNotificationSoundRef.current?.(760);
+      playDesktopSound("inbound");
       notifyDesktopRef.current?.("New WhatsApp message", "You received a new customer message.", `inbound:${evt?.phoneNumberId || "tenant"}`);
     });
     connection.on("conversation.assigned", () => {

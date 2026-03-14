@@ -65,7 +65,7 @@ import {
   refreshSession,
   switchProject,
 } from "@/lib/api";
-import { isNotificationAudioUnlocked, isNotificationSoundEnabled, unlockNotificationAudio } from "@/lib/notificationAudio";
+import { isNotificationAudioUnlocked, isNotificationSoundEnabled, setNotificationSoundEnabled, setNotificationVolume, wasNotificationEverEnabled, unlockNotificationAudio } from "@/lib/notificationAudio";
 
 const DashboardLayout = () => {
   const location = useLocation();
@@ -213,7 +213,40 @@ const DashboardLayout = () => {
   }, [session.tenantSlug]);
   useEffect(() => {
     if (!session?.email) return;
+    try {
+      if (window?.__TEXTZY_DESKTOP_SHELL__) {
+        // Desktop app: we handle audio unlock automatically.
+        setShowNotificationPrompt(false);
+        return;
+      }
+    } catch {
+      // ignore
+    }
     setShowNotificationPrompt(isNotificationSoundEnabled() && !isNotificationAudioUnlocked());
+  }, [session?.email]);
+
+  useEffect(() => {
+    if (!session?.email) return;
+    try {
+      if (!window?.__TEXTZY_DESKTOP_SHELL__) return;
+    } catch {
+      return;
+    }
+
+    // Desktop shell: enable and unlock sound with minimal friction.
+    try {
+      if (!wasNotificationEverEnabled()) {
+        setNotificationSoundEnabled(true);
+        setNotificationVolume(1.4);
+      }
+    } catch {
+      // ignore
+    }
+
+    unlockNotificationAudio().catch(() => {});
+    const onFirstGesture = () => unlockNotificationAudio().catch(() => {});
+    window.addEventListener("pointerdown", onFirstGesture, { once: true, passive: true });
+    return () => window.removeEventListener("pointerdown", onFirstGesture);
   }, [session?.email]);
   useEffect(() => {
     if (!isPlatformOwner) return;
