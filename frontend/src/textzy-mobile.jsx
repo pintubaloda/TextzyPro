@@ -349,12 +349,29 @@ export default function TextzyMobile() {
   const loadProjects = async ({ retryAfterRefresh = true } = {}) => {
     const { res } = await apiFetch("/api/auth/projects");
     if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+
+      // In desktop shells (especially after reboot), cookies or local token can be out of sync.
+      // Try one refresh and retry before forcing logout.
+      if ((res.status === 401 || res.status === 403) && retryAfterRefresh) {
+        const refreshed = await apiFetch("/api/auth/refresh", { method: "POST" });
+        if (refreshed.res.ok) {
+          const refreshedBody = await refreshed.res.json().catch(() => ({}));
+          const nextCsrf = resolveCsrf(refreshedBody.csrfToken || refreshedBody.CsrfToken || refreshed.nextCsrfHeader || session.csrfToken);
+          const nextToken = String(refreshedBody.accessToken || refreshedBody.AccessToken || refreshed.nextTokenHeader || "").trim();
+          if (nextCsrf || nextToken) {
+            setSession((prev) => ({ ...prev, csrfToken: nextCsrf || prev.csrfToken, accessToken: nextToken || prev.accessToken }));
+          }
+          return loadProjects({ retryAfterRefresh: false });
+        }
+      }
+
       if (res.status === 401 || res.status === 403) {
         try { localStorage.removeItem(SESSION_KEY); } catch {}
         setNotice("Session expired. Please sign in again.");
         setScreen("login");
       }
-      throw new Error(await res.text() || "Failed to load projects");
+      throw new Error(errText || "Failed to load projects");
     }
     let rows = await res.json().catch(() => []);
     if (!Array.isArray(rows)) rows = [];
@@ -366,7 +383,8 @@ export default function TextzyMobile() {
       if (refreshed.res.ok) {
         const refreshedBody = await refreshed.res.json().catch(() => ({}));
         const nextCsrf = resolveCsrf(refreshedBody.csrfToken || refreshedBody.CsrfToken || refreshed.nextCsrfHeader || session.csrfToken);
-        if (nextCsrf) setSession((prev) => ({ ...prev, csrfToken: nextCsrf }));
+        const nextToken = String(refreshedBody.accessToken || refreshedBody.AccessToken || refreshed.nextTokenHeader || "").trim();
+        if (nextCsrf || nextToken) setSession((prev) => ({ ...prev, csrfToken: nextCsrf || prev.csrfToken, accessToken: nextToken || prev.accessToken }));
       }
       return loadProjects({ retryAfterRefresh: false });
     }
@@ -1268,12 +1286,29 @@ export default function TextzyMobile() {
       "https://textzy-backend-production.up.railway.app";
     const token = String(accessTokenRef.current || "").trim();
 
+    // Ensure we have a usable token for realtime. If cookies are flaky, refresh returns a token in headers/body
+    // and apiFetch will persist it (x-access-token) for file:// shells.
+    const ensureRealtimeToken = async () => {
+      const current = String(accessTokenRef.current || "").trim();
+      if (current) return current;
+      const refreshed = await apiFetch("/api/auth/refresh", { method: "POST" });
+      if (!refreshed.res.ok) return "";
+      const body = await refreshed.res.json().catch(() => ({}));
+      const nextToken = String(body.accessToken || body.AccessToken || refreshed.nextTokenHeader || "").trim();
+      const nextCsrf = resolveCsrf(body.csrfToken || body.CsrfToken || refreshed.nextCsrfHeader || "");
+      if (nextToken || nextCsrf) {
+        setSession((prev) => ({ ...prev, accessToken: nextToken || prev.accessToken, csrfToken: nextCsrf || prev.csrfToken }));
+      }
+      return nextToken;
+    };
+
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(
         `${baseUrl}/hubs/inbox?tenantSlug=${encodeURIComponent(authCtx.tenantSlug)}`,
-        token
-          ? { accessTokenFactory: () => String(accessTokenRef.current || "").trim() }
-          : { withCredentials: true },
+        {
+          withCredentials: true,
+          accessTokenFactory: () => String(accessTokenRef.current || "").trim(),
+        },
       )
       .withAutomaticReconnect()
       .build();
@@ -1311,7 +1346,9 @@ export default function TextzyMobile() {
       refresh();
     });
 
-    connection.start()
+    ensureRealtimeToken()
+      .catch(() => "")
+      .then(() => connection.start())
       .then(() => {
         connection.invoke("JoinTenantRoom", authCtx.tenantSlug).catch(() => {});
       })
