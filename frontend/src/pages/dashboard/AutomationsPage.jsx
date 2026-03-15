@@ -1340,9 +1340,11 @@ export default function AutomationsPage() {
 
   /* ── FAQ state ── */
   const [faqItems, setFaqItems] = useState([]);
+  const [faqLoading, setFaqLoading] = useState(false);
   const [faqForm, setFaqForm] = useState({ question: "", answer: "", category: "", isActive: true });
   const [editingFaqId, setEditingFaqId] = useState(null);
   const [triggerAuditSummary, setTriggerAuditSummary] = useState(null);
+  const faqCacheRef = useRef({ loadedAtMs: 0, items: null, inFlight: null });
 
   const normalizeFlow = useCallback((f) => ({
     id: f?.id ?? f?.Id ?? "",
@@ -1409,6 +1411,40 @@ export default function AutomationsPage() {
   const canPublishBot = chatbotLimit <= 0 || activeBots < chatbotLimit;
 
   /* ── API ── */
+  const loadFaq = useCallback(async ({ force = false } = {}) => {
+    const now = Date.now();
+    const cache = faqCacheRef.current;
+
+    if (!force) {
+      if (cache.inFlight) return cache.inFlight;
+      if (Array.isArray(cache.items) && (now - (cache.loadedAtMs || 0)) < 30000) {
+        setFaqItems(cache.items);
+        return cache.items;
+      }
+    }
+
+    setFaqLoading(true);
+    const p = apiGet("/api/automation/faq")
+      .then((q) => {
+        const items = Array.isArray(q) ? q : [];
+        cache.items = items;
+        cache.loadedAtMs = Date.now();
+        setFaqItems(items);
+        return items;
+      })
+      .catch(() => {
+        toast.error("Failed to load Q&A");
+        return [];
+      })
+      .finally(() => {
+        cache.inFlight = null;
+        setFaqLoading(false);
+      });
+
+    cache.inFlight = p;
+    return p;
+  }, []);
+
   const loadAll = useCallback(async () => {
     try {
       const [flowsRes, limitsRes] = await Promise.allSettled([
@@ -1447,12 +1483,10 @@ export default function AutomationsPage() {
 
       // Load secondary data in background to keep first paint fast.
       Promise.all([
-        apiGet("/api/automation/faq").catch(() => []),
         getBillingUsage().catch(() => ({ values: {} })),
         getCurrentBillingPlan().catch(() => ({ plan: { limits: {} } })),
         apiGet("/api/automation/trigger-audit/summary?days=7").catch(() => null),
-      ]).then(([q, usageRes, planRes, triggerSummary]) => {
-        setFaqItems(q || []);
+      ]).then(([usageRes, planRes, triggerSummary]) => {
         setBillingUsage(usageRes?.values || {});
         setBillingLimits(planRes?.plan?.limits || {});
         setTriggerAuditSummary(triggerSummary || null);
@@ -1490,7 +1524,14 @@ export default function AutomationsPage() {
   }, [normalizeVersion, resetNodes, parseDefinitionNodes]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
-  useEffect(() => { if (selectedFlowId) loadFlowDetails(selectedFlowId); }, [selectedFlowId, loadFlowDetails]);
+  useEffect(() => {
+    if (mode !== "workflow") return;
+    if (selectedFlowId) loadFlowDetails(selectedFlowId);
+  }, [mode, selectedFlowId, loadFlowDetails]);
+  useEffect(() => {
+    if (mode !== "qa") return;
+    loadFaq();
+  }, [mode, loadFaq]);
   useEffect(() => {
     if (!selectedFlow) return;
     setEditFlowForm({
@@ -1821,7 +1862,7 @@ export default function AutomationsPage() {
         toast.success("Q&A entry added");
       }
       setFaqForm({ question: "", answer: "", category: "", isActive: true });
-      await loadAll();
+      await loadFaq({ force: true });
     } catch (e) { toast.error(e?.message || "Failed"); }
   };
 
@@ -1836,7 +1877,7 @@ export default function AutomationsPage() {
   };
 
   const deleteFaq = async (id) => {
-    try { await apiDelete(`/api/automation/faq/${id}`); await loadAll(); }
+    try { await apiDelete(`/api/automation/faq/${id}`); await loadFaq({ force: true }); }
     catch (e) { toast.error(e?.message || "Delete failed"); }
   };
 
@@ -1914,7 +1955,7 @@ export default function AutomationsPage() {
             editFlowForm={editFlowForm} setEditFlowForm={setEditFlowForm}
             updateSelectedFlow={updateSelectedFlow} deleteFlow={deleteFlow}
           />}
-          {mode === "qa" && <QaPage faqItems={faqItems} faqForm={faqForm} setFaqForm={setFaqForm} saveFaq={saveFaq} deleteFaq={deleteFaq} editingFaqId={editingFaqId} startEditFaq={startEditFaq} cancelEditFaq={cancelEditFaq} />}
+          {mode === "qa" && <QaPage faqItems={faqItems} faqLoading={faqLoading} faqForm={faqForm} setFaqForm={setFaqForm} saveFaq={saveFaq} deleteFaq={deleteFaq} editingFaqId={editingFaqId} startEditFaq={startEditFaq} cancelEditFaq={cancelEditFaq} />}
         </div>
       </div>
     </TooltipProvider>
@@ -2988,7 +3029,7 @@ function WorkflowCanvas({
 /* ═══════════════════════════════════════════════════════════════════════════════
    Q&A PAGE
 ═══════════════════════════════════════════════════════════════════════════════ */
-function QaPage({ faqItems, faqForm, setFaqForm, saveFaq, deleteFaq, editingFaqId, startEditFaq, cancelEditFaq }) {
+function QaPage({ faqItems, faqLoading, faqForm, setFaqForm, saveFaq, deleteFaq, editingFaqId, startEditFaq, cancelEditFaq }) {
   const [search, setSearch] = useState("");
   const filtered = faqItems.filter((i) =>
     !search || i.question.toLowerCase().includes(search.toLowerCase()) || i.answer.toLowerCase().includes(search.toLowerCase())
@@ -3002,7 +3043,9 @@ function QaPage({ faqItems, faqForm, setFaqForm, saveFaq, deleteFaq, editingFaqI
             <h1 className="text-xl font-bold text-slate-800">Q&A Knowledge Base</h1>
             <p className="text-sm text-slate-500 mt-0.5">The bot searches this before escalating to a human agent</p>
           </div>
-          <Badge className="bg-orange-100 text-orange-700 border-orange-200">{faqItems.length} entries</Badge>
+          <Badge className="bg-orange-100 text-orange-700 border-orange-200">
+            {faqLoading ? "Loading..." : `${faqItems.length} entries`}
+          </Badge>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -3045,7 +3088,17 @@ function QaPage({ faqItems, faqForm, setFaqForm, saveFaq, deleteFaq, editingFaqI
             </div>
             <ScrollArea className="flex-1 p-4">
               <div className="space-y-3">
-                {filtered.length === 0 && (
+                {faqLoading && faqItems.length === 0 && !search && (
+                  <div className="py-6 space-y-2">
+                    {[1, 2, 3, 4].map((k) => (
+                      <div key={k} className="rounded-xl border border-slate-200 p-3">
+                        <div className="h-3 w-2/3 bg-slate-100 rounded animate-pulse" />
+                        <div className="h-3 w-full bg-slate-100 rounded mt-2 animate-pulse" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!faqLoading && filtered.length === 0 && (
                   <div className="text-center py-8 text-slate-400 text-sm">
                     {search ? "No results found" : "No Q&A entries yet"}
                   </div>
