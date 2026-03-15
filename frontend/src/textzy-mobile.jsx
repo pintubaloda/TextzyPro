@@ -696,6 +696,17 @@ export default function TextzyMobile() {
 
     if (!res.ok) {
       let errText = await res.text();
+      const errLower = String(errText || "").toLowerCase();
+      if (res.status === 401 && errLower.includes("invalid") && errLower.includes("session")) {
+        // Most common in desktop shells when a stale bearer token is present or cookies are lost.
+        try { localStorage.removeItem(SESSION_KEY); } catch {}
+        setSession({ csrfToken: "", tenantSlug: "", accessToken: "" });
+        setUser(null);
+        setProject(null);
+        setProjects([]);
+        setScreen("login");
+        throw new Error("Session expired. Please sign in again.");
+      }
       if (res.status === 403 && errText.toLowerCase().includes("csrf")) {
         const refreshed = await apiFetch("/api/auth/refresh", {
           method: "POST",

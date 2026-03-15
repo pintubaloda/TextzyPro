@@ -214,18 +214,23 @@ export async function apiFetch(path, { method = "GET", tenantSlug = "", csrfToke
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
 
-  // Desktop app / mobile shell can run under file://, where SameSite cookies may not be sent.
-  // Prefer bearer token when available (stored in SESSION_KEY, refreshed via x-access-token header).
-  try {
-    const stored = typeof localStorage !== "undefined"
-      ? parseJsonSafe(localStorage.getItem(SESSION_KEY) || "{}", {})
-      : {};
-    const token = String(stored.accessToken || stored.access_token || stored.token || "").trim();
-    if (token && !headers.Authorization && !String(path).startsWith("/api/public/")) {
-      headers.Authorization = `Bearer ${token}`;
+  // Bearer auth is primarily for file:// shells where cookies can be unreliable.
+  // In normal https web contexts, prefer cookie-based auth to avoid stale localStorage tokens breaking sessions.
+  const shouldUseBearer =
+    typeof window !== "undefined" &&
+    (window.location?.protocol === "file:" || window.__TEXTZY_FORCE_BEARER__ === true);
+  if (shouldUseBearer) {
+    try {
+      const stored = typeof localStorage !== "undefined"
+        ? parseJsonSafe(localStorage.getItem(SESSION_KEY) || "{}", {})
+        : {};
+      const token = String(stored.accessToken || stored.access_token || stored.token || "").trim();
+      if (token && !headers.Authorization && !String(path).startsWith("/api/public/")) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 
   const res = await fetch(`${API_BASE}${path}`, {
