@@ -232,7 +232,13 @@ export async function apiFetch(path, { method = "GET", tenantSlug = "", csrfToke
   // In normal https web contexts, prefer cookie-based auth to avoid stale localStorage tokens breaking sessions.
   const shouldUseBearer =
     typeof window !== "undefined" &&
-    (window.location?.protocol === "file:" || window.__TEXTZY_FORCE_BEARER__ === true);
+    (
+      window.location?.protocol === "file:" ||
+      window.__TEXTZY_FORCE_BEARER__ === true ||
+      // Desktop shell is an embedded browser; cookies can be flaky across restarts.
+      // Force bearer so API auth doesn't depend on cookie persistence.
+      window.__TEXTZY_DESKTOP_SHELL__ === true
+    );
   if (shouldUseBearer) {
     try {
       const stored = typeof localStorage !== "undefined"
