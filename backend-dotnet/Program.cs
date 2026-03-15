@@ -90,17 +90,13 @@ builder.Services.AddCors(options =>
     });
 });
 
-var rawControlConnection = (builder.Environment.IsProduction()
-        ? FirstNonEmpty(
-            builder.Configuration["DATABASE_URL"],
-            builder.Configuration["DATABASE_PUBLIC_URL"],
-            builder.Configuration["POSTGRES_URL"],
-            builder.Configuration.GetConnectionString("Default"))
-        : FirstNonEmpty(
-            builder.Configuration.GetConnectionString("Default"),
-            builder.Configuration["DATABASE_URL"],
-            builder.Configuration["DATABASE_PUBLIC_URL"],
-            builder.Configuration["POSTGRES_URL"]));
+// Connection string resolution:
+// Prefer ConnectionStrings:Default so operators can override hosting-panel env vars (common on Windows IIS hosts).
+var rawControlConnection = FirstNonEmpty(
+    builder.Configuration.GetConnectionString("Default"),
+    builder.Configuration["DATABASE_URL"],
+    builder.Configuration["DATABASE_PUBLIC_URL"],
+    builder.Configuration["POSTGRES_URL"]);
 
 string controlConnection;
 if (string.IsNullOrWhiteSpace(rawControlConnection))
@@ -121,7 +117,8 @@ else
     }
 }
 
-if (builder.Environment.IsProduction() &&
+var allowLocalhostInProduction = builder.Configuration.GetValue<bool?>("Database:AllowLocalhostInProduction") ?? false;
+if (builder.Environment.IsProduction() && !allowLocalhostInProduction &&
     (controlConnection.Contains("Host=localhost", StringComparison.OrdinalIgnoreCase) ||
      controlConnection.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)))
 {
@@ -211,6 +208,13 @@ builder.Services.AddHostedService<BillingLifecycleWorker>();
 
 var app = builder.Build();
 
+if (app.Environment.IsProduction() && allowLocalhostInProduction &&
+    (controlConnection.Contains("Host=localhost", StringComparison.OrdinalIgnoreCase) ||
+     controlConnection.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase)))
+{
+    app.Logger.LogWarning("Production is configured to use localhost Postgres. This is allowed by Database:AllowLocalhostInProduction=true.");
+}
+
 using (var queueScope = app.Services.CreateScope())
 {
     var outboundQueue = queueScope.ServiceProvider.GetRequiredService<OutboundMessageQueueService>();
@@ -273,8 +277,16 @@ using (var scope = app.Services.CreateScope())
     var seedEnabled = app.Configuration.GetValue<bool?>("SeedData:Enabled") ?? !app.Environment.IsProduction();
     var warmTenantSchemas = app.Configuration.GetValue<bool?>("Startup:WarmTenantSchemas") ?? !app.Environment.IsProduction();
 
-    EnsureControlAuthSchema(controlDb);
-    controlDb.Database.EnsureCreated();
+    var startupRetrySeconds = app.Configuration.GetValue<int?>("Database:StartupConnectRetrySeconds") ?? 30;
+    RetryUntilDbReady(
+        logger,
+        startupRetrySeconds,
+        () =>
+        {
+            EnsureControlAuthSchema(controlDb);
+            controlDb.Database.EnsureCreated();
+        });
+
     if (seedEnabled)
         SeedData.InitializeControl(controlDb, controlConnection);
 
@@ -1036,6 +1048,45 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
     db.Database.ExecuteSqlRaw("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_BillingPaymentAttempts_OrderId" ON "BillingPaymentAttempts" ("OrderId");""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_BillingPaymentAttempts_TenantId_CreatedAtUtc" ON "BillingPaymentAttempts" ("TenantId","CreatedAtUtc");""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_BillingPaymentAttempts_Tenant_Order_PaidAtUtc" ON "BillingPaymentAttempts" ("TenantId","OrderId","PaidAtUtc" DESC,"UpdatedAtUtc" DESC);""");
+}
+
+static void RetryUntilDbReady(ILogger logger, int maxSeconds, Action action)
+{
+    if (maxSeconds <= 0)
+    {
+        action();
+        return;
+    }
+
+    var deadline = DateTime.UtcNow.AddSeconds(maxSeconds);
+    var attempt = 0;
+    Exception? last = null;
+    while (DateTime.UtcNow <= deadline)
+    {
+        attempt++;
+        try
+        {
+            action();
+            if (attempt > 1)
+                logger.LogInformation("Database connectivity restored after retries. attempts={Attempts}", attempt);
+            return;
+        }
+        catch (Exception ex)
+        {
+            last = ex;
+            // Typical transient: DB service not yet up during reboot; avoid a tight crash loop.
+            logger.LogWarning(
+                "Database not ready yet; will retry. attempt={Attempt} errorType={ErrorType} message={Message}",
+                attempt,
+                ex.GetType().Name,
+                ex.Message);
+            Thread.Sleep(TimeSpan.FromSeconds(3));
+        }
+    }
+
+    throw new InvalidOperationException(
+        $"Database was not reachable within {maxSeconds} seconds; aborting startup.",
+        last);
 }
 
 static IEnumerable<string> ParseAllowedOrigins(IConfiguration config, bool isProduction)
