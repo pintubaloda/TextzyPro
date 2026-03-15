@@ -408,6 +408,12 @@ export default function TextzyMobile() {
     setScreen("login");
   };
 
+  const forceReLogin = (message = "Session expired. Please sign in again.") => {
+    try { localStorage.removeItem(SESSION_KEY); } catch {}
+    setNotice(message);
+    handleLogout();
+  };
+
   const loadConversations = async (ctx = authCtx) => {
     if (!ctx.tenantSlug) return;
     const { res } = await apiFetch("/api/inbox/conversations?take=100", {
@@ -1218,20 +1224,56 @@ export default function TextzyMobile() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!restored.csrfToken && !restored.tenantSlug) return;
-    if (restored.tenantSlug) {
-      setScreen("app");
-      loadConversations({
-        csrfToken: restored.csrfToken || "",
-        tenantSlug: restored.tenantSlug,
-      }).catch(() => setScreen("project"));
-      return;
-    }
-    loadProjects()
-      .then(() => setScreen("project"))
-      .catch(() => {
-        localStorage.removeItem(SESSION_KEY);
-      });
+    let cancelled = false;
+    const boot = async () => {
+      const hasSomething =
+        Boolean(restored.csrfToken) ||
+        Boolean(restored.accessToken) ||
+        Boolean(restored.tenantSlug);
+      if (!hasSomething) return;
+
+      // Always try a one-time refresh on startup.
+      // If the session is invalid, stop loops early and send user back to login.
+      const refreshed = await apiFetch("/api/auth/refresh", { method: "POST" });
+      if (cancelled) return;
+
+      if (!refreshed.res.ok) {
+        if (refreshed.res.status === 401 || refreshed.res.status === 403) {
+          forceReLogin("Invalid or expired session. Please sign in again.");
+          return;
+        }
+        // Non-auth error: continue boot with restored data (best-effort).
+      } else {
+        const body = await refreshed.res.json().catch(() => ({}));
+        const nextCsrf = resolveCsrf(body.csrfToken || body.CsrfToken || refreshed.nextCsrfHeader || restored.csrfToken || "");
+        const nextToken = String(body.accessToken || body.AccessToken || refreshed.nextTokenHeader || restored.accessToken || "").trim();
+        if (nextCsrf || nextToken) {
+          setSession((prev) => ({
+            ...prev,
+            csrfToken: nextCsrf || prev.csrfToken,
+            accessToken: nextToken || prev.accessToken,
+          }));
+        }
+      }
+
+      if (restored.tenantSlug) {
+        setScreen("app");
+        loadConversations({
+          csrfToken: restored.csrfToken || "",
+          tenantSlug: restored.tenantSlug,
+        }).catch(() => setScreen("project"));
+        return;
+      }
+
+      loadProjects()
+        .then(() => setScreen("project"))
+        .catch(() => {
+          try { localStorage.removeItem(SESSION_KEY); } catch {}
+        });
+    };
+
+    boot().catch(() => {});
+    return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1348,11 +1390,26 @@ export default function TextzyMobile() {
 
     ensureRealtimeToken()
       .catch(() => "")
-      .then(() => connection.start())
+      .then((t) => {
+        const tokenNow = String(t || accessTokenRef.current || "").trim();
+        if (!tokenNow) {
+          // No bearer token and cookies may not be sent (desktop shell fallback cases).
+          // Avoid infinite negotiate loops.
+          forceReLogin("Invalid or expired session. Please sign in again.");
+          throw new Error("missing-auth");
+        }
+        return connection.start();
+      })
       .then(() => {
         connection.invoke("JoinTenantRoom", authCtx.tenantSlug).catch(() => {});
       })
-      .catch(() => {});
+      .catch((e) => {
+        const msg = String(e?.message || e || "");
+        const lower = msg.toLowerCase();
+        if (lower.includes("401") || lower.includes("missing bearer token") || lower.includes("invalid or expired session") || lower.includes("session expired")) {
+          forceReLogin("Invalid or expired session. Please sign in again.");
+        }
+      });
 
     return () => {
       signalConnRef.current = null;

@@ -89,35 +89,118 @@ function createWindow() {
   if (isDev) {
     win.loadURL("http://localhost:3000/?desktopShell=1");
   } else {
-    // Prefer hosted app in production so cookies/CORS behave like the website (fixes "0 projects" after restart).
-    // Fall back to local bundled build if remote fails (offline / DNS / backend maintenance).
+    // Prefer hosted app in production so cookies/CORS behave like the website.
+    // Important: DO NOT fall back to file:// app build for auth flows.
+    // When the UI loads under file://, browser cookies become "cross-site" and SameSite=Lax cookies
+    // will not be sent on XHR/fetch/SignalR negotiate, leading to 401 "Missing bearer token"/"Invalid session".
+    // Instead, show a simple offline screen and let the user retry.
     const remoteUrl = process.env.TEXTZY_DESKTOP_REMOTE_URL || "https://textzy.in/?desktopShell=1";
-    const indexPath = path.join(__dirname, "..", "build", "index.html");
-    let fellBack = false;
+    let showedOffline = false;
 
-    const loadLocal = () => {
-      if (fellBack) return;
-      fellBack = true;
-      logger.log("Falling back to local file:", indexPath);
-      win.loadFile(indexPath, { query: { desktopShell: "1" } }).catch((e) => {
-        logger.log("Local loadFile failed:", e?.message || String(e));
-      });
+    const showOffline = (reason = "") => {
+      if (showedOffline) return;
+      showedOffline = true;
+      logger.log("Showing offline screen. reason=", reason);
+      const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Textzy Desktop</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: linear-gradient(180deg, #fff7ed 0%, #ffffff 40%, #f8fafc 100%);
+        color: #0f172a;
+      }
+      .wrap {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        width: min(720px, 100%);
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+        padding: 22px 22px 18px 22px;
+      }
+      h1 {
+        margin: 0 0 6px 0;
+        font-size: 22px;
+        letter-spacing: -0.01em;
+      }
+      p { margin: 0 0 10px 0; line-height: 1.5; color: #334155; }
+      .pill {
+        display: inline-block;
+        font-size: 12px;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        color: #9a3412;
+        padding: 6px 10px;
+        border-radius: 999px;
+        margin-top: 6px;
+      }
+      .hint {
+        margin-top: 14px;
+        font-size: 13px;
+        color: #475569;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 12px;
+      }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+      .reason {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #64748b;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>Cannot load Textzy</h1>
+        <p>Textzy Desktop needs access to <code>https://textzy.in</code>.</p>
+        <div class="pill">Retry: View -> Reload</div>
+        <div class="hint">
+          If this keeps happening, check:
+          <br/>1) Internet/DNS on this machine
+          <br/>2) Firewall/proxy blocking <code>textzy.in</code>
+          <br/>3) Backend status at <code>https://api.textzy.in/api/public/status</code>
+          <br/><br/>Log file:
+          <br/><code>${logger.file}</code>
+        </div>
+        ${reason ? `<div class="reason">Details: ${String(reason).replace(/</g, "&lt;")}</div>` : ""}
+      </div>
+    </div>
+  </body>
+</html>`;
+      const url = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+      win.loadURL(url).catch((e) => logger.log("Offline loadURL failed:", e?.message || String(e)));
     };
 
     logger.log("Loading remote:", remoteUrl);
     win.loadURL(remoteUrl).catch((e) => {
       logger.log("Remote loadURL failed:", e?.message || String(e));
-      loadLocal();
+      showOffline(e?.message || String(e));
     });
 
-    // If remote cannot load (e.g. during deploy) we should recover quickly.
-    const failTimer = setTimeout(loadLocal, 9000);
+    // If remote cannot load quickly, show offline screen (better than falling back to file://).
+    const failTimer = setTimeout(() => showOffline("Timed out loading hosted UI."), 15000);
     win.webContents.once("did-finish-load", () => {
       clearTimeout(failTimer);
     });
-    win.webContents.once("did-fail-load", () => {
+    win.webContents.once("did-fail-load", (_evt, code, desc, validatedUrl) => {
       clearTimeout(failTimer);
-      loadLocal();
+      showOffline(`did-fail-load code=${code} desc=${desc} url=${validatedUrl}`);
     });
   }
 
