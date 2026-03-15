@@ -89,10 +89,36 @@ function createWindow() {
   if (isDev) {
     win.loadURL("http://localhost:3000/?desktopShell=1");
   } else {
-    // Use loadFile to avoid Windows file:// URL encoding issues.
+    // Prefer hosted app in production so cookies/CORS behave like the website (fixes "0 projects" after restart).
+    // Fall back to local bundled build if remote fails (offline / DNS / backend maintenance).
+    const remoteUrl = process.env.TEXTZY_DESKTOP_REMOTE_URL || "https://textzy.in/?desktopShell=1";
     const indexPath = path.join(__dirname, "..", "build", "index.html");
-    logger.log("Loading file:", indexPath);
-    win.loadFile(indexPath, { query: { desktopShell: "1" } });
+    let fellBack = false;
+
+    const loadLocal = () => {
+      if (fellBack) return;
+      fellBack = true;
+      logger.log("Falling back to local file:", indexPath);
+      win.loadFile(indexPath, { query: { desktopShell: "1" } }).catch((e) => {
+        logger.log("Local loadFile failed:", e?.message || String(e));
+      });
+    };
+
+    logger.log("Loading remote:", remoteUrl);
+    win.loadURL(remoteUrl).catch((e) => {
+      logger.log("Remote loadURL failed:", e?.message || String(e));
+      loadLocal();
+    });
+
+    // If remote cannot load (e.g. during deploy) we should recover quickly.
+    const failTimer = setTimeout(loadLocal, 9000);
+    win.webContents.once("did-finish-load", () => {
+      clearTimeout(failTimer);
+    });
+    win.webContents.once("did-fail-load", () => {
+      clearTimeout(failTimer);
+      loadLocal();
+    });
   }
 
   if (!isDev && process.env.TEXTZY_DESKTOP_DEBUG === "1") {
