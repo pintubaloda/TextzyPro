@@ -346,7 +346,7 @@ export default function TextzyMobile() {
     }));
   };
 
-  const loadProjects = async () => {
+  const loadProjects = async ({ retryAfterRefresh = true } = {}) => {
     const { res } = await apiFetch("/api/auth/projects");
     if (!res.ok) {
       if (res.status === 401 || res.status === 403) {
@@ -356,8 +356,22 @@ export default function TextzyMobile() {
       }
       throw new Error(await res.text() || "Failed to load projects");
     }
-    const rows = await res.json();
-    const mapped = (rows || []).map((p, idx) => ({
+    let rows = await res.json().catch(() => []);
+    if (!Array.isArray(rows)) rows = [];
+
+    // Desktop WebViews sometimes come up with cookies not fully restored yet after reboot.
+    // If we got 200 but 0 projects, refresh session and retry once.
+    if (rows.length === 0 && retryAfterRefresh) {
+      const refreshed = await apiFetch("/api/auth/refresh", { method: "POST" });
+      if (refreshed.res.ok) {
+        const refreshedBody = await refreshed.res.json().catch(() => ({}));
+        const nextCsrf = resolveCsrf(refreshedBody.csrfToken || refreshedBody.CsrfToken || refreshed.nextCsrfHeader || session.csrfToken);
+        if (nextCsrf) setSession((prev) => ({ ...prev, csrfToken: nextCsrf }));
+      }
+      return loadProjects({ retryAfterRefresh: false });
+    }
+
+    const mapped = rows.map((p, idx) => ({
       slug: p.slug || p.Slug,
       name: p.name || p.Name,
       role: p.role || p.Role || "agent",
@@ -365,6 +379,15 @@ export default function TextzyMobile() {
     }));
     setProjects(mapped);
     return mapped;
+  };
+
+  const handleLogout = () => {
+    try { localStorage.removeItem(SESSION_KEY); } catch {}
+    setSession({ csrfToken: "", tenantSlug: "", accessToken: "" });
+    setUser(null);
+    setProject(null);
+    setProjects([]);
+    setScreen("login");
   };
 
   const loadConversations = async (ctx = authCtx) => {
@@ -1390,7 +1413,19 @@ export default function TextzyMobile() {
     setShowNotificationsModal,
   };
   if (screen==="login")   return <><LoginScreen onLogin={handleLogin}/><SharedDialogs {...sharedDialogsProps} /></>;
-  if (screen==="project") return <><ProjectPicker projects={projects} loading={busy.project} onSelect={async (p) => {
+  if (screen==="project") return <><ProjectPicker
+    projects={projects}
+    loading={busy.project}
+    userEmail={user?.email || restored?.user?.email || ""}
+    onRefresh={async () => {
+      try {
+        await withBusy("project", async () => { await loadProjects({ retryAfterRefresh: true }); });
+      } catch (e) {
+        setNotice(e?.message || "Failed to refresh projects");
+      }
+    }}
+    onLogout={handleLogout}
+    onSelect={async (p) => {
     try {
       await handleSelectProject(p);
     } catch (e) {

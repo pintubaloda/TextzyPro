@@ -2,7 +2,7 @@ import { useState } from "react";
 import { C } from "../core";
 import { Logo } from "../uiAssets";
 
-const ProjectPicker = ({ projects, onSelect, loading = false }) => {
+const ProjectPicker = ({ projects, onSelect, loading = false, userEmail = "", onRefresh, onLogout }) => {
   const [sel, setSel] = useState(null);
   const rows = Array.isArray(projects) ? projects : [];
   const badgeFor = (p) => {
@@ -45,6 +45,52 @@ const ProjectPicker = ({ projects, onSelect, loading = false }) => {
         {rows.length === 0 ? (
           <div style={{ padding: "14px 10px", color: C.textSub, fontSize: 13 }}>
             No projects available for this account.
+            {userEmail ? (
+              <div style={{ marginTop: 8, fontSize: 12, color: C.textMuted }}>
+                Signed in as <span style={{ color: C.textMain, fontWeight: 700 }}>{userEmail}</span>
+              </div>
+            ) : null}
+            <div style={{ marginTop: 10, fontSize: 12, color: C.textMuted }}>
+              If you are a team member, ask your platform owner to assign you a project.
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => onRefresh && onRefresh()}
+                disabled={loading || !onRefresh}
+                style={{
+                  flex: "1 1 140px",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1px solid ${C.divider}`,
+                  background: "#fff",
+                  color: C.textMain,
+                  fontWeight: 700,
+                  cursor: loading || !onRefresh ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.7 : 1,
+                }}
+              >
+                {loading ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onLogout && onLogout()}
+                disabled={loading || !onLogout}
+                style={{
+                  flex: "1 1 140px",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "rgba(15,23,42,0.08)",
+                  color: C.textMain,
+                  fontWeight: 700,
+                  cursor: loading || !onLogout ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.7 : 1,
+                }}
+              >
+                Sign out
+              </button>
+            </div>
           </div>
         ) : rows.map((p) => {
           const a = sel === p.slug;
