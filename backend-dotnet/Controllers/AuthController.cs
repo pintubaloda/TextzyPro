@@ -490,56 +490,27 @@ public class AuthController(
             .Select(x => x.FullName)
             .FirstOrDefaultAsync(ct) ?? string.Empty;
 
-        // For login OTP, email the code directly so desktop/mobile clients don't need to open a separate link first.
-        // Other purposes can continue to use the "Verify Now" action link flow.
-        if (purpose == "login")
-        {
-            var otp = GenerateNumericCode(EmailOtpLength);
-            var verificationCode = GenerateAlphaNumericCode(8);
-            row.LinkOpenedAtUtc = now; // allow OTP verification without requiring link click
-            row.OtpIssuedAtUtc = now;
-            row.OtpExpiresAtUtc = now.AddMinutes(EmailOtpExpiryMinutes);
-            row.ExpiresAtUtc = row.OtpExpiresAtUtc.Value;
-            row.Status = "code_issued";
-            row.OtpHash = HashToken(otp);
-            row.OtpDisplayEncrypted = crypto.Encrypt(otp);
-            row.VerificationCode = verificationCode;
-            await db.SaveChangesAsync(ct);
-
-            await emailService.SendVerificationOtpAsync(
-                email,
-                userName,
-                otp,
-                verificationCode,
-                EmailOtpExpiryMinutes,
-                purpose,
-                ct);
-        }
-        else
-        {
-            var verifyNowLink = BuildEmailVerificationLink(row.Id, linkToken, purpose);
-            await emailService.SendVerificationActionAsync(
-                email,
-                userName,
-                purpose,
-                verifyNowLink,
-                EmailActionLinkExpiryMinutes,
-                ct);
-        }
+        // Original flow: send an action link. OTP is generated only after user clicks "Verify Now" in the email.
+        var verifyNowLink = BuildEmailVerificationLink(row.Id, linkToken, purpose);
+        await emailService.SendVerificationActionAsync(
+            email,
+            userName,
+            purpose,
+            verifyNowLink,
+            EmailActionLinkExpiryMinutes,
+            ct);
 
         return Ok(new
         {
             verificationId = row.Id,
             purpose,
             status = row.Status,
-            state = purpose == "login" ? "otp_ready" : "waiting_user_action",
-            otpInputAllowed = purpose == "login",
+            state = "waiting_user_action",
+            otpInputAllowed = false,
             expiresAtUtc = row.ExpiresAtUtc,
             otpExpiresAtUtc = row.OtpExpiresAtUtc,
             resendAfterSeconds = EmailOtpResendCooldownSeconds,
-            message = purpose == "login"
-                ? "OTP sent to your email. Enter the code to continue."
-                : "Verification email sent. Click Verify Now in your email to continue."
+            message = "Verification email sent. Click Verify Now in your email to continue."
         });
     }
 

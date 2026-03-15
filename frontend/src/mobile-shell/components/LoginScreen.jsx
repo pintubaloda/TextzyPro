@@ -485,12 +485,12 @@ const LoginScreen = ({ onLogin }) => {
             </div>
             {!twoFactor.challengeToken ? (
               <>
-                <div style={{ display:"grid", gridTemplateColumns: otpSent ? "1fr 92px 92px" : "1fr", gap:8, marginBottom:10 }}>
+                <div style={{ display:"grid", gridTemplateColumns: otpSent ? (otpReady ? "1fr 92px 92px" : "1fr 92px") : "1fr", gap:8, marginBottom:10 }}>
                   {!otpSent ? (
-                    <button onClick={requestOtp} disabled={otpBusy} style={{ padding:"10px 12px",borderRadius:10,border:`1px solid ${C.divider}`,background:"#fff",fontWeight:700,color:C.textMain,cursor:otpBusy?"not-allowed":"pointer" }}>
-                      {otpBusy ? "Sending..." : "Get OTP"}
+                    <button onClick={requestOtp} disabled={otpBusy} style={{ padding:"10px 12px",borderRadius:10,border:`1px solid ${C.divider}`,background:"#fff",fontWeight:800,color:C.textMain,cursor:otpBusy?"not-allowed":"pointer" }}>
+                      {otpBusy ? "Sending..." : "Verify Email"}
                     </button>
-                  ) : (
+                  ) : otpReady ? (
                     <>
                       <input
                         value={otp}
@@ -499,11 +499,20 @@ const LoginScreen = ({ onLogin }) => {
                         inputMode="numeric"
                         style={{ padding:"10px 10px",borderRadius:10,border:`1px solid ${C.divider}`,fontSize:13 }}
                       />
-                      <button onClick={verifyOtp} disabled={verifyBusy || !otp || !verificationId} style={{ padding:"10px 12px",borderRadius:10,border:"none",background:C.orange,color:"#fff",fontWeight:800,cursor:(verifyBusy || !otp || !verificationId)?"not-allowed":"pointer",opacity:(verifyBusy || !otp || !verificationId)?0.8:1 }}>
+                      <button onClick={verifyOtp} disabled={verifyBusy || !otp || !verificationId} style={{ padding:"10px 12px",borderRadius:10,border:"none",background:C.orange,color:"#fff",fontWeight:900,cursor:(verifyBusy || !otp || !verificationId)?"not-allowed":"pointer",opacity:(verifyBusy || !otp || !verificationId)?0.8:1 }}>
                         {verifyBusy ? "..." : "Verify"}
                       </button>
                       <button onClick={requestOtp} disabled={otpBusy} style={{ padding:"10px 12px",borderRadius:10,border:`1px solid ${C.divider}`,background:"#fff",fontWeight:800,color:C.textMain,cursor:otpBusy?"not-allowed":"pointer",opacity:otpBusy?0.75:1 }}>
                         {otpBusy ? "..." : "Resend"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ padding:"10px 10px",borderRadius:10,border:`1px solid ${C.divider}`,fontSize:13,color:C.textSub,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                        Waiting for confirmation
+                      </div>
+                      <button onClick={requestOtp} disabled={otpBusy} style={{ padding:"10px 12px",borderRadius:10,border:"none",background:C.orange,color:"#fff",fontWeight:900,cursor:otpBusy?"not-allowed":"pointer",opacity:otpBusy?0.85:1 }}>
+                        {otpBusy ? "Sending..." : "Resend"}
                       </button>
                     </>
                   )}
@@ -563,12 +572,12 @@ const LoginScreen = ({ onLogin }) => {
                         {otpVerified
                           ? "Email verified successfully. You can sign in now."
                           : otpReady
-                            ? "We sent an OTP to your email. Enter it above to continue."
-                            : "We are preparing your OTP. Please wait a few seconds, then enter the code once it arrives."}
+                            ? "OTP generated. Enter the code you got after clicking the Verify Now link in your email."
+                            : "Open your email and click Verify Now. This screen will update automatically."}
                       </div>
 
                       {!otpVerified && otpStatusBusy ? (
-                        <div style={{ marginTop: 8, fontSize: 12, color: C.textSub }}>Checking verification status...</div>
+                        <div style={{ marginTop: 8, fontSize: 12, color: C.textSub }}>Checking...</div>
                       ) : null}
                     </div>
                   </div>
