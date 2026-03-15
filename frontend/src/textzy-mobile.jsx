@@ -348,7 +348,14 @@ export default function TextzyMobile() {
 
   const loadProjects = async () => {
     const { res } = await apiFetch("/api/auth/projects");
-    if (!res.ok) throw new Error(await res.text() || "Failed to load projects");
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        try { localStorage.removeItem(SESSION_KEY); } catch {}
+        setNotice("Session expired. Please sign in again.");
+        setScreen("login");
+      }
+      throw new Error(await res.text() || "Failed to load projects");
+    }
     const rows = await res.json();
     const mapped = (rows || []).map((p, idx) => ({
       slug: p.slug || p.Slug,
