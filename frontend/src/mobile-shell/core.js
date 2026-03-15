@@ -210,7 +210,21 @@ export async function apiFetch(path, { method = "GET", tenantSlug = "", csrfToke
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   if (body != null && !isFormData) headers["Content-Type"] = "application/json";
   if (["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) {
-    const csrf = resolveCsrf(csrfToken);
+    // Prefer freshest CSRF token we have:
+    // 1) Explicit argument (call-site state)
+    // 2) Persisted session (kept in-sync via response header X-CSRF-Token)
+    // 3) Cookie (only works when token cookie is readable on this origin)
+    let persistedCsrf = "";
+    try {
+      const stored = typeof localStorage !== "undefined"
+        ? parseJsonSafe(localStorage.getItem(SESSION_KEY) || "{}", {})
+        : {};
+      persistedCsrf = resolveCsrf(stored.csrfToken || stored.csrf_token || "");
+    } catch {
+      // ignore
+    }
+
+    const csrf = resolveCsrf(csrfToken) || persistedCsrf || resolveCsrf("");
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
 
