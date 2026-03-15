@@ -127,6 +127,7 @@ export default function TextzyMobile() {
   const [session, setSession] = useState({
     csrfToken: restored.csrfToken || "",
     tenantSlug: restored.tenantSlug || "",
+    accessToken: restored.accessToken || "",
   });
   const [contacts, setCons]   = useState([]);
   const [activeId, setAId]    = useState(null);
@@ -176,6 +177,7 @@ export default function TextzyMobile() {
   const msgEnd  = useRef(null);
   const unreadTotalRef = useRef(0);
   const signalConnRef = useRef(null);
+  const accessTokenRef = useRef(String(restored.accessToken || "").trim());
   const audioCtxRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -186,6 +188,10 @@ export default function TextzyMobile() {
     vapidPublicKey: "",
     firebaseConfig: null,
   });
+
+  useEffect(() => {
+    accessTokenRef.current = String(session.accessToken || "").trim();
+  }, [session.accessToken]);
 
   const active       = contacts.find(c=>c.id===activeId);
   const unreadThreadsCount = contacts.filter((c) => Number(c.unread || 0) > 0).length;
@@ -333,6 +339,7 @@ export default function TextzyMobile() {
     localStorage.setItem(SESSION_KEY, JSON.stringify({
       csrfToken: nextSession.csrfToken,
       tenantSlug: nextSession.tenantSlug || "",
+      accessToken: nextSession.accessToken || "",
       installId: deviceCtx.installId || "",
       user: nextUser || null,
       project: nextProject || null,
@@ -562,7 +569,7 @@ export default function TextzyMobile() {
     if (payload?.mode === "qr") {
       const deviceCtx = deviceCtxRef.current || resolveDeviceContext(restored);
       const location = await getDeviceLocation();
-      const { res, nextCsrfHeader } = await apiFetch("/api/public/mobile/pair/exchange", {
+     const { res, nextCsrfHeader, nextTokenHeader } = await apiFetch("/api/public/mobile/pair/exchange", {
         method: "POST",
         body: {
           pairingToken: payload.pairingToken,
@@ -581,6 +588,7 @@ export default function TextzyMobile() {
       if (!res.ok) throw new Error(await res.text() || "Pairing code expired or invalid.");
       const json = await res.json().catch(() => ({}));
       const csrfToken = resolveCsrf(json.csrfToken || json.CsrfToken || nextCsrfHeader);
+      const accessToken = String(json.accessToken || json.AccessToken || nextTokenHeader || restored.accessToken || "").trim();
       const tenantSlug =
         json.tenantSlug ||
         json.TenantSlug ||
@@ -592,7 +600,7 @@ export default function TextzyMobile() {
         json.Tenant?.Slug ||
         "";
       const loggedUser = json.user || json.User || { email: "mobile@textzy.io" };
-      const nextSession = { csrfToken, tenantSlug };
+      const nextSession = { csrfToken, tenantSlug, accessToken };
       setSession(nextSession);
       setUser(loggedUser);
       await loadAppBootstrap(nextSession).catch(() => null);
@@ -616,16 +624,17 @@ export default function TextzyMobile() {
     }
 
     if (payload?.mode === "verify-authenticator") {
-      const { res, nextCsrfHeader } = await apiFetch("/api/auth/two-factor/verify-login", {
-        method: "POST",
-        body: { challengeToken: payload.challengeToken, code: payload.code },
-      });
+    const { res, nextCsrfHeader, nextTokenHeader } = await apiFetch("/api/auth/two-factor/verify-login", {
+      method: "POST",
+      body: { challengeToken: payload.challengeToken, code: payload.code },
+    });
       if (!res.ok) throw new Error(await res.text() || "Authenticator code is invalid.");
-      const json = await res.json().catch(() => ({}));
-      const csrfToken = resolveCsrf(json.csrfToken || json.CsrfToken || nextCsrfHeader);
-      const nextSession = { csrfToken, tenantSlug: "" };
-      const nextUser = { email: payload.email };
-      setSession(nextSession);
+    const json = await res.json().catch(() => ({}));
+    const csrfToken = resolveCsrf(json.csrfToken || json.CsrfToken || nextCsrfHeader);
+    const accessToken = String(json.accessToken || json.AccessToken || nextTokenHeader || restored.accessToken || "").trim();
+    const nextSession = { csrfToken, tenantSlug: "", accessToken };
+    const nextUser = { email: payload.email };
+    setSession(nextSession);
       setUser(nextUser);
       await loadAppBootstrap(nextSession).catch(() => null);
       await loadProjects();
@@ -634,17 +643,18 @@ export default function TextzyMobile() {
       return { ok: true };
     }
 
-    const { res, nextCsrfHeader } = await apiFetch("/api/auth/login", {
-      method: "POST",
-      body: { email: payload.email, password: payload.password, emailVerificationId: payload.emailVerificationId || "" },
-    });
+  const { res, nextCsrfHeader, nextTokenHeader } = await apiFetch("/api/auth/login", {
+    method: "POST",
+    body: { email: payload.email, password: payload.password, emailVerificationId: payload.emailVerificationId || "" },
+  });
     if (!res.ok) throw new Error(await res.text() || "Invalid credentials");
-    const json = await res.json().catch(() => ({}));
-    if (json?.requiresTwoFactor) return json;
-    const csrfToken = resolveCsrf(json.csrfToken || json.CsrfToken || nextCsrfHeader);
-    const nextSession = { csrfToken, tenantSlug: "" };
-    const nextUser = { email: payload.email };
-    setSession(nextSession);
+  const json = await res.json().catch(() => ({}));
+  if (json?.requiresTwoFactor) return json;
+  const csrfToken = resolveCsrf(json.csrfToken || json.CsrfToken || nextCsrfHeader);
+  const accessToken = String(json.accessToken || json.AccessToken || nextTokenHeader || restored.accessToken || "").trim();
+  const nextSession = { csrfToken, tenantSlug: "", accessToken };
+  const nextUser = { email: payload.email };
+  setSession(nextSession);
     setUser(nextUser);
     await loadAppBootstrap(nextSession).catch(() => null);
     await loadProjects();
@@ -702,7 +712,7 @@ export default function TextzyMobile() {
     const csrfToken = resolveCsrf(nextCsrfHeader || session.csrfToken);
     const tenantSlug = json.tenantSlug || json.TenantSlug || p.slug;
     const selectedProject = { ...p, role: json.role || json.Role || p.role };
-    const nextSession = { csrfToken, tenantSlug };
+    const nextSession = { csrfToken, tenantSlug, accessToken: String(session.accessToken || restored.accessToken || "").trim() };
     setSession(nextSession);
     setProject(selectedProject);
     setScreen("app");
@@ -1215,11 +1225,15 @@ export default function TextzyMobile() {
       process.env.REACT_APP_API_BASE ||
       process.env.VITE_API_BASE ||
       "https://textzy-backend-production.up.railway.app";
+    const token = String(accessTokenRef.current || "").trim();
 
     const connection = new signalR.HubConnectionBuilder()
-      .withUrl(`${baseUrl}/hubs/inbox?tenantSlug=${encodeURIComponent(authCtx.tenantSlug)}`, {
-        withCredentials: true,
-      })
+      .withUrl(
+        `${baseUrl}/hubs/inbox?tenantSlug=${encodeURIComponent(authCtx.tenantSlug)}`,
+        token
+          ? { accessTokenFactory: () => String(accessTokenRef.current || "").trim() }
+          : { withCredentials: true },
+      )
       .withAutomaticReconnect()
       .build();
     signalConnRef.current = connection;

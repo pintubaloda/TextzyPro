@@ -214,6 +214,20 @@ export async function apiFetch(path, { method = "GET", tenantSlug = "", csrfToke
     if (csrf) headers["X-CSRF-Token"] = csrf;
   }
 
+  // Desktop app / mobile shell can run under file://, where SameSite cookies may not be sent.
+  // Prefer bearer token when available (stored in SESSION_KEY, refreshed via x-access-token header).
+  try {
+    const stored = typeof localStorage !== "undefined"
+      ? parseJsonSafe(localStorage.getItem(SESSION_KEY) || "{}", {})
+      : {};
+    const token = String(stored.accessToken || stored.access_token || stored.token || "").trim();
+    if (token && !headers.Authorization && !String(path).startsWith("/api/public/")) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  } catch {
+    // ignore
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
@@ -224,6 +238,18 @@ export async function apiFetch(path, { method = "GET", tenantSlug = "", csrfToke
 
   const nextTokenHeader = res.headers.get("x-access-token") || "";
   const nextCsrfHeader = res.headers.get("x-csrf-token") || "";
+  try {
+    if (nextTokenHeader && typeof localStorage !== "undefined") {
+      const prev = parseJsonSafe(localStorage.getItem(SESSION_KEY) || "{}", {});
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ ...prev, accessToken: nextTokenHeader }));
+    }
+    if (nextCsrfHeader && typeof localStorage !== "undefined") {
+      const prev = parseJsonSafe(localStorage.getItem(SESSION_KEY) || "{}", {});
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ ...prev, csrfToken: resolveCsrf(nextCsrfHeader) }));
+    }
+  } catch {
+    // ignore persistence
+  }
   return { res, nextTokenHeader, nextCsrfHeader };
 }
 
