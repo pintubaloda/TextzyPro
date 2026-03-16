@@ -73,6 +73,16 @@ public class KycController(
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
+
+        // If caller doesn't pass webhookUrl, use tenant-level default from company profile (simple mode).
+        if (string.IsNullOrWhiteSpace(row.WebhookUrl))
+        {
+            var profile = await db.TenantCompanyProfiles.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.TenantId == tenancy.TenantId, ct);
+            var defaultWebhook = (profile?.KycWebhookUrl ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(defaultWebhook))
+                row.WebhookUrl = defaultWebhook;
+        }
         db.KycSessions.Add(row);
         await db.SaveChangesAsync(ct);
 

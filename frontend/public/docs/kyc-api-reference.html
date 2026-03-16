@@ -111,7 +111,7 @@
       <p>Tenant-scoped KYC session API with DigiLocker plugin flow: create session, redirect end-user for consent, handle callback, deliver webhook, and charge per successful verification via KYC credits.</p>
       <div class="hero-meta">
         <span class="pill dark">Base URL: https://api.textzy.in</span>
-        <span class="pill light">Metric: digilockerKyc (credits)</span>
+        <span class="pill light">Metric: digilockerKyc (KYC credits)</span>
       </div>
     </section>
 
@@ -137,6 +137,7 @@
   "failureRedirectUrl": "https://yourapp.com/kyc/failure",
   "webhookUrl": "https://yourapp.com/webhooks/textzy-kyc"
 }</pre>
+          <div class="note">If <code>webhookUrl</code> is omitted/empty, Textzy uses the tenant default <code>kycWebhookUrl</code> (configure once in Integrations).</div>
           <h3>Response</h3>
           <pre>{
   "sessionId": "GUID",
@@ -150,7 +151,7 @@
 
         <section class="card">
           <h2>Webhook Delivery</h2>
-          <p>If <code>webhookUrl</code> is set, Textzy POSTs a payload when the session completes.</p>
+          <p>If <code>webhookUrl</code> is set (or tenant default <code>kycWebhookUrl</code> is configured), Textzy POSTs a payload when the session completes.</p>
           <pre>{
   "sessionId": "GUID",
   "tenantId": "GUID",
@@ -179,8 +180,18 @@
           <ul>
             <li>Metric key: <code>digilockerKyc</code></li>
             <li>Consumed only on <code>verified</code>.</li>
-            <li>Units per success: platform setting <code>digilocker.creditsPerSuccess</code> (default <code>3</code>).</li>
+            <li>Units per success: Integration Catalog per-plugin setting (preferred), fallback <code>digilocker.creditsPerSuccess</code> (default <code>3</code>).</li>
           </ul>
+        </section>
+
+        <section class="card">
+          <h2>docTypes and OAuth</h2>
+          <p><code>docTypes</code> is a business-level list used to request specific document categories (for example PAN, Aadhaar, DL). Textzy passes these to DigiLocker using the configured requester parameter (default <code>req_doctype</code>).</p>
+          <ul>
+            <li>Examples: <code>PAN</code>, <code>AADHAAR</code>, <code>DL</code>, <code>RC</code>, <code>PASSPORT</code></li>
+            <li><code>scope</code> is different: it is the OAuth scope (typically <code>files.issueddocs</code>) configured at platform level.</li>
+          </ul>
+          <div class="note"><strong>Authorize URL</strong> and <strong>Token URL</strong> are OAuth2 endpoints. They are platform-level (platform owns DigiLocker client credentials) and are not configured per request. In Platform Settings, you can leave them blank to use default DigiLocker endpoints.</div>
         </section>
 
         <section class="card">
@@ -210,4 +221,3 @@
   </div>
 </body>
 </html>
-

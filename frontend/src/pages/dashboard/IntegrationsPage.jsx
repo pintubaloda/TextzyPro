@@ -117,6 +117,7 @@ const IntegrationsPage = () => {
     apiPassword: "",
     apiKey: "",
     apiIpWhitelist: "",
+    kycWebhookUrl: "",
     billingEmail: "",
     billingPhone: "",
     taxRatePercent: 18,
@@ -312,6 +313,7 @@ const IntegrationsPage = () => {
         apiPassword: String(tenantApiSettings.apiPassword || "").trim(),
         apiKey: String(tenantApiSettings.apiKey || "").trim(),
         apiIpWhitelist: String(tenantApiSettings.apiIpWhitelist || "").trim(),
+        kycWebhookUrl: String(tenantApiSettings.kycWebhookUrl || "").trim(),
       };
       const updated = await saveCompanySettings(payload);
       setTenantApiSettings((prev) => ({
@@ -322,8 +324,9 @@ const IntegrationsPage = () => {
         apiPassword: updated.apiPassword || "",
         apiKey: updated.apiKey || "",
         apiIpWhitelist: updated.apiIpWhitelist || "",
+        kycWebhookUrl: updated.kycWebhookUrl || "",
       }));
-      toast.success("Tenant public API settings saved.");
+      toast.success("Tenant settings saved.");
     } catch (e) {
       toast.error(e?.message || "Failed to save tenant public API settings");
     } finally {
@@ -691,17 +694,27 @@ const IntegrationsPage = () => {
                     disabled={!tenantApiSettings.publicApiEnabled}
                   />
                 </div>
+
+                <div className="grid gap-2">
+                  <Label>Default KYC Webhook URL (optional)</Label>
+                  <Input
+                    value={tenantApiSettings.kycWebhookUrl}
+                    onChange={(event) => setTenantApiSettings((prev) => ({ ...prev, kycWebhookUrl: event.target.value }))}
+                    placeholder="https://example.com/webhooks/textzy-kyc"
+                  />
+                  <p className="text-xs text-slate-500">Used when creating KYC sessions without providing `webhookUrl`.</p>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 {tenantApiSettings.publicApiEnabled
                   ? "Use Generate to rotate credentials safely. Manual typing is intentionally disabled in this tenant view."
-                  : "Public API is currently disabled for this tenant. Ask platform owner to enable it first."}
+                  : "Public API is currently disabled for this tenant. You can still set the default KYC webhook URL now; ask platform owner to enable Public API when you need credentials."}
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button className="bg-orange-500 hover:bg-orange-600" disabled={!tenantApiSettings.publicApiEnabled || savingTenantApi} onClick={saveTenantPublicApi}>
-                  {savingTenantApi ? "Saving..." : "Save Public API"}
+                <Button className="bg-orange-500 hover:bg-orange-600" disabled={savingTenantApi} onClick={saveTenantPublicApi}>
+                  {savingTenantApi ? "Saving..." : "Save Settings"}
                 </Button>
                 {isSuperAdmin ? (
                   <Button variant="outline" onClick={() => window.location.assign("/dashboard/admin")}>

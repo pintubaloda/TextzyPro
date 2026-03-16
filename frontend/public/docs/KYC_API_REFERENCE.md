@@ -4,10 +4,10 @@ This reference documents Textzy's tenant-scoped KYC API and the DigiLocker callb
 
 ## Billing Model (Credits)
 
-- Metric key: `digilockerKyc`
+- Default metric key: `digilockerKyc` (shown in UI as **KYC credits**)
 - Credits consumed per successful verification:
-  - Platform setting: scope `digilocker`, key `creditsPerSuccess`
-  - Default: `3`
+  - Preferred: Platform Integration Catalog per-plugin `creditsPerSuccess` (for `digilocker-kyc`)
+  - Fallback: platform setting `digilocker.creditsPerSuccess` (default `3`)
 - Credits are consumed only when the session is marked `verified`.
 
 ## Authentication (Customer Integrations)
@@ -19,6 +19,22 @@ Required headers:
 - `X-Tenant-Slug: <tenantSlug>`
 - `X-API-Key: <tenantApiKey>`
 - `X-API-Secret: <tenantApiSecret>`
+
+## Document Types (docTypes)
+
+`docTypes` is a **business-level** list that your app uses to ask for specific document categories (for example PAN, Aadhaar, Driving License). Textzy passes these as a requester parameter to DigiLocker (configured via platform setting `digilocker.docTypeParamName`, default `req_doctype`).
+
+Examples (common values you can use):
+
+- `PAN`
+- `AADHAAR`
+- `DL`
+- `RC`
+- `PASSPORT`
+
+Notes:
+- DigiLocker availability depends on what the end-user has in DigiLocker and what your requester is allowed to access.
+- `scope` is different: it is the OAuth scope (typically `files.issueddocs`) configured at platform level, not per request.
 
 ## Create KYC Session
 
@@ -35,6 +51,9 @@ Body:
   "webhookUrl": "https://yourapp.com/webhooks/textzy-kyc"
 }
 ```
+
+Webhook behavior:
+- If `webhookUrl` is omitted/empty, Textzy uses the tenant default `kycWebhookUrl` (configure once in **Integrations → Public API Access**).
 
 Response:
 ```json
@@ -72,6 +91,13 @@ This endpoint is called by DigiLocker after the user completes consent/login. Te
 5. POSTs a webhook (if configured)
 6. redirects end-user to `successRedirectUrl` / `failureRedirectUrl` (if configured)
 
+## Platform OAuth Endpoints (Authorize URL / Token URL)
+
+`authorizeUrl` and `tokenUrl` are **OAuth2 endpoints** for your DigiLocker requester app. They are platform-level because the platform owns the DigiLocker client credentials.
+
+- You do not set them per API call.
+- In Platform Settings → DigiLocker Master Config, you can leave these fields blank to use the default DigiLocker endpoints (recommended unless DigiLocker gives you different URLs for your environment).
+
 ## Webhook Payload
 
 If `webhookUrl` is set on session creation, Textzy POSTs JSON:
@@ -105,4 +131,3 @@ If `webhookUrl` is set on session creation, Textzy POSTs JSON:
 Notes:
 - access tokens are never included.
 - If you want Textzy to download/store document files, we can extend the plugin once you confirm DigiLocker download endpoints for your requester setup.
-

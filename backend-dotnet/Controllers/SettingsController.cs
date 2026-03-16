@@ -169,6 +169,7 @@ public class SettingsController(
         profile.BillingEmail = InputGuardService.ValidateEmailOrEmpty(request.BillingEmail, "Billing email");
         profile.BillingPhone = (request.BillingPhone ?? string.Empty).Trim();
         profile.ApiIpWhitelist = (request.ApiIpWhitelist ?? string.Empty).Trim();
+        profile.KycWebhookUrl = (request.KycWebhookUrl ?? string.Empty).Trim();
         profile.TaxRatePercent = Math.Clamp(request.TaxRatePercent, 0m, 100m);
         profile.IsTaxExempt = request.IsTaxExempt;
         profile.IsReverseCharge = request.IsReverseCharge;
@@ -249,6 +250,7 @@ public class SettingsController(
         apiPassword = string.IsNullOrWhiteSpace(p.ApiPasswordEncrypted) ? string.Empty : crypto.Decrypt(p.ApiPasswordEncrypted),
         apiKey = string.IsNullOrWhiteSpace(p.ApiKeyEncrypted) ? string.Empty : crypto.Decrypt(p.ApiKeyEncrypted),
         p.ApiIpWhitelist,
+        kycWebhookUrl = p.KycWebhookUrl,
         p.TaxRatePercent,
         p.IsTaxExempt,
         p.IsReverseCharge,
@@ -311,6 +313,7 @@ public class SettingsController(
         public string ApiPassword { get; set; } = string.Empty;
         public string ApiKey { get; set; } = string.Empty;
         public string ApiIpWhitelist { get; set; } = string.Empty;
+        public string KycWebhookUrl { get; set; } = string.Empty;
         public decimal TaxRatePercent { get; set; } = 18m;
         public bool IsTaxExempt { get; set; }
         public bool IsReverseCharge { get; set; }

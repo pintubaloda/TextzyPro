@@ -21,6 +21,9 @@ public class TenantCompanyProfile
     public string ApiPasswordEncrypted { get; set; } = string.Empty;
     public string ApiKeyEncrypted { get; set; } = string.Empty;
     public string ApiIpWhitelist { get; set; } = string.Empty;
+
+    // Default webhook used for KYC sessions when caller does not pass webhookUrl per request.
+    public string KycWebhookUrl { get; set; } = string.Empty;
     public decimal TaxRatePercent { get; set; } = 18m;
     public bool IsTaxExempt { get; set; }
     public bool IsReverseCharge { get; set; }

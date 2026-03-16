@@ -434,6 +434,7 @@ static void EnsureControlAuthSchema(ControlDbContext db)
     db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantCompanyProfiles" ADD COLUMN IF NOT EXISTS "ApiPasswordEncrypted" text NOT NULL DEFAULT '';""");
     db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantCompanyProfiles" ADD COLUMN IF NOT EXISTS "ApiKeyEncrypted" text NOT NULL DEFAULT '';""");
     db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantCompanyProfiles" ADD COLUMN IF NOT EXISTS "ApiIpWhitelist" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantCompanyProfiles" ADD COLUMN IF NOT EXISTS "KycWebhookUrl" text NOT NULL DEFAULT '';""");
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "Users" (

@@ -3455,15 +3455,30 @@ const PlatformSettingsPage = () => {
               </div>
               <div className="space-y-2">
                 <Label>Authorize URL</Label>
-                <Input value={digilocker.authorizeUrl} onChange={(e) => setDigilocker((p) => ({ ...p, authorizeUrl: e.target.value }))} />
+                <Input
+                  value={digilocker.authorizeUrl}
+                  onChange={(e) => setDigilocker((p) => ({ ...p, authorizeUrl: e.target.value }))}
+                  placeholder="https://digilocker.meripehchaan.gov.in/public/oauth2/1/authorize"
+                />
+                <p className="text-xs text-slate-500">OAuth2 authorization endpoint. Leave blank to use the default DigiLocker endpoint.</p>
               </div>
               <div className="space-y-2">
                 <Label>Token URL</Label>
-                <Input value={digilocker.tokenUrl} onChange={(e) => setDigilocker((p) => ({ ...p, tokenUrl: e.target.value }))} />
+                <Input
+                  value={digilocker.tokenUrl}
+                  onChange={(e) => setDigilocker((p) => ({ ...p, tokenUrl: e.target.value }))}
+                  placeholder="https://digilocker.meripehchaan.gov.in/public/oauth2/1/token"
+                />
+                <p className="text-xs text-slate-500">OAuth2 token exchange endpoint. Leave blank to use the default DigiLocker endpoint.</p>
               </div>
               <div className="space-y-2">
                 <Label>API Base URL</Label>
-                <Input value={digilocker.apiBaseUrl} onChange={(e) => setDigilocker((p) => ({ ...p, apiBaseUrl: e.target.value }))} />
+                <Input
+                  value={digilocker.apiBaseUrl}
+                  onChange={(e) => setDigilocker((p) => ({ ...p, apiBaseUrl: e.target.value }))}
+                  placeholder="https://digilocker.meripehchaan.gov.in/public/oauth2/1"
+                />
+                <p className="text-xs text-slate-500">Base URL for DigiLocker API calls (for example issued docs). Leave blank to use default.</p>
               </div>
               <div className="space-y-2">
                 <Label>Scope</Label>
@@ -3471,11 +3486,11 @@ const PlatformSettingsPage = () => {
               </div>
               <div className="space-y-2">
                 <Label>Issued Docs Path</Label>
-                <Input value={digilocker.issuedDocsPath} onChange={(e) => setDigilocker((p) => ({ ...p, issuedDocsPath: e.target.value }))} placeholder="/issuedDocs" />
+                <Input value={digilocker.issuedDocsPath} onChange={(e) => setDigilocker((p) => ({ ...p, issuedDocsPath: e.target.value }))} placeholder="/files/issued" />
               </div>
               <div className="space-y-2">
                 <Label>DocType Param Name (optional)</Label>
-                <Input value={digilocker.docTypeParamName} onChange={(e) => setDigilocker((p) => ({ ...p, docTypeParamName: e.target.value }))} placeholder="doctype" />
+                <Input value={digilocker.docTypeParamName} onChange={(e) => setDigilocker((p) => ({ ...p, docTypeParamName: e.target.value }))} placeholder="req_doctype" />
               </div>
               <div className="space-y-2">
                 <Label>Legacy Credits Per Success (fallback)</Label>
