@@ -78,10 +78,23 @@ const DEFAULT_LIMITS = {
   teamMembers: 10,
   smsCredits: 50000,
   whatsappMessages: 10000,
+  digilockerKyc: 0,
   chatbots: 5,
   flows: 50,
   apiCalls: 100000,
 };
+
+const USAGE_UNIT_LABELS = {
+  smsCredits: "SMS credits",
+  whatsappMessages: "WhatsApp messages",
+  digilockerKyc: "KYC credits",
+};
+
+function formatUsageUnitName(unit) {
+  const key = String(unit || "").trim();
+  if (!key) return "units";
+  return USAGE_UNIT_LABELS[key] || key;
+}
 
 const PlatformSettingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -3457,12 +3470,13 @@ const PlatformSettingsPage = () => {
                           <SelectContent>
                             <SelectItem value="smsCredits">SMS Credits</SelectItem>
                             <SelectItem value="whatsappMessages">WhatsApp Messages</SelectItem>
+                            <SelectItem value="digilockerKyc">DigiLocker KYC</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="rounded-2xl border border-orange-200 bg-orange-50/60 p-4 text-sm text-slate-700">
                         Buyer receives <span className="font-semibold text-slate-950">{Number(planForm.includedQuantity || 0).toLocaleString()}</span>{" "}
-                        <span className="font-semibold text-slate-950">{planForm.usageUnitName || "units"}</span> for
+                        <span className="font-semibold text-slate-950">{formatUsageUnitName(planForm.usageUnitName)}</span> for
                         <span className="font-semibold text-slate-950"> {planForm.currency} {Number(planForm.priceMonthly || 0).toLocaleString()}</span>.
                         {planForm.taxMode === "inclusive" ? " GST is already included in the published price." : " GST will be added on top at checkout."}
                       </div>
@@ -3659,8 +3673,8 @@ const PlatformSettingsPage = () => {
                           </div>
                           <div className="text-sm text-slate-600">
                             {p.pricingModel === "usage_pack"
-                              ? `${p.currency} ${Number(p.priceMonthly || 0).toLocaleString()} for ${Number(p.includedQuantity || 0).toLocaleString()} ${p.usageUnitName || "units"}`
-                              : `${p.currency} ${Number(p.priceMonthly || 0).toLocaleString()}/month${Number(p.priceYearly || 0) > 0 ? ` � ${p.currency} ${Number(p.priceYearly || 0).toLocaleString()}/year` : ""}`}
+                              ? `${p.currency} ${Number(p.priceMonthly || 0).toLocaleString()} for ${Number(p.includedQuantity || 0).toLocaleString()} ${formatUsageUnitName(p.usageUnitName)}`
+                              : `${p.currency} ${Number(p.priceMonthly || 0).toLocaleString()}/month${Number(p.priceYearly || 0) > 0 ? ` | ${p.currency} ${Number(p.priceYearly || 0).toLocaleString()}/year` : ""}`}
                             <span className="ml-2 text-xs text-slate-500">{p.taxMode === "inclusive" ? "GST included" : "GST extra"}</span>
                           </div>
                           {Array.isArray(p.features) && p.features.length > 0 ? (

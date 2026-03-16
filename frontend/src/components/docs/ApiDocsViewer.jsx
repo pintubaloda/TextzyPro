@@ -22,6 +22,14 @@ const DOCS = {
     tone: "from-cyan-50 via-white to-emerald-50",
     chip: "WhatsApp",
   },
+  kyc: {
+    title: "KYC API Reference",
+    description: "KYC session API documentation (DigiLocker plugin) including session creation, redirect flow, callback model, webhook payload, and credit-based billing behavior.",
+    html: "/docs/kyc-api-reference.html",
+    markdown: "/docs/KYC_API_REFERENCE.md",
+    tone: "from-emerald-50 via-white to-lime-50",
+    chip: "KYC",
+  },
 };
 
 function getDoc(type) {
@@ -237,6 +245,10 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
                 <Globe2 className="mr-2 h-4 w-4" />
                 WhatsApp API
               </Button>
+              <Button variant={type === "kyc" ? "default" : "outline"} className={type === "kyc" ? "bg-orange-500 hover:bg-orange-600" : ""} onClick={() => handleTypeChange("kyc")}>
+                <BookOpenText className="mr-2 h-4 w-4" />
+                KYC API
+              </Button>
               <Button variant="outline" onClick={() => copyText(`${window.location.origin}${docMeta.html}`, "Viewer link")}>
                 <Copy className="mr-2 h-4 w-4" />
                 Copy Link
@@ -273,14 +285,14 @@ export default function ApiDocsViewer({ open, onOpenChange, type, onTypeChange }
                   {section.label}
                 </button>
               )) : (
-                <div className="px-3 py-6 text-sm text-slate-500">{loading ? "Loading documentation…" : "No sections available."}</div>
+                <div className="px-3 py-6 text-sm text-slate-500">{loading ? "Loading documentation..." : "No sections available."}</div>
               )}
             </div>
           </aside>
           <div className="relative h-full overflow-hidden bg-slate-100">
             {loading ? (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-50/80 text-sm text-slate-500">
-                Loading documentation…
+                Loading documentation...
               </div>
             ) : null}
             <div className="border-b border-slate-200 bg-white px-4 py-3 xl:hidden">

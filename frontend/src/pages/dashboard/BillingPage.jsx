@@ -20,6 +20,7 @@ import {
   Check,
   Zap,
   MessageSquare,
+  ShieldCheck,
   Users,
   AlertTriangle,
   Workflow,
@@ -121,6 +122,16 @@ const BillingPage = () => {
   const gstin = String(company?.gstin || "").trim();
   const pan = String(company?.pan || "").trim();
   const pct = (used, limit) => !limit ? 0 : Math.min(100, Math.round((used / limit) * 100));
+  const formatUsageUnitName = (unit) => {
+    const key = String(unit || "").trim();
+    if (!key) return "units";
+    const map = {
+      smsCredits: "SMS credits",
+      whatsappMessages: "WhatsApp messages",
+      digilockerKyc: "KYC credits",
+    };
+    return map[key] || key;
+  };
   const formatMoneyValue = (value, currency = "INR") =>
     `${String(currency || "INR").toUpperCase() === "INR" ? "\u20B9" : `${String(currency || "INR").toUpperCase()} `}${Number(value || 0).toLocaleString("en-IN", {
       minimumFractionDigits: 2,
@@ -131,7 +142,7 @@ const BillingPage = () => {
     const currency = String(plan.currency || "INR").toUpperCase();
     const taxSuffix = String(plan.taxMode || "exclusive").toLowerCase() === "inclusive" ? " incl. GST" : " + GST";
     if (String(plan.pricingModel || "").toLowerCase() === "usage_pack") {
-      return `${formatMoneyValue(plan.priceMonthly || 0, currency)} for ${Number(plan.includedQuantity || 0).toLocaleString()} ${plan.usageUnitName || "units"}${taxSuffix}`;
+      return `${formatMoneyValue(plan.priceMonthly || 0, currency)} for ${Number(plan.includedQuantity || 0).toLocaleString()} ${formatUsageUnitName(plan.usageUnitName)}${taxSuffix}`;
     }
     const base = cycle === "yearly"
       ? `${formatMoneyValue(plan.priceYearly || 0, currency)}/year`
@@ -143,6 +154,7 @@ const BillingPage = () => {
     return {
       whatsapp: { used: usageValues.whatsappMessages || 0, limit: limits.whatsappMessages || 0, percentage: pct(usageValues.whatsappMessages || 0, limits.whatsappMessages || 0) },
       sms: { used: usageValues.smsCredits || 0, limit: limits.smsCredits || 0, percentage: pct(usageValues.smsCredits || 0, limits.smsCredits || 0), balance: Number(creditBalances.smsCredits || 0) },
+      digilockerKyc: { used: usageValues.digilockerKyc || 0, limit: limits.digilockerKyc || 0, percentage: pct(usageValues.digilockerKyc || 0, limits.digilockerKyc || 0), balance: Number(creditBalances.digilockerKyc || 0) },
       contacts: { used: usageValues.contacts || 0, limit: limits.contacts || 0, percentage: pct(usageValues.contacts || 0, limits.contacts || 0) },
       team: { used: usageValues.teamMembers || 0, limit: limits.teamMembers || 0, percentage: pct(usageValues.teamMembers || 0, limits.teamMembers || 0) },
       flows: { used: usageValues.flows || 0, limit: limits.flows || 0, percentage: pct(usageValues.flows || 0, limits.flows || 0) },
@@ -511,6 +523,7 @@ const BillingPage = () => {
             {[
               { key: "whatsapp", label: "WhatsApp Messages", icon: MessageSquare, color: "text-green-600", suffix: "messages" },
               { key: "sms", label: "SMS Credits", icon: MessageSquare, color: "text-orange-600", suffix: "credits" },
+              { key: "digilockerKyc", label: "DigiLocker KYC", icon: ShieldCheck, color: "text-emerald-600", suffix: "verifications" },
               { key: "contacts", label: "Contacts", icon: Users, color: "text-blue-600", suffix: "contacts" },
               { key: "team", label: "Team Members", icon: Users, color: "text-purple-600", suffix: "members" },
               { key: "flows", label: "Flows", icon: Workflow, color: "text-indigo-600", suffix: "flows" },
@@ -532,6 +545,11 @@ const BillingPage = () => {
                   <p className="text-xs text-slate-500">
                     {Number(row.used || 0).toLocaleString()} / {Number(row.limit || 0).toLocaleString()} {item.suffix}
                   </p>
+                  {Number.isFinite(row.balance) ? (
+                    <p className="text-xs text-slate-500">
+                      Credit balance: <span className="font-semibold text-slate-800">{Number(row.balance || 0).toLocaleString()}</span>
+                    </p>
+                  ) : null}
                   {row.percentage > 80 ? (
                     <div className="flex items-center gap-1 text-xs text-yellow-600">
                       <AlertTriangle className="w-3 h-3" />

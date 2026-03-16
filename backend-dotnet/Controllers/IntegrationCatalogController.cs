@@ -35,8 +35,9 @@ public class IntegrationCatalogController(
             .Select(x =>
             {
                 var globallyActive = x.IsActive;
-                var entitled = globallyActive && IsEntitled(x, entitlementTokens);
                 var isPaid = string.Equals(x.PricingType, "paid", StringComparison.OrdinalIgnoreCase);
+                // Free items should be enabled by default when globally active; paid items require entitlement.
+                var entitled = globallyActive && (!isPaid || IsEntitled(x, entitlementTokens));
                 var activationStatus = !globallyActive
                     ? "unavailable"
                     : entitled
