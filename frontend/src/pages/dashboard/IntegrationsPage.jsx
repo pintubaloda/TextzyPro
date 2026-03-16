@@ -307,8 +307,14 @@ const IntegrationsPage = () => {
         lastResult: null,
       }));
 
-      const redirectUrl = res?.redirectUrl || "";
-      if (!redirectUrl) throw new Error("Missing redirectUrl from server.");
+      const redirectUrl =
+        res?.redirectUrl ||
+        res?.redirectURL ||
+        res?.redirect ||
+        res?.url ||
+        "";
+      if (!redirectUrl)
+        throw new Error(`Missing redirectUrl from server. Response: ${JSON.stringify(res)}`);
 
       // Continue the flow in the same window so DigiLocker returns back to our Integrations page.
       window.location.assign(redirectUrl);
