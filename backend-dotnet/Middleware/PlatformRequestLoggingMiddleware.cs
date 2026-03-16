@@ -47,18 +47,45 @@ public class PlatformRequestLoggingMiddleware(RequestDelegate next)
         finally
         {
             stopwatch.Stop();
+            // Always copy the response back, even if logging fails.
+            // We've seen production IIS setups return 200 with an empty body when this middleware throws
+            // before copying the buffer. Copying must be best-effort and independent of persistence.
             try
             {
-                responseBody = await ReadResponseBodyAsync(context, responseBuffer, originalResponseBody, redactor);
+                responseBuffer.Position = 0;
+                using var reader = new StreamReader(responseBuffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+                var rawBody = await reader.ReadToEndAsync();
+                responseBody = NormalizeBody(rawBody, redactor);
+            }
+            catch
+            {
+                responseBody = string.Empty;
+            }
+            finally
+            {
+                try
+                {
+                    responseBuffer.Position = 0;
+                    await responseBuffer.CopyToAsync(originalResponseBody);
+                    await originalResponseBody.FlushAsync();
+                }
+                catch
+                {
+                    // Never break request lifecycle due to logging/copy failures.
+                }
+                finally
+                {
+                    context.Response.Body = originalResponseBody;
+                }
+            }
+
+            try
+            {
                 await PersistLogAsync(context, stopwatch.ElapsedMilliseconds, requestBody, responseBody, error);
             }
             catch
             {
                 // Never break request lifecycle due to logging failures.
-            }
-            finally
-            {
-                context.Response.Body = originalResponseBody;
             }
         }
     }
@@ -90,16 +117,7 @@ public class PlatformRequestLoggingMiddleware(RequestDelegate next)
         return NormalizeBody(body, redactor);
     }
 
-    private static async Task<string> ReadResponseBodyAsync(HttpContext context, MemoryStream responseBuffer, Stream originalResponseBody, SensitiveDataRedactor redactor)
-    {
-        responseBuffer.Position = 0;
-        using var reader = new StreamReader(responseBuffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        var body = await reader.ReadToEndAsync();
-        responseBuffer.Position = 0;
-        await responseBuffer.CopyToAsync(originalResponseBody);
-        await originalResponseBody.FlushAsync();
-        return NormalizeBody(body, redactor);
-    }
+    // NOTE: Response copy + logging are intentionally decoupled in Invoke().
 
     private async Task PersistLogAsync(HttpContext context, long durationMs, string requestBody, string responseBody, string error)
     {
