@@ -223,7 +223,7 @@ public class DigiLockerKycProvider(
             try
             {
                 var userPath = string.IsNullOrWhiteSpace(settings.UserDetailsPath) ? "/oauth2/1/user" : settings.UserDetailsPath.Trim();
-                var userUrl = apiBase + (userPath.StartsWith("/") ? userPath : "/" + userPath);
+                var userUrl = CombineApiUrl(apiBase, userPath);
                 using var userReq = new HttpRequestMessage(HttpMethod.Get, userUrl);
                 userReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
                 using var userRes = await http.SendAsync(userReq, HttpCompletionOption.ResponseContentRead, ct);
@@ -238,7 +238,7 @@ public class DigiLockerKycProvider(
         }
 
         var issuedPath = string.IsNullOrWhiteSpace(settings.IssuedDocsPath) ? "/files/issued" : settings.IssuedDocsPath.Trim();
-        var issuedUrl = apiBase + (issuedPath.StartsWith("/") ? issuedPath : "/" + issuedPath);
+        var issuedUrl = CombineApiUrl(apiBase, issuedPath);
 
         // Best-effort "issued docs" fetch. Exact schema varies by environment; store raw payload anyway.
         using var issuedReq = new HttpRequestMessage(HttpMethod.Get, issuedUrl);
@@ -436,6 +436,32 @@ public class DigiLockerKycProvider(
         if (string.IsNullOrWhiteSpace(value))
             throw new InvalidOperationException($"DigiLocker setting '{key}' is not configured.");
         return value.Trim();
+    }
+
+    private static string CombineApiUrl(string apiBase, string pathOrUrl)
+    {
+        var baseUrl = (apiBase ?? string.Empty).Trim().TrimEnd('/');
+        var raw = (pathOrUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(baseUrl)) return raw;
+        if (string.IsNullOrWhiteSpace(raw)) return baseUrl;
+
+        if (raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return raw;
+
+        var path = raw.StartsWith("/") ? raw : "/" + raw;
+
+        // Support both configurations:
+        // A) apiBaseUrl = https://.../public and paths include /oauth2/1/...
+        // B) apiBaseUrl = https://.../public/oauth2/1 and paths are /files, /user, /files/{uri}
+        // If someone mixes A+B, strip duplicated prefixes.
+        if (baseUrl.EndsWith("/oauth2/1", StringComparison.OrdinalIgnoreCase) && path.StartsWith("/oauth2/1/", StringComparison.OrdinalIgnoreCase))
+            path = path["/oauth2/1".Length..];
+        if (baseUrl.EndsWith("/public", StringComparison.OrdinalIgnoreCase) && path.StartsWith("/public/", StringComparison.OrdinalIgnoreCase))
+            path = path["/public".Length..];
+        if (baseUrl.EndsWith("/public/oauth2/1", StringComparison.OrdinalIgnoreCase) && path.StartsWith("/public/oauth2/1/", StringComparison.OrdinalIgnoreCase))
+            path = path["/public/oauth2/1".Length..];
+
+        return baseUrl + path;
     }
 
     private static (string Verifier, string Challenge) CreatePkcePair()
@@ -1201,7 +1227,7 @@ public class DigiLockerKycProvider(
 
         var encodedUri = Uri.EscapeDataString(uri);
         var path = template.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase);
-        var url = apiBase.TrimEnd('/') + path;
+        var url = CombineApiUrl(apiBase, path);
 
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
