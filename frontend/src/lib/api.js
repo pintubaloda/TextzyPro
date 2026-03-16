@@ -1143,6 +1143,13 @@ export async function getKycSession(sessionId) {
   return apiGet(`/api/kyc/sessions/${encodeURIComponent(sessionId)}`)
 }
 
+export async function listKycSessions({ take = 50, includeParsed = true } = {}) {
+  const q = new URLSearchParams()
+  q.set("take", String(take))
+  if (includeParsed) q.set("includeParsed", "true")
+  return apiGet(`/api/kyc/sessions?${q.toString()}`)
+}
+
 export async function getPlatformQueueHealth() {
   return apiGet('/api/platform/queue-health')
 }

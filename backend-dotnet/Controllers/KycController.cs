@@ -141,7 +141,7 @@ public class KycController(
     }
 
     [HttpGet("sessions")]
-    public async Task<IActionResult> List([FromQuery] int take = 50, CancellationToken ct = default)
+    public async Task<IActionResult> List([FromQuery] int take = 50, [FromQuery] bool includeParsed = false, CancellationToken ct = default)
     {
         if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
         if (!rbac.HasPermission(ApiRead)) return Forbid();
@@ -155,17 +155,39 @@ public class KycController(
             .Take(take)
             .ToListAsync(ct);
 
-        return Ok(rows.Select(x => new
+        return Ok(rows.Select(x =>
         {
-            sessionId = x.Id,
-            provider = x.ProviderCode,
-            status = x.Status,
-            customerRef = x.CustomerRef,
-            docTypes = ParseStringList(x.RequestedDocTypesJson),
-            failureReason = x.FailureReason,
-            createdAtUtc = x.CreatedAtUtc,
-            updatedAtUtc = x.UpdatedAtUtc,
-            completedAtUtc = x.CompletedAtUtc
+            object? collected = null;
+            if (includeParsed && !string.IsNullOrWhiteSpace(x.ResultJsonEncrypted))
+            {
+                try
+                {
+                    var raw = crypto.Decrypt(x.ResultJsonEncrypted);
+                    using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(raw) ? "{}" : raw);
+                    if (doc.RootElement.TryGetProperty("collected", out var c) && c.ValueKind == JsonValueKind.Object)
+                    {
+                        collected = JsonSerializer.Deserialize<object>(c.GetRawText());
+                    }
+                }
+                catch
+                {
+                    collected = null;
+                }
+            }
+
+            return new
+            {
+                sessionId = x.Id,
+                provider = x.ProviderCode,
+                status = x.Status,
+                customerRef = x.CustomerRef,
+                docTypes = ParseStringList(x.RequestedDocTypesJson),
+                failureReason = x.FailureReason,
+                createdAtUtc = x.CreatedAtUtc,
+                updatedAtUtc = x.UpdatedAtUtc,
+                completedAtUtc = x.CompletedAtUtc,
+                collected
+            };
         }));
     }
 

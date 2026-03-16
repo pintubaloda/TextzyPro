@@ -2,6 +2,8 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
+using System.IO.Compression;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
@@ -217,6 +219,8 @@ public class DigiLockerKycProvider(
         // via session GET or webhook payload. Keep strict limits to avoid blowing up DB/webhook sizes.
         var downloaded = new List<object>();
         var downloadErrors = new List<object>();
+        var parsedDocs = new List<object>();
+        var collected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         if (issuedRes.IsSuccessStatusCode && settings.IncludeFilesInResult && issuedItems.Count > 0)
         {
             var maxFiles = settings.MaxFilesPerSession > 0 ? settings.MaxFilesPerSession : DefaultMaxFilesPerSession;
@@ -243,6 +247,13 @@ public class DigiLockerKycProvider(
                         clientSecret,
                         maxBytes,
                         ct);
+
+                    var parsed = TryParseDigilockerDocument(it, file);
+                    if (parsed is not null)
+                    {
+                        parsedDocs.Add(new { uri = it.Uri, doctype = it.DocType, parsed });
+                        MergeCollected(collected, parsed);
+                    }
 
                     downloaded.Add(new
                     {
@@ -286,7 +297,9 @@ public class DigiLockerKycProvider(
             issuedDocsStatus = (int)issuedRes.StatusCode,
             issuedDocs = TryParseJson(issuedBody),
             files = downloaded,
-            fileDownloadErrors = downloadErrors
+            fileDownloadErrors = downloadErrors,
+            parsedDocs,
+            collected
         };
 
         var resultJson = JsonSerializer.Serialize(normalized);
@@ -554,7 +567,436 @@ public class DigiLockerKycProvider(
             Name: string.IsNullOrWhiteSpace(name) ? null : name);
     }
 
-    private sealed record DownloadedFile(string Mime, int SizeBytes, string Sha256Hex, string? HmacBase64, bool? HmacValid, string Base64);
+    private sealed record DownloadedFile(
+        string Mime,
+        int SizeBytes,
+        string Sha256Hex,
+        string? HmacBase64,
+        bool? HmacValid,
+        string Base64,
+        byte[] Bytes);
+
+    private static object? TryParseDigilockerDocument(IssuedItem it, DownloadedFile file)
+    {
+        var doctype = (it.DocType ?? string.Empty).Trim().ToUpperInvariant();
+
+        // Aadhaar often comes as XML (sometimes zipped).
+        if (doctype is "ADHAR" or "AADHAAR")
+        {
+            var aadhaar = TryParseAadhaar(file.Bytes);
+            if (aadhaar is not null) return new { type = "aadhaar", fields = aadhaar };
+        }
+
+        // PAN verification record is usually a PDF.
+        if (doctype is "PANCR" or "PAN")
+        {
+            var pan = TryParsePan(file.Bytes);
+            if (pan is not null) return new { type = "pan", fields = pan };
+        }
+
+        return null;
+    }
+
+    private static void MergeCollected(Dictionary<string, object?> collected, object parsed)
+    {
+        // parsed is { type, fields = { ... } }
+        try
+        {
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(parsed));
+            if (!doc.RootElement.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Object) return;
+
+            void PutIf(string key, string? val)
+            {
+                if (string.IsNullOrWhiteSpace(val)) return;
+                if (!collected.ContainsKey(key)) collected[key] = val.Trim();
+            }
+
+            string? Get(string key)
+            {
+                return fields.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            }
+
+            PutIf("name", Get("name"));
+            PutIf("dob", Get("dob"));
+            PutIf("gender", Get("gender"));
+            PutIf("email", Get("email"));
+            PutIf("address", Get("address"));
+            PutIf("fatherName", Get("fatherName"));
+
+            // Prefer masked ids where present.
+            PutIf("pan", Get("panNumber"));
+            PutIf("aadhaarMasked", Get("aadhaarMasked"));
+
+            var photo = Get("photoBase64");
+            if (!string.IsNullOrWhiteSpace(photo) && !collected.ContainsKey("photoBase64"))
+                collected["photoBase64"] = photo.Trim();
+
+            // Derived age if dob available.
+            if (collected.TryGetValue("dob", out var dobObj) && dobObj is string dobStr && TryParseDate(dobStr, out var dob))
+            {
+                var age = ComputeAgeYears(dob, DateTime.UtcNow.Date);
+                if (!collected.ContainsKey("ageYears")) collected["ageYears"] = age;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private static object? TryParsePan(byte[] bytes)
+    {
+        if (bytes.Length < 4) return null;
+
+        // If it's a PDF, do a best-effort text extraction from FlateDecode streams.
+        if (IsPdf(bytes))
+        {
+            var text = ExtractPdfText(bytes);
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var pan = FindFirstRegex(text, @"\b[A-Z]{5}[0-9]{4}[A-Z]\b");
+            var dob = FindFirstRegex(text, @"\b\d{2}[-/]\d{2}[-/]\d{4}\b");
+            var gender = FindFirstRegex(text, @"\b(MALE|FEMALE|OTHER)\b");
+
+            // Heuristic: capture between NAME and GENDER/DATE OF BIRTH
+            var name = FindBetween(text, "NAME", new[] { "GENDER", "DATE OF BIRTH", "DOB", "VERIFIED" });
+            name = NormalizePersonName(name);
+
+            return new
+            {
+                panNumber = pan ?? string.Empty,
+                name = name ?? string.Empty,
+                dob = dob ?? string.Empty,
+                gender = gender ?? string.Empty
+            };
+        }
+
+        // Some environments may return JSON/XML instead of PDF.
+        var maybeXml = TryParseXml(bytes);
+        if (maybeXml is not null) return maybeXml;
+
+        return null;
+    }
+
+    private static object? TryParseAadhaar(byte[] bytes)
+    {
+        if (bytes.Length < 2) return null;
+
+        // ZIP container
+        if (IsZip(bytes))
+        {
+            try
+            {
+                using var ms = new MemoryStream(bytes);
+                using var zip = new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
+                foreach (var e in zip.Entries)
+                {
+                    if (e.Length <= 0) continue;
+                    if (!e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
+                    using var es = e.Open();
+                    using var outMs = new MemoryStream();
+                    es.CopyTo(outMs);
+                    var parsed = TryParseAadhaarXml(outMs.ToArray());
+                    if (parsed is not null) return parsed;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        // XML direct
+        var xml = TryParseAadhaarXml(bytes);
+        if (xml is not null) return xml;
+
+        // PDF fallback (best-effort text only)
+        if (IsPdf(bytes))
+        {
+            var text = ExtractPdfText(bytes);
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var name = FindBetween(text, "Name", new[] { "Date of Birth", "DOB", "Gender", "Address" });
+            name = NormalizePersonName(name);
+            var dob = FindFirstRegex(text, @"\b\d{2}[-/]\d{2}[-/]\d{4}\b");
+            var gender = FindFirstRegex(text, @"\b(MALE|FEMALE|OTHER)\b");
+            var aadhaarMasked = FindFirstRegex(text, @"\bX{4,}\d{4}\b");
+            var address = FindBetween(text, "Address", new[] { "Pin Code", "Pincode", "PIN" });
+
+            return new
+            {
+                aadhaarMasked = aadhaarMasked ?? string.Empty,
+                name = name ?? string.Empty,
+                dob = dob ?? string.Empty,
+                gender = gender ?? string.Empty,
+                address = NormalizeWhitespace(address ?? string.Empty),
+                photoBase64 = string.Empty
+            };
+        }
+
+        return null;
+    }
+
+    private static object? TryParseAadhaarXml(byte[] xmlBytes)
+    {
+        try
+        {
+            var xml = Encoding.UTF8.GetString(xmlBytes);
+            if (!xml.Contains("PrintLetterBarcodeData", StringComparison.OrdinalIgnoreCase)
+                && !xml.Contains("UidData", StringComparison.OrdinalIgnoreCase))
+            {
+                // Not an Aadhaar XML we recognize
+                // Still attempt parse for best effort.
+            }
+
+            var doc = XDocument.Parse(xml);
+            var plbd = doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("PrintLetterBarcodeData", StringComparison.OrdinalIgnoreCase));
+            var uid = (plbd?.Attribute("uid")?.Value ?? string.Empty).Trim();
+            var name = (plbd?.Attribute("name")?.Value ?? string.Empty).Trim();
+            var gender = (plbd?.Attribute("gender")?.Value ?? string.Empty).Trim();
+            var dob = (plbd?.Attribute("dob")?.Value ?? string.Empty).Trim();
+            var yob = (plbd?.Attribute("yob")?.Value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(dob) && !string.IsNullOrWhiteSpace(yob))
+                dob = $"{yob}-01-01";
+
+            var co = (plbd?.Attribute("co")?.Value ?? string.Empty).Trim();
+
+            string Attr(string key) => (plbd?.Attribute(key)?.Value ?? string.Empty).Trim();
+            var addressParts = new List<string>();
+            void Add(string v) { if (!string.IsNullOrWhiteSpace(v)) addressParts.Add(v); }
+            Add(co);
+            Add(Attr("house"));
+            Add(Attr("street"));
+            Add(Attr("lm"));
+            Add(Attr("loc"));
+            Add(Attr("vtc"));
+            Add(Attr("po"));
+            Add(Attr("dist"));
+            Add(Attr("subdist"));
+            Add(Attr("state"));
+            Add(Attr("pc"));
+            var address = string.Join(", ", addressParts.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+            var pht = doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Pht", StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty;
+            pht = pht.Trim();
+
+            var masked = MaskId(uid);
+
+            return new
+            {
+                aadhaarMasked = masked,
+                name,
+                dob,
+                gender,
+                fatherName = ExtractFatherName(co),
+                address = NormalizeWhitespace(address),
+                photoBase64 = pht
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static object? TryParseXml(byte[] bytes)
+    {
+        try
+        {
+            var xml = Encoding.UTF8.GetString(bytes);
+            if (!xml.TrimStart().StartsWith("<", StringComparison.Ordinal)) return null;
+            var doc = XDocument.Parse(xml);
+            return new { xml = doc.Root?.Name.LocalName ?? "xml" };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsZip(byte[] bytes) => bytes.Length >= 2 && bytes[0] == (byte)'P' && bytes[1] == (byte)'K';
+    private static bool IsPdf(byte[] bytes) => bytes.Length >= 4 && bytes[0] == (byte)'%' && bytes[1] == (byte)'P' && bytes[2] == (byte)'D' && bytes[3] == (byte)'F';
+
+    private static string MaskId(string id)
+    {
+        var s = (id ?? string.Empty).Trim();
+        if (s.Length <= 4) return s;
+        var last4 = s[^4..];
+        return new string('X', Math.Max(0, s.Length - 4)) + last4;
+    }
+
+    private static string ExtractFatherName(string co)
+    {
+        // Examples: "S/O: John Doe" "D/O: Name" "C/O: Name"
+        if (string.IsNullOrWhiteSpace(co)) return string.Empty;
+        var idx = co.IndexOf(':');
+        if (idx >= 0 && idx + 1 < co.Length) return co[(idx + 1)..].Trim();
+        return co.Trim();
+    }
+
+    private static string? FindFirstRegex(string input, string pattern)
+    {
+        try
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(input ?? string.Empty, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            return m.Success ? m.Value.Trim() : null;
+        }
+        catch { return null; }
+    }
+
+    private static string NormalizeWhitespace(string s)
+        => string.Join(" ", (s ?? string.Empty).Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries));
+
+    private static string? FindBetween(string input, string startKey, string[] stopKeys)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        var idx = input.IndexOf(startKey, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return null;
+        var sub = input[(idx + startKey.Length)..];
+        var stop = sub.Length;
+        foreach (var k in stopKeys)
+        {
+            var j = sub.IndexOf(k, StringComparison.OrdinalIgnoreCase);
+            if (j >= 0 && j < stop) stop = j;
+        }
+        var chunk = sub[..stop];
+        return NormalizeWhitespace(chunk);
+    }
+
+    private static string? NormalizePersonName(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        var cleaned = s.Trim();
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"[^A-Za-z\s\.]", " ");
+        cleaned = NormalizeWhitespace(cleaned);
+        return cleaned;
+    }
+
+    private static bool TryParseDate(string raw, out DateTime date)
+    {
+        date = default;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        raw = raw.Trim();
+        var formats = new[] { "dd-MM-yyyy", "dd/MM/yyyy", "yyyy-MM-dd", "yyyy/MM/dd" };
+        foreach (var f in formats)
+        {
+            if (DateTime.TryParseExact(raw, f, null, System.Globalization.DateTimeStyles.None, out date))
+                return true;
+        }
+        return DateTime.TryParse(raw, out date);
+    }
+
+    private static int ComputeAgeYears(DateTime dob, DateTime onDate)
+    {
+        var age = onDate.Year - dob.Year;
+        if (onDate.Month < dob.Month || (onDate.Month == dob.Month && onDate.Day < dob.Day)) age--;
+        return Math.Max(0, age);
+    }
+
+    private static string ExtractPdfText(byte[] pdfBytes)
+    {
+        // Best-effort extraction:
+        // - Locate FlateDecode streams
+        // - ZLib decompress
+        // - Pull literal strings (...) used in text operators
+        try
+        {
+            var all = new StringBuilder();
+            var ascii = Encoding.ASCII.GetString(pdfBytes);
+            var pos = 0;
+            while (true)
+            {
+                var idx = ascii.IndexOf("/FlateDecode", pos, StringComparison.Ordinal);
+                if (idx < 0) break;
+                var streamIdx = ascii.IndexOf("stream", idx, StringComparison.Ordinal);
+                if (streamIdx < 0) break;
+                var start = streamIdx + "stream".Length;
+                // skip EOL
+                while (start < ascii.Length && (ascii[start] == '\r' || ascii[start] == '\n' || ascii[start] == ' ')) start++;
+                var endstreamIdx = ascii.IndexOf("endstream", start, StringComparison.Ordinal);
+                if (endstreamIdx < 0) break;
+
+                // Convert start/end back to byte offsets safely by using the same ASCII decoding length.
+                // This works for typical PDFs where stream bytes are binary but the ASCII string has same length.
+                var byteStart = start;
+                var byteEnd = endstreamIdx;
+                if (byteStart >= 0 && byteEnd > byteStart && byteEnd <= pdfBytes.Length)
+                {
+                    var slice = pdfBytes.AsSpan(byteStart, byteEnd - byteStart).ToArray();
+                    var inflated = TryInflateZlib(slice);
+                    if (inflated.Length > 0)
+                    {
+                        all.Append(' ');
+                        all.Append(ExtractPdfLiteralStrings(inflated));
+                    }
+                }
+
+                pos = endstreamIdx + 9;
+            }
+
+            return NormalizeWhitespace(all.ToString());
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static byte[] TryInflateZlib(byte[] input)
+    {
+        try
+        {
+            using var ms = new MemoryStream(input);
+            using var z = new ZLibStream(ms, CompressionMode.Decompress);
+            using var outMs = new MemoryStream();
+            z.CopyTo(outMs);
+            return outMs.ToArray();
+        }
+        catch
+        {
+            return Array.Empty<byte>();
+        }
+    }
+
+    private static string ExtractPdfLiteralStrings(byte[] content)
+    {
+        var sb = new StringBuilder();
+        var i = 0;
+        while (i < content.Length)
+        {
+            if (content[i] == (byte)'(')
+            {
+                i++;
+                var str = new StringBuilder();
+                var depth = 1;
+                while (i < content.Length && depth > 0)
+                {
+                    var b = content[i++];
+                    if (b == (byte)'\\')
+                    {
+                        if (i < content.Length)
+                        {
+                            var next = content[i++];
+                            str.Append((char)next);
+                        }
+                        continue;
+                    }
+                    if (b == (byte)'(') { depth++; str.Append(' '); continue; }
+                    if (b == (byte)')') { depth--; if (depth == 0) break; str.Append(' '); continue; }
+                    if (b >= 32 && b <= 126) str.Append((char)b);
+                }
+                var s = NormalizeWhitespace(str.ToString());
+                if (!string.IsNullOrWhiteSpace(s))
+                {
+                    sb.Append(' ');
+                    sb.Append(s);
+                }
+                continue;
+            }
+            i++;
+        }
+        return sb.ToString();
+    }
 
     private static async Task<DownloadedFile> DownloadFileAsync(
         HttpClient http,
@@ -629,6 +1071,7 @@ public class DigiLockerKycProvider(
             Sha256Hex: sha256Hex,
             HmacBase64: hmacHeader,
             HmacValid: hmacValid,
-            Base64: Convert.ToBase64String(bytes));
+            Base64: Convert.ToBase64String(bytes),
+            Bytes: bytes);
     }
 }

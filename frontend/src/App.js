@@ -52,6 +52,7 @@ const PlatformSupportDeskPage = lazy(() => import("@/pages/dashboard/PlatformSup
 const SmsSetupPage = lazy(() => import("@/pages/dashboard/SmsSetupPage"));
 const MobileDevicesPage = lazy(() => import("@/pages/dashboard/MobileDevicesPage"));
 const WhatsAppOnboardingPage = lazy(() => import("@/pages/dashboard/WhatsAppOnboardingPage"));
+const KycReportsPage = lazy(() => import("@/pages/dashboard/KycReportsPage"));
 
 function App() {
   const session = getSession();
@@ -124,6 +125,7 @@ function App() {
               <Route path="automations/qa" element={!isPlatformView && can("automation.read") ? <AutomationsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="analytics" element={canAnalytics ? <AnalyticsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="integrations" element={!isPlatformView && canIntegrations ? <IntegrationsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
+              <Route path="kyc-reports" element={!isPlatformView && canSettings ? <KycReportsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="whatsapp-onboarding" element={!isPlatformView && can("inbox.read") ? <WhatsAppOnboardingPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route
                 path="billing"

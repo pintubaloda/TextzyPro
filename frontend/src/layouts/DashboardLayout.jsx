@@ -451,6 +451,7 @@ const DashboardLayout = () => {
     canViewAutomations ? { name: "Automations", href: "/dashboard/automations", icon: Zap } : null,
     canViewAnalytics ? { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 } : null,
     canViewIntegrations ? { name: "Integrations", href: "/dashboard/integrations", icon: Plug } : null,
+    canViewIntegrations ? { name: "KYC Reports", href: "/dashboard/kyc-reports", icon: FileText } : null,
     canManageTeam ? { name: "Team", href: "/dashboard/team", icon: UsersRound } : null,
     canViewBilling ? { name: "Billing", href: "/dashboard/billing", icon: CreditCard } : null,
     { name: "Support", href: "/dashboard/support", icon: LifeBuoy },
