@@ -3325,12 +3325,12 @@ const PlatformSettingsPage = () => {
                       <td className="px-4 py-3 align-top">
                         <div className="grid gap-2">
                           <Select
-                            value={item.billingMetric || ""}
-                            onValueChange={(value) => setIntegrationCatalog((prev) => prev.map((row, i) => i === index ? { ...row, billingMetric: value } : row))}
+                            value={item.billingMetric ? item.billingMetric : "none"}
+                            onValueChange={(value) => setIntegrationCatalog((prev) => prev.map((row, i) => i === index ? { ...row, billingMetric: value === "none" ? "" : value } : row))}
                           >
                             <SelectTrigger><SelectValue placeholder="No credits" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">No credits</SelectItem>
+                              <SelectItem value="none">No credits</SelectItem>
                               <SelectItem value="smsCredits">SMS credits</SelectItem>
                               <SelectItem value="digilockerKyc">KYC credits</SelectItem>
                             </SelectContent>
