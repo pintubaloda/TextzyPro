@@ -27,15 +27,17 @@ public class PublicKycController(
     [HttpGet("{provider}/callback")]
     public async Task<IActionResult> Callback(
         string provider,
-        [FromQuery] string sessionId,
+        [FromQuery] string? sessionId,
         [FromQuery] string? code,
         [FromQuery] string? state,
         [FromQuery] string? error,
         CancellationToken ct)
     {
-        if (!Guid.TryParse((sessionId ?? string.Empty).Trim(), out var id))
+        var resolvedId = ResolveSessionIdFromQueryOrState(sessionId, state);
+        if (resolvedId == Guid.Empty)
             return BadRequest("Invalid sessionId.");
-        var row = await db.KycSessions.FirstOrDefaultAsync(x => x.Id == id, ct);
+
+        var row = await db.KycSessions.FirstOrDefaultAsync(x => x.Id == resolvedId, ct);
         if (row is null) return NotFound("KYC session not found.");
         if (!string.Equals(row.ProviderCode, provider ?? string.Empty, StringComparison.OrdinalIgnoreCase))
             return BadRequest("Provider mismatch.");
@@ -93,6 +95,26 @@ public class PublicKycController(
 
         await TryWebhookAsync(row, ok: result.Ok, ct);
         return RedirectToOutcome(row, ok: result.Ok);
+    }
+
+    private static Guid ResolveSessionIdFromQueryOrState(string? sessionId, string? state)
+    {
+        if (Guid.TryParse((sessionId ?? string.Empty).Trim(), out var fromQuery))
+            return fromQuery;
+
+        // v1.<guidN>.<random>
+        var raw = (state ?? string.Empty).Trim();
+        if (raw.StartsWith("v1.", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = raw.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length >= 2)
+            {
+                var guidN = parts[1];
+                if (guidN.Length == 32 && Guid.TryParseExact(guidN, "N", out var fromState))
+                    return fromState;
+            }
+        }
+        return Guid.Empty;
     }
 
     private IActionResult RedirectToOutcome(Textzy.Api.Models.KycSession session, bool ok)

@@ -1121,6 +1121,14 @@ export async function getPlatformSmsGatewayLogs({
   return apiGet(`/api/platform/sms-gateway-logs?${q.toString()}`)
 }
 
+export async function createKycSession(payload) {
+  return apiPost('/api/kyc/sessions', payload)
+}
+
+export async function getKycSession(sessionId) {
+  return apiGet(`/api/kyc/sessions/${encodeURIComponent(sessionId)}`)
+}
+
 export async function getPlatformQueueHealth() {
   return apiGet('/api/platform/queue-health')
 }

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ApiDocsViewer from "@/components/docs/ApiDocsViewer";
 import {
@@ -30,6 +32,8 @@ import {
   setupAuthenticator,
   verifyRazorpayPayment,
   verifyAuthenticator,
+  createKycSession,
+  getKycSession,
 } from "@/lib/api";
 
 const CATEGORY_META = {
@@ -99,6 +103,7 @@ function resolveStatusMeta(item) {
 }
 
 const IntegrationsPage = () => {
+  const location = useLocation();
   const session = getSession();
   const isSuperAdmin = String(session?.role || "").toLowerCase() === "super_admin";
   const [catalog, setCatalog] = useState([]);
@@ -126,6 +131,15 @@ const IntegrationsPage = () => {
     isActive: true,
   });
   const [savingTenantApi, setSavingTenantApi] = useState(false);
+  const [kycTest, setKycTest] = useState({
+    docType: "PAN",
+    customerRef: "",
+    busy: false,
+    sessionId: "",
+    status: "",
+    error: "",
+    lastResult: null,
+  });
 
   const categories = useMemo(() => {
     const values = new Set(["all"]);
@@ -186,6 +200,19 @@ const IntegrationsPage = () => {
       alive = false;
     };
   }, []);
+
+  // If callback redirects back to this page, capture sessionId/status from query string.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const sessionId = params.get("sessionId") || "";
+    const status = params.get("status") || "";
+    if (!sessionId) return;
+
+    setKycTest((prev) => ({ ...prev, sessionId, status, error: "" }));
+    getKycSession(sessionId)
+      .then((res) => setKycTest((prev) => ({ ...prev, lastResult: res || null })))
+      .catch(() => {});
+  }, [location.search]);
 
   const ensureRazorpayScript = async () => {
     if (window.Razorpay) return true;
@@ -256,6 +283,40 @@ const IntegrationsPage = () => {
       toast.error(error?.message || "Integration purchase failed");
     } finally {
       setCheckoutBusySlug("");
+    }
+  };
+
+  const startKycTest = async () => {
+    try {
+      setKycTest((prev) => ({ ...prev, busy: true, error: "" }));
+      const origin = window.location.origin;
+      const redirectBack = `${origin}/dashboard/integrations?kycReturn=1`;
+      const res = await createKycSession({
+        provider: "digilocker",
+        customerRef: String(kycTest.customerRef || "").trim(),
+        docTypes: [String(kycTest.docType || "PAN").trim()],
+        successRedirectUrl: redirectBack,
+        failureRedirectUrl: redirectBack,
+        webhookUrl: "", // use tenant default if set
+      });
+
+      setKycTest((prev) => ({
+        ...prev,
+        sessionId: res?.sessionId || "",
+        status: res?.status || "created",
+        lastResult: null,
+      }));
+
+      const redirectUrl = res?.redirectUrl || "";
+      if (!redirectUrl) throw new Error("Missing redirectUrl from server.");
+
+      // Continue the flow in the same window so DigiLocker returns back to our Integrations page.
+      window.location.assign(redirectUrl);
+    } catch (e) {
+      setKycTest((prev) => ({ ...prev, error: e?.message || "Failed to start KYC test" }));
+      toast.error(e?.message || "Failed to start KYC test");
+    } finally {
+      setKycTest((prev) => ({ ...prev, busy: false }));
     }
   };
 
@@ -722,6 +783,68 @@ const IntegrationsPage = () => {
                   </Button>
                 ) : null}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>Test DigiLocker KYC Flow</CardTitle>
+              <CardDescription>Create one KYC session (one docType) and continue to DigiLocker consent. You will return here with `sessionId` + `status` in the URL.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label>DocType</Label>
+                  <Select value={kycTest.docType} onValueChange={(v) => setKycTest((p) => ({ ...p, docType: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PAN">PAN</SelectItem>
+                      <SelectItem value="AADHAAR">AADHAAR</SelectItem>
+                      <SelectItem value="DL">DL</SelectItem>
+                      <SelectItem value="RC">RC</SelectItem>
+                      <SelectItem value="PASSPORT">PASSPORT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2 md:col-span-2">
+                  <Label>Customer Ref (optional)</Label>
+                  <Input value={kycTest.customerRef} onChange={(e) => setKycTest((p) => ({ ...p, customerRef: e.target.value }))} placeholder="user-123" />
+                </div>
+              </div>
+
+              {kycTest.sessionId ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  <div><span className="text-slate-500">Session:</span> <span className="font-medium">{kycTest.sessionId}</span></div>
+                  <div className="mt-1"><span className="text-slate-500">Status:</span> <span className="font-medium">{kycTest.status || "-"}</span></div>
+                </div>
+              ) : null}
+
+              {kycTest.error ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{kycTest.error}</div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
+                <Button className="bg-orange-500 hover:bg-orange-600" disabled={kycTest.busy} onClick={startKycTest}>
+                  {kycTest.busy ? "Starting..." : "Start DigiLocker Test"}
+                </Button>
+                {kycTest.sessionId ? (
+                  <Button variant="outline" onClick={async () => {
+                    try {
+                      const res = await getKycSession(kycTest.sessionId);
+                      setKycTest((p) => ({ ...p, lastResult: res || null }));
+                      toast.success("KYC session refreshed");
+                    } catch (e) {
+                      toast.error(e?.message || "Failed to refresh");
+                    }
+                  }}>Refresh Status</Button>
+                ) : null}
+              </div>
+
+              {kycTest.lastResult ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-700 whitespace-pre-wrap">
+                  {JSON.stringify(kycTest.lastResult, null, 2)}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>

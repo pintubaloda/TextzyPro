@@ -239,8 +239,10 @@ public class DigiLockerKycProvider(
         return (verifier, challenge);
     }
 
+    // Include session id in a parseable state so callbacks can locate the session even when redirect_uri can't carry a dynamic sessionId.
+    // Format: v1.<guidN>.<random>
     private static string CreateState(KycSession session)
-        => Base64Url(SHA256.HashData(Encoding.UTF8.GetBytes($"{session.Id}:{DateTime.UtcNow.Ticks}:{RandomNumberGenerator.GetInt32(int.MaxValue)}")));
+        => $"v1.{session.Id:N}.{Base64Url(RandomNumberGenerator.GetBytes(16))}";
 
     private static string Base64Url(byte[] input)
         => Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
