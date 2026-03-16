@@ -913,9 +913,10 @@ public class DigiLockerKycProvider(
         try
         {
             // Optional runtime dependency:
-            // If UglyToad.PdfPig.dll is deployed next to the app, use it for reliable PDF text extraction.
+            // If PdfPig.dll is deployed next to the app, use it for reliable PDF text extraction.
             // If not present, return empty and fallback to heuristic extraction.
-            var tDoc = Type.GetType("UglyToad.PdfPig.PdfDocument, UglyToad.PdfPig", throwOnError: false);
+            // NuGet package id: PdfPig. Assembly name: PdfPig. Namespace: UglyToad.PdfPig.
+            var tDoc = Type.GetType("UglyToad.PdfPig.PdfDocument, PdfPig", throwOnError: false);
             if (tDoc is null) return string.Empty;
 
             var miOpen = tDoc.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
