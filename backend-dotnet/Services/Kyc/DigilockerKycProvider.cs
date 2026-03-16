@@ -307,7 +307,7 @@ public class DigiLockerKycProvider(
             {
                 try
                 {
-                    var file = await DownloadFileAsync(
+                    var file = await DownloadFileWithFallbackAsync(
                         http,
                         apiBase,
                         settings.FileDownloadPathTemplate,
@@ -1284,7 +1284,7 @@ public class DigiLockerKycProvider(
         return sb.ToString();
     }
 
-    private static async Task<DownloadedFile> DownloadFileAsync(
+    private static async Task<DownloadedFile> DownloadFileWithFallbackAsync(
         HttpClient http,
         string apiBase,
         string fileDownloadPathTemplate,
@@ -1294,70 +1294,132 @@ public class DigiLockerKycProvider(
         int maxBytes,
         CancellationToken ct)
     {
-        var template = string.IsNullOrWhiteSpace(fileDownloadPathTemplate) ? "/file/{uri}" : fileDownloadPathTemplate.Trim();
-        if (!template.StartsWith("/")) template = "/" + template;
-        if (!template.Contains("{uri}", StringComparison.OrdinalIgnoreCase))
-            template = template.TrimEnd('/') + "/{uri}";
+        var candidates = BuildFileDownloadCandidates(apiBase, fileDownloadPathTemplate, uri);
 
-        var encodedUri = Uri.EscapeDataString(uri);
-        var path = template.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase);
-        var url = CombineApiUrl(apiBase, path);
-
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-
-        using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-        res.EnsureSuccessStatusCode();
-
-        var mime = res.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
-        var contentLen = res.Content.Headers.ContentLength;
-        if (contentLen.HasValue && contentLen.Value > maxBytes)
-            throw new InvalidOperationException($"File too large ({contentLen.Value} bytes). Max allowed is {maxBytes} bytes.");
-
-        await using var stream = await res.Content.ReadAsStreamAsync(ct);
-        using var ms = new MemoryStream();
-        var buffer = new byte[81920];
-        while (true)
+        Exception? lastEx = null;
+        foreach (var url in candidates)
         {
-            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
-            if (read <= 0) break;
-            if (ms.Length + read > maxBytes)
-                throw new InvalidOperationException($"File too large (streamed > {maxBytes} bytes).");
-            ms.Write(buffer, 0, read);
-        }
-
-        var bytes = ms.ToArray();
-        var sha256 = SHA256.HashData(bytes);
-        var sha256Hex = Convert.ToHexString(sha256).ToLowerInvariant();
-
-        string? hmacHeader = null;
-        bool? hmacValid = null;
-        if (res.Headers.TryGetValues("hmac", out var hv))
-        {
-            hmacHeader = hv.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(hmacHeader))
+            try
             {
-                try
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+                using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+                if (!res.IsSuccessStatusCode)
                 {
-                    using var h = new HMACSHA256(Encoding.UTF8.GetBytes(clientSecret ?? string.Empty));
-                    var computed = h.ComputeHash(bytes);
-                    var computedB64 = Convert.ToBase64String(computed);
-                    hmacValid = FixedTimeEquals(computedB64, hmacHeader.Trim());
+                    var body = string.Empty;
+                    try
+                    {
+                        body = await res.Content.ReadAsStringAsync(ct);
+                        if (body.Length > 2000) body = body[..2000];
+                    }
+                    catch { }
+
+                    lastEx = new InvalidOperationException($"File download failed. status={(int)res.StatusCode} url={url} body={body}");
+                    continue;
                 }
-                catch
+
+                var mime = res.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+                var contentLen = res.Content.Headers.ContentLength;
+                if (contentLen.HasValue && contentLen.Value > maxBytes)
+                    throw new InvalidOperationException($"File too large ({contentLen.Value} bytes). Max allowed is {maxBytes} bytes.");
+
+                await using var stream = await res.Content.ReadAsStreamAsync(ct);
+                using var ms = new MemoryStream();
+                var buffer = new byte[81920];
+                while (true)
                 {
-                    hmacValid = null;
+                    var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+                    if (read <= 0) break;
+                    if (ms.Length + read > maxBytes)
+                        throw new InvalidOperationException($"File too large (streamed > {maxBytes} bytes).");
+                    ms.Write(buffer, 0, read);
                 }
+
+                var bytes = ms.ToArray();
+                var sha256 = SHA256.HashData(bytes);
+                var sha256Hex = Convert.ToHexString(sha256).ToLowerInvariant();
+
+                string? hmacHeader = null;
+                bool? hmacValid = null;
+                if (res.Headers.TryGetValues("hmac", out var hv))
+                {
+                    hmacHeader = hv.FirstOrDefault();
+                    if (!string.IsNullOrWhiteSpace(hmacHeader))
+                    {
+                        try
+                        {
+                            using var h = new HMACSHA256(Encoding.UTF8.GetBytes(clientSecret ?? string.Empty));
+                            var computed = h.ComputeHash(bytes);
+                            var computedB64 = Convert.ToBase64String(computed);
+                            hmacValid = FixedTimeEquals(computedB64, hmacHeader.Trim());
+                        }
+                        catch
+                        {
+                            hmacValid = null;
+                        }
+                    }
+                }
+
+                return new DownloadedFile(
+                    Mime: mime,
+                    SizeBytes: bytes.Length,
+                    Sha256Hex: sha256Hex,
+                    HmacBase64: hmacHeader,
+                    HmacValid: hmacValid,
+                    Base64: Convert.ToBase64String(bytes),
+                    Bytes: bytes);
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
             }
         }
 
-        return new DownloadedFile(
-            Mime: mime,
-            SizeBytes: bytes.Length,
-            Sha256Hex: sha256Hex,
-            HmacBase64: hmacHeader,
-            HmacValid: hmacValid,
-            Base64: Convert.ToBase64String(bytes),
-            Bytes: bytes);
+        throw lastEx ?? new InvalidOperationException("File download failed.");
+    }
+
+    private static IReadOnlyList<string> BuildFileDownloadCandidates(string apiBase, string templateRaw, string uri)
+    {
+        var encodedUri = Uri.EscapeDataString(uri);
+        var list = new List<string>();
+        void Add(string? u)
+        {
+            var v = (u ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(v)) return;
+            if (!list.Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase)))
+                list.Add(v);
+        }
+
+        var tpl = string.IsNullOrWhiteSpace(templateRaw) ? "/oauth2/1/files/{uri}" : templateRaw.Trim();
+        if (!tpl.Contains("{uri}", StringComparison.OrdinalIgnoreCase))
+            tpl = tpl.TrimEnd('/') + "/{uri}";
+
+        if (tpl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || tpl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            Add(tpl.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            var path = tpl.StartsWith("/") ? tpl : "/" + tpl;
+            Add(CombineApiUrl(apiBase, path.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase)));
+
+            if (path.Contains("/files/", StringComparison.OrdinalIgnoreCase) && !path.Contains("/files/issued/", StringComparison.OrdinalIgnoreCase))
+            {
+                var issued = path.Replace("/files/", "/files/issued/", StringComparison.OrdinalIgnoreCase);
+                Add(CombineApiUrl(apiBase, issued.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase)));
+            }
+            if (path.Contains("/files/issued/", StringComparison.OrdinalIgnoreCase))
+            {
+                var nonIssued = path.Replace("/files/issued/", "/files/", StringComparison.OrdinalIgnoreCase);
+                Add(CombineApiUrl(apiBase, nonIssued.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase)));
+            }
+        }
+
+        Add(CombineApiUrl(apiBase, "/oauth2/1/files/" + encodedUri));
+        Add(CombineApiUrl(apiBase, "/oauth2/1/files/issued/" + encodedUri));
+        Add(CombineApiUrl(apiBase, "/oauth2/2/files/" + encodedUri));
+        Add(CombineApiUrl(apiBase, "/oauth2/2/files/issued/" + encodedUri));
+        return list;
     }
 }
