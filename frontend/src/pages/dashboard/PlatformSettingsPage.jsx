@@ -137,8 +137,17 @@ const PlatformSettingsPage = () => {
     scope: "files.issueddocs",
     docTypeParamName: "",
     issuedDocsPath: "",
+    userDetailsPath: "/oauth2/1/user",
+    fileDownloadPathTemplate: "/oauth2/1/files/{uri}",
+    maxFileBytes: "2097152",
+    maxFilesPerSession: "5",
+    includeFilesInResult: true,
+    includeUserDetailsInResult: true,
     creditsPerSuccess: "3",
   });
+  const [digilockerCatalogRows, setDigilockerCatalogRows] = useState([]);
+  const [digilockerCatalogCreditsPerSuccess, setDigilockerCatalogCreditsPerSuccess] = useState(3);
+  const [digilockerCatalogOpCreditsText, setDigilockerCatalogOpCreditsText] = useState("PAN=2\nAADHAAR=2\nDL=2");
   const [appConfig, setAppConfig] = useState({
     appName: "Textzy",
     baseDomain: "",
@@ -604,7 +613,10 @@ const PlatformSettingsPage = () => {
             if (!active) return;
             setIntegrationCatalog(rows || []);
           } else if (tab === "digilocker") {
-            const res = await getPlatformSettings("digilocker").catch(() => ({ values: {} }));
+            const [res, catalog] = await Promise.all([
+              getPlatformSettings("digilocker").catch(() => ({ values: {} })),
+              getPlatformIntegrationCatalog().catch(() => []),
+            ]);
             const values = res?.values || {};
             if (!active) return;
             setDigilocker((prev) => ({
@@ -619,8 +631,23 @@ const PlatformSettingsPage = () => {
               scope: values.scope || prev.scope,
               docTypeParamName: values.docTypeParamName || prev.docTypeParamName,
               issuedDocsPath: values.issuedDocsPath || prev.issuedDocsPath,
+              userDetailsPath: values.userDetailsPath || prev.userDetailsPath,
+              fileDownloadPathTemplate: values.fileDownloadPathTemplate || prev.fileDownloadPathTemplate,
+              maxFileBytes: values.maxFileBytes || prev.maxFileBytes,
+              maxFilesPerSession: values.maxFilesPerSession || prev.maxFilesPerSession,
+              includeFilesInResult: String(values.includeFilesInResult || "") === "" ? prev.includeFilesInResult : String(values.includeFilesInResult).toLowerCase() === "true",
+              includeUserDetailsInResult: String(values.includeUserDetailsInResult || "") === "" ? prev.includeUserDetailsInResult : String(values.includeUserDetailsInResult).toLowerCase() === "true",
               creditsPerSuccess: values.creditsPerSuccess || prev.creditsPerSuccess,
             }));
+
+            const rows = Array.isArray(catalog) ? catalog : [];
+            setDigilockerCatalogRows(rows);
+            const dl = rows.find((x) => String(x?.slug || "").toLowerCase() === "digilocker-kyc") || null;
+            if (dl) {
+              const cps = Number(dl.creditsPerSuccess ?? 0) || 0;
+              setDigilockerCatalogCreditsPerSuccess(cps > 0 ? cps : 3);
+              setDigilockerCatalogOpCreditsText(formatOperationCreditsMap(dl.operationCredits || {}));
+            }
           } else if (tab === "request-logs") {
             const [customers, rows] = await Promise.all([
               getPlatformCustomers("").catch(() => []),
@@ -3548,6 +3575,50 @@ const PlatformSettingsPage = () => {
                 <Input value={digilocker.issuedDocsPath} onChange={(e) => setDigilocker((p) => ({ ...p, issuedDocsPath: e.target.value }))} placeholder="/files/issued" />
               </div>
               <div className="space-y-2">
+                <Label>User Details Path</Label>
+                <Input value={digilocker.userDetailsPath} onChange={(e) => setDigilocker((p) => ({ ...p, userDetailsPath: e.target.value }))} placeholder="/oauth2/1/user" />
+                <p className="text-xs text-slate-500">Optional. Used to fetch profile/email/address/picture data (if scopes allow).</p>
+              </div>
+              <div className="space-y-2">
+                <Label>File Download Path Template</Label>
+                <Input
+                  value={digilocker.fileDownloadPathTemplate}
+                  onChange={(e) => setDigilocker((p) => ({ ...p, fileDownloadPathTemplate: e.target.value }))}
+                  placeholder="/oauth2/1/files/{uri}"
+                />
+                <p className="text-xs text-slate-500">Template for downloading a file by URI. Use <span className="font-mono">{"{uri}"}</span>.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Max File Bytes</Label>
+                <Input type="number" min="0" step="1" value={digilocker.maxFileBytes} onChange={(e) => setDigilocker((p) => ({ ...p, maxFileBytes: e.target.value }))} />
+                <p className="text-xs text-slate-500">Safety limit for storing downloaded document bytes in KYC result.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Max Files Per Session</Label>
+                <Input type="number" min="0" step="1" value={digilocker.maxFilesPerSession} onChange={(e) => setDigilocker((p) => ({ ...p, maxFilesPerSession: e.target.value }))} />
+                <p className="text-xs text-slate-500">Safety limit for how many documents we download and attach per session.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Include Files In Result</Label>
+                <Select value={digilocker.includeFilesInResult ? "true" : "false"} onValueChange={(v) => setDigilocker((p) => ({ ...p, includeFilesInResult: v === "true" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">true</SelectItem>
+                    <SelectItem value="false">false</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Include User Details In Result</Label>
+                <Select value={digilocker.includeUserDetailsInResult ? "true" : "false"} onValueChange={(v) => setDigilocker((p) => ({ ...p, includeUserDetailsInResult: v === "true" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">true</SelectItem>
+                    <SelectItem value="false">false</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label>DocType Param Name (optional)</Label>
                 <Input value={digilocker.docTypeParamName} onChange={(e) => setDigilocker((p) => ({ ...p, docTypeParamName: e.target.value }))} placeholder="req_doctype" />
               </div>
@@ -3555,6 +3626,43 @@ const PlatformSettingsPage = () => {
                 <Label>Legacy Credits Per Success (fallback)</Label>
                 <Input type="number" min="0" max="50" step="1" value={digilocker.creditsPerSuccess} onChange={(e) => setDigilocker((p) => ({ ...p, creditsPerSuccess: e.target.value }))} />
                 <p className="text-xs text-slate-500">Prefer per-plugin credits in Integration Catalog; this is fallback only.</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-900">DigiLocker KYC Credits (per docType)</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    These are saved to the Integration Catalog item <span className="font-mono">digilocker-kyc</span>. One KYC session = one docType.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Credits / success (catalog)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="50"
+                    step="1"
+                    value={String(digilockerCatalogCreditsPerSuccess)}
+                    onChange={(e) => setDigilockerCatalogCreditsPerSuccess(Number(e.target.value || 0))}
+                  />
+                  <p className="text-xs text-slate-500">Used when per-docType credits are not set.</p>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Per docType credits (PAN/AADHAAR/DL)</Label>
+                  <textarea
+                    className="min-h-[110px] w-full rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-900 outline-none focus:border-orange-400"
+                    value={digilockerCatalogOpCreditsText}
+                    onChange={(e) => setDigilockerCatalogOpCreditsText(e.target.value)}
+                    placeholder={"PAN=2\nAADHAAR=2\nDL=2"}
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    Format: one per line. Example: <span className="font-mono">PAN=2</span>. If set, it overrides credits/success for that docType.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -3573,8 +3681,29 @@ const PlatformSettingsPage = () => {
                     scope: digilocker.scope || "",
                     docTypeParamName: digilocker.docTypeParamName || "",
                     issuedDocsPath: digilocker.issuedDocsPath || "",
+                    userDetailsPath: digilocker.userDetailsPath || "",
+                    fileDownloadPathTemplate: digilocker.fileDownloadPathTemplate || "",
+                    maxFileBytes: String(digilocker.maxFileBytes || ""),
+                    maxFilesPerSession: String(digilocker.maxFilesPerSession || ""),
+                    includeFilesInResult: String(!!digilocker.includeFilesInResult),
+                    includeUserDetailsInResult: String(!!digilocker.includeUserDetailsInResult),
                     creditsPerSuccess: String(digilocker.creditsPerSuccess || "3"),
                   });
+
+                  // Save per-docType credit settings into Integration Catalog (digilocker-kyc).
+                  const nextRows = Array.isArray(digilockerCatalogRows) ? [...digilockerCatalogRows] : [];
+                  const idx = nextRows.findIndex((x) => String(x?.slug || "").toLowerCase() === "digilocker-kyc");
+                  if (idx >= 0) {
+                    nextRows[idx] = {
+                      ...nextRows[idx],
+                      billingMetric: nextRows[idx]?.billingMetric || "digilockerKyc",
+                      creditsPerSuccess: Number(digilockerCatalogCreditsPerSuccess || 0),
+                      operationCredits: parseOperationCreditsText(digilockerCatalogOpCreditsText || ""),
+                    };
+                    await savePlatformIntegrationCatalog(nextRows);
+                    setDigilockerCatalogRows(nextRows);
+                  }
+
                   toast.success("DigiLocker config saved");
                 } catch (e) {
                   toast.error(e?.message || "Failed to save DigiLocker config");
