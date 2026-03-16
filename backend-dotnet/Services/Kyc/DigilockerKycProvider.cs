@@ -328,6 +328,26 @@ public class DigiLockerKycProvider(
                 .Take(maxFiles)
                 .ToList();
 
+            // If user requested a single docType, prefer downloading only matching issuer doctype.
+            // Prevents showing DL/PAN when tenant asked for Aadhaar, and keeps payload small.
+            if (requestedDocTypes.Count == 1)
+            {
+                var req = (requestedDocTypes[0] ?? string.Empty).Trim().ToUpperInvariant();
+                var want = req switch
+                {
+                    "PAN" => "PANCR",
+                    "DL" or "DRIVING_LICENCE" or "DRIVINGLICENSE" or "DRIVING-LICENCE" => "DRVLC",
+                    "AADHAAR" or "AADHAR" => "ADHAR",
+                    _ => string.Empty
+                };
+
+                if (!string.IsNullOrWhiteSpace(want))
+                {
+                    var filtered = unique.Where(x => string.Equals((x.DocType ?? string.Empty).Trim(), want, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (filtered.Count > 0) unique = filtered;
+                }
+            }
+
             foreach (var it in unique)
             {
                 try

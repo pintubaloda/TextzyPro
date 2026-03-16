@@ -143,6 +143,27 @@ export default function KycReportsPage() {
   const [active, setActive] = useState(null);
   const [activeDetail, setActiveDetail] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [activeFileIndex, setActiveFileIndex] = useState(0);
+
+  function mapRequestedToDoctype(req) {
+    const r = String(req || "").trim().toUpperCase();
+    if (!r) return "";
+    if (r === "PAN") return "PANCR";
+    if (r === "DL" || r === "DRIVING_LICENCE" || r === "DRIVINGLICENSE" || r === "DRIVING-LICENCE") return "DRVLC";
+    if (r === "AADHAAR" || r === "AADHAR") return "ADHAR";
+    return r;
+  }
+
+  function pickBestFileIndex(files, record) {
+    if (!Array.isArray(files) || files.length === 0) return 0;
+    const requested = (Array.isArray(record?.docTypes) && record.docTypes[0]) ? String(record.docTypes[0]) : "";
+    const want = mapRequestedToDoctype(requested);
+    if (want) {
+      const idx = files.findIndex((f) => String(f?.doctype || "").toUpperCase() === want);
+      if (idx >= 0) return idx;
+    }
+    return 0;
+  }
 
   async function refresh() {
     setBusy(true);
@@ -176,12 +197,15 @@ export default function KycReportsPage() {
     setActiveDetail(null);
     setOpen(true);
     setPreviewUrl("");
+    setActiveFileIndex(0);
     try {
       const detail = await getKycSession(r.sessionId);
       setActiveDetail(detail);
       const files = safeGet(detail?.result, "files", []);
       if (Array.isArray(files) && files.length > 0) {
-        const f = files[0];
+        const idx = pickBestFileIndex(files, detail || r);
+        setActiveFileIndex(idx);
+        const f = files[idx];
         const url = decodeBase64ToBlobUrl(f?.fileBase64, f?.mime || "application/pdf");
         setPreviewUrl(url);
       }
@@ -189,6 +213,24 @@ export default function KycReportsPage() {
       toast.error(e?.message || "Failed to load KYC record");
     }
   }
+
+  useEffect(() => {
+    if (!open) return;
+    const files = safeGet(activeDetail?.result, "files", []);
+    if (!Array.isArray(files) || files.length === 0) return;
+    if (activeFileIndex < 0 || activeFileIndex >= files.length) return;
+    try {
+      const f = files[activeFileIndex];
+      const url = decodeBase64ToBlobUrl(f?.fileBase64, f?.mime || "application/pdf");
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFileIndex, open]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -272,6 +314,27 @@ export default function KycReportsPage() {
                       <div className="text-6xl font-black tracking-tight text-slate-900">{brand?.name || "Textzy"}</div>
                     )}
                   </div>
+                  {(() => {
+                    const files = safeGet(activeDetail?.result, "files", []);
+                    if (!Array.isArray(files) || files.length <= 1) return null;
+                    const canPrev = activeFileIndex > 0;
+                    const canNext = activeFileIndex < files.length - 1;
+                    const f = files[activeFileIndex] || {};
+                    const label = `${String(f?.doctype || "").toUpperCase() || "FILE"} (${activeFileIndex + 1}/${files.length})`;
+                    return (
+                      <div className="absolute left-3 right-3 top-3 flex items-center justify-between rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-700 backdrop-blur">
+                        <div className="font-medium">{label}</div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" className="h-7 rounded-lg px-2" disabled={!canPrev} onClick={() => setActiveFileIndex((i) => Math.max(0, i - 1))}>
+                            Prev
+                          </Button>
+                          <Button variant="outline" className="h-7 rounded-lg px-2" disabled={!canNext} onClick={() => setActiveFileIndex((i) => Math.min(files.length - 1, i + 1))}>
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 <KycPreviewCard brand={brand} collected={activeDetail?.result?.collected || active?.collected || {}} active={activeDetail || active} />
