@@ -59,7 +59,17 @@ public class DigiLockerKycProvider(
         var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (requestedDocTypes.Count > 0 && !string.IsNullOrWhiteSpace(settings.DocTypeParamName))
         {
-            extra[settings.DocTypeParamName.Trim()] = string.Join(",", requestedDocTypes);
+            var param = settings.DocTypeParamName.Trim();
+            var values = requestedDocTypes;
+
+            // DigiLocker commonly expects issuer doctype codes in req_doctype, not user-friendly names.
+            // Example: PAN -> PANCR, Aadhaar -> ADHAR, Driving License -> DRVLC.
+            if (param.Equals("req_doctype", StringComparison.OrdinalIgnoreCase))
+            {
+                values = requestedDocTypes.Select(MapReqDoctype).ToList();
+            }
+
+            extra[param] = string.Join(",", values);
         }
 
         // Build OAuth2 authorization URL (PKCE).
@@ -139,6 +149,27 @@ public class DigiLockerKycProvider(
         var redactedToken = RedactTokenPayload(tokenJson.RootElement);
 
         var apiBase = Require(settings.ApiBaseUrl, "apiBaseUrl").TrimEnd('/');
+        var userDetailsStatus = 0;
+        var userDetailsBody = string.Empty;
+        if (settings.IncludeUserDetailsInResult)
+        {
+            try
+            {
+                var userPath = string.IsNullOrWhiteSpace(settings.UserDetailsPath) ? "/oauth2/1/user" : settings.UserDetailsPath.Trim();
+                var userUrl = apiBase + (userPath.StartsWith("/") ? userPath : "/" + userPath);
+                using var userReq = new HttpRequestMessage(HttpMethod.Get, userUrl);
+                userReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                using var userRes = await http.SendAsync(userReq, HttpCompletionOption.ResponseContentRead, ct);
+                userDetailsStatus = (int)userRes.StatusCode;
+                userDetailsBody = await userRes.Content.ReadAsStringAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                userDetailsStatus = 0;
+                userDetailsBody = JsonSerializer.Serialize(new { error = ex.Message });
+            }
+        }
+
         var issuedPath = string.IsNullOrWhiteSpace(settings.IssuedDocsPath) ? "/files/issued" : settings.IssuedDocsPath.Trim();
         var issuedUrl = apiBase + (issuedPath.StartsWith("/") ? issuedPath : "/" + issuedPath);
 
@@ -250,6 +281,8 @@ public class DigiLockerKycProvider(
                 tokenExchangeStatus = (int)tokenRes.StatusCode,
                 token = redactedToken
             },
+            userDetailsStatus,
+            userDetails = string.IsNullOrWhiteSpace(userDetailsBody) ? null : TryParseJson(userDetailsBody),
             issuedDocsStatus = (int)issuedRes.StatusCode,
             issuedDocs = TryParseJson(issuedBody),
             files = downloaded,
@@ -277,9 +310,11 @@ public class DigiLockerKycProvider(
         string Scope,
         string DocTypeParamName,
         string IssuedDocsPath,
+        string UserDetailsPath,
         string FileDownloadPathTemplate,
         int MaxFileBytes,
         int MaxFilesPerSession,
+        bool IncludeUserDetailsInResult,
         bool IncludeFilesInResult);
 
     private async Task<DigilockerSettings> LoadSettingsAsync(CancellationToken ct)
@@ -305,9 +340,11 @@ public class DigiLockerKycProvider(
             Scope: Pick("scope", config["Digilocker:Scope"] ?? config["DIGILOCKER_SCOPE"] ?? "files.issueddocs"),
             DocTypeParamName: Pick("docTypeParamName", "req_doctype"),
             IssuedDocsPath: Pick("issuedDocsPath", "/files/issued"),
+            UserDetailsPath: Pick("userDetailsPath", "/oauth2/1/user"),
             FileDownloadPathTemplate: Pick("fileDownloadPathTemplate", config["Digilocker:FileDownloadPathTemplate"] ?? "/file/{uri}"),
             MaxFileBytes: ParseInt(Pick("maxFileBytes", config["Digilocker:MaxFileBytes"] ?? DefaultMaxFileBytes.ToString()), DefaultMaxFileBytes),
             MaxFilesPerSession: ParseInt(Pick("maxFilesPerSession", config["Digilocker:MaxFilesPerSession"] ?? DefaultMaxFilesPerSession.ToString()), DefaultMaxFilesPerSession),
+            IncludeUserDetailsInResult: ParseBool(Pick("includeUserDetailsInResult", config["Digilocker:IncludeUserDetailsInResult"] ?? "true"), true),
             IncludeFilesInResult: ParseBool(Pick("includeFilesInResult", config["Digilocker:IncludeFilesInResult"] ?? "true"), true)
         );
     }
@@ -426,6 +463,23 @@ public class DigiLockerKycProvider(
             return "driving_licence";
 
         return string.Empty;
+    }
+
+    private static string MapReqDoctype(string raw)
+    {
+        var dt = (raw ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(dt)) return dt;
+        dt = dt.Replace("-", "_", StringComparison.OrdinalIgnoreCase).Replace(" ", "_", StringComparison.OrdinalIgnoreCase);
+
+        // Common DigiLocker issued doctype codes.
+        if (dt.Equals("PAN", StringComparison.OrdinalIgnoreCase)) return "PANCR";
+        if (dt.Equals("AADHAAR", StringComparison.OrdinalIgnoreCase) || dt.Equals("AADHAR", StringComparison.OrdinalIgnoreCase)) return "ADHAR";
+        if (dt.Equals("DL", StringComparison.OrdinalIgnoreCase)
+            || dt.Equals("DRIVING_LICENCE", StringComparison.OrdinalIgnoreCase)
+            || dt.Equals("DRIVING_LICENSE", StringComparison.OrdinalIgnoreCase))
+            return "DRVLC";
+
+        return dt;
     }
 
     private static List<string> ParseStringList(string json)
