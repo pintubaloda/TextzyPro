@@ -94,14 +94,17 @@ public class KycController(
         var (redirectUrl, state) = await providerImpl.BuildRedirectAsync(row, ct);
         await audit.WriteAsync("kyc.session.create", $"provider={provider}; tenant={tenancy.TenantSlug}; session={row.Id}", ct);
 
-        return Ok(new
+        var payload = new
         {
             sessionId = row.Id,
             provider = row.ProviderCode,
             status = row.Status,
             redirectUrl,
             state
-        });
+        };
+
+        // Defensive: avoid rare formatter/proxy issues where a 200 response body is dropped.
+        return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
     }
 
     [HttpGet("sessions/{id:guid}")]

@@ -163,7 +163,7 @@ public class PublicKycSessionsController(
 
         var providerImpl = router.Resolve(provider);
         var (redirectUrl, state) = await providerImpl.BuildRedirectAsync(row, ct);
-        return Ok(new
+        var payload = new
         {
             sessionId = row.Id,
             provider = row.ProviderCode,
@@ -171,7 +171,11 @@ public class PublicKycSessionsController(
             docType,
             redirectUrl,
             state
-        });
+        };
+
+        // Some IIS/proxy setups have been observed returning 200 with an empty body when using ObjectResult/formatters.
+        // Write JSON explicitly to ensure non-empty body + stable content-type.
+        return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
     }
 
     private async Task<(Guid TenantId, TenantCompanyProfile? Profile, IActionResult? Error)> ValidatePublicAuthAsync(PublicKycAuthRequest request, CancellationToken ct)
