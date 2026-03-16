@@ -96,6 +96,30 @@ function formatUsageUnitName(unit) {
   return USAGE_UNIT_LABELS[key] || key;
 }
 
+function formatOperationCreditsMap(map) {
+  const entries = Object.entries(map || {})
+    .map(([k, v]) => [String(k || "").trim().toUpperCase(), Number(v)])
+    .filter(([k, v]) => k && Number.isFinite(v) && v > 0)
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  return entries.map(([k, v]) => `${k}=${v}`).join("\n");
+}
+
+function parseOperationCreditsText(text) {
+  const map = {};
+  const raw = String(text || "");
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.includes("=") ? trimmed.split("=") : trimmed.split(":");
+    if (parts.length < 2) continue;
+    const key = String(parts[0] || "").trim().toUpperCase();
+    const value = Number(String(parts.slice(1).join("=").trim()));
+    if (!key || !Number.isFinite(value) || value <= 0) continue;
+    map[key] = Math.min(50, Math.max(0, Math.round(value)));
+  }
+  return map;
+}
+
 const PlatformSettingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") || "waba-master";
@@ -3376,6 +3400,23 @@ const PlatformSettingsPage = () => {
                             onChange={(e) => setIntegrationCatalog((prev) => prev.map((row, i) => i === index ? { ...row, creditsPerSuccess: Number(e.target.value || 0) } : row))}
                             placeholder="Credits / success"
                           />
+                          {String(item.category || "").toLowerCase() === "kyc" && item.billingMetric ? (
+                            <div className="grid gap-2">
+                              <Label className="text-xs text-slate-600">Per docType credits (optional)</Label>
+                              <textarea
+                                className="min-h-[86px] w-full rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-900 outline-none focus:border-orange-400"
+                                value={formatOperationCreditsMap(item.operationCredits || {})}
+                                onChange={(e) => {
+                                  const nextMap = parseOperationCreditsText(e.target.value);
+                                  setIntegrationCatalog((prev) => prev.map((row, i) => i === index ? { ...row, operationCredits: nextMap } : row));
+                                }}
+                                placeholder={"PAN=2\nAADHAAR=2\nDL=2"}
+                              />
+                              <p className="text-[11px] text-slate-500">
+                                If set, Textzy charges credits based on the requested docType (one session = one docType). Otherwise it uses Credits / success.
+                              </p>
+                            </div>
+                          ) : null}
                           <p className="text-[11px] text-slate-500">
                             When set, successful plugin operations consume this many credits from the selected wallet.
                           </p>

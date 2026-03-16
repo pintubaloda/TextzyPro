@@ -173,10 +173,26 @@ public class IntegrationCatalogController(
         TaxMode = string.Equals(item.TaxMode, "inclusive", StringComparison.OrdinalIgnoreCase) ? "inclusive" : "exclusive",
         BillingMetric = (item.BillingMetric ?? string.Empty).Trim(),
         CreditsPerSuccess = Math.Clamp(item.CreditsPerSuccess, 0, 50),
+        OperationCredits = NormalizeOperationCredits(item.OperationCredits),
         IsActive = item.IsActive,
         IsVisible = item.IsVisible,
         SortOrder = item.SortOrder > 0 ? item.SortOrder : sortOrder
     };
+
+    private static Dictionary<string, int> NormalizeOperationCredits(Dictionary<string, int>? input)
+    {
+        if (input is null || input.Count == 0) return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (keyRaw, valueRaw) in input)
+        {
+            var key = (keyRaw ?? string.Empty).Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            if (key.Length > 64) continue;
+            var value = Math.Clamp(valueRaw, 0, 50);
+            map[key] = value;
+        }
+        return map;
+    }
 
     private static string NormalizePricingType(string? value)
     {
@@ -329,6 +345,9 @@ public class IntegrationCatalogController(
         public string TaxMode { get; set; } = "exclusive";
         public string BillingMetric { get; set; } = string.Empty;
         public int CreditsPerSuccess { get; set; } = 0;
+        // Optional per-operation (per docType/scope) credits; used mainly for KYC plugins.
+        // Example: { "PAN": 2, "AADHAAR": 3 }
+        public Dictionary<string, int> OperationCredits { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public bool IsActive { get; set; } = true;
         public bool IsVisible { get; set; } = true;
         public int SortOrder { get; set; } = 1;

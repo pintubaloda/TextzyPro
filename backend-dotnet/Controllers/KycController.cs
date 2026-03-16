@@ -34,12 +34,16 @@ public class KycController(
         var provider = string.IsNullOrWhiteSpace(request.Provider) ? "digilocker" : request.Provider.Trim().ToLowerInvariant();
         if (provider.Length > 40) return BadRequest("provider is too long.");
         if (request.DocTypes.Count > 25) return BadRequest("Too many docTypes.");
+        // Billing is per docType/scope; keep sessions predictable.
+        if (request.DocTypes.Count > 1) return BadRequest("Only one docType is supported per KYC session.");
 
         // Pre-check credits/limits (non-destructive). Actual consumption happens only on verified callback.
         var pluginSlug = $"{provider}-kyc";
         var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
         var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
-        var creditsNeeded = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
+        var baseCredits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
+        var operationCode = request.DocTypes.Count == 1 ? (request.DocTypes[0] ?? string.Empty).Trim().ToUpperInvariant() : string.Empty;
+        var creditsNeeded = billingCfg.ResolveCredits(operationCode, baseCredits);
 
         var current = await billingGuard.GetCurrentUsageAsync(tenancy.TenantId, metricKey, ct);
         var check = await billingGuard.CheckLimitAsync(tenancy.TenantId, metricKey, current + creditsNeeded, ct);

@@ -35,6 +35,7 @@ Examples (common values you can use):
 Notes:
 - DigiLocker availability depends on what the end-user has in DigiLocker and what your requester is allowed to access.
 - `scope` is different: it is the OAuth scope (typically `files.issueddocs`) configured at platform level, not per request.
+- **One session = one docType (recommended):** Textzy supports charging different credits per docType. To keep billing predictable, create one KYC session per docType.
 
 ## Create KYC Session
 

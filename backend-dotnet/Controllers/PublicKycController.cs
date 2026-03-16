@@ -71,7 +71,15 @@ public class PublicKycController(
                 var pluginSlug = $"{provider}-kyc";
                 var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
                 var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
-                var credits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
+                var baseCredits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
+                var operationCode = string.Empty;
+                try
+                {
+                    var list = JsonSerializer.Deserialize<List<string>>(row.RequestedDocTypesJson) ?? [];
+                    if (list.Count > 0) operationCode = (list[0] ?? string.Empty).Trim().ToUpperInvariant();
+                }
+                catch { }
+                var credits = billingCfg.ResolveCredits(operationCode, baseCredits);
                 await billingGuard.TryConsumeAsync(row.TenantId, metricKey, credits, ct);
             }
             catch (Exception ex)
