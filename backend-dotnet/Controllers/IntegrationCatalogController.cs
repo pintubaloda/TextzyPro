@@ -135,7 +135,24 @@ public class IntegrationCatalogController(
         {
             var json = crypto.Decrypt(row.ValueEncrypted);
             var items = JsonSerializer.Deserialize<List<IntegrationCatalogItem>>(json) ?? [];
-            return items.Select((x, index) => Normalize(x, index + 1)).ToList();
+
+            // Merge with defaults so newly introduced first-party integrations (example: digilocker-kyc)
+            // show up even if the platform saved an older catalog previously.
+            var merged = DefaultCatalog()
+                .Select((x, index) => Normalize(x, index + 1))
+                .ToDictionary(x => x.Slug, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (item, index) in items.Select((x, i) => (x, i)))
+            {
+                var normalized = Normalize(item, index + 1);
+                if (string.IsNullOrWhiteSpace(normalized.Slug)) continue;
+                merged[normalized.Slug] = normalized;
+            }
+
+            return merged.Values
+                .OrderBy(x => x.SortOrder)
+                .ThenBy(x => x.Name)
+                .ToList();
         }
         catch
         {

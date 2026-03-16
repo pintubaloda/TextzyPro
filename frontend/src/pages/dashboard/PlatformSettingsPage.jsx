@@ -102,6 +102,18 @@ const PlatformSettingsPage = () => {
   const isAppSettingsTab = tab === "app-settings" || tab === "app-settings-all" || tab.startsWith("app-settings-");
   const [gateway, setGateway] = useState("razorpay");
   const [waba, setWaba] = useState({ appId: "", appSecret: "", embeddedConfigId: "", verifyToken: "", webhookUrl: "", systemUserAccessToken: "" });
+  const [digilocker, setDigilocker] = useState({
+    clientId: "",
+    clientSecret: "",
+    redirectUri: "",
+    authorizeUrl: "",
+    tokenUrl: "",
+    apiBaseUrl: "",
+    scope: "files.issueddocs",
+    docTypeParamName: "",
+    issuedDocsPath: "",
+    creditsPerSuccess: "3",
+  });
   const [appConfig, setAppConfig] = useState({
     appName: "Textzy",
     baseDomain: "",
@@ -296,6 +308,8 @@ const PlatformSettingsPage = () => {
         ? "Billing Plans"
         : tab === "integration-catalog"
         ? "Integration Catalog"
+        : tab === "digilocker"
+        ? "DigiLocker Master Config"
         : tab === "smtp-settings"
         ? "SMTP Settings"
         : tab === "sms-gateway"
@@ -564,6 +578,23 @@ const PlatformSettingsPage = () => {
             const rows = await getPlatformIntegrationCatalog().catch(() => []);
             if (!active) return;
             setIntegrationCatalog(rows || []);
+          } else if (tab === "digilocker") {
+            const res = await getPlatformSettings("digilocker").catch(() => ({ values: {} }));
+            const values = res?.values || {};
+            if (!active) return;
+            setDigilocker((prev) => ({
+              ...prev,
+              clientId: values.clientId || prev.clientId,
+              clientSecret: values.clientSecret || prev.clientSecret,
+              redirectUri: values.redirectUri || prev.redirectUri,
+              authorizeUrl: values.authorizeUrl || prev.authorizeUrl,
+              tokenUrl: values.tokenUrl || prev.tokenUrl,
+              apiBaseUrl: values.apiBaseUrl || prev.apiBaseUrl,
+              scope: values.scope || prev.scope,
+              docTypeParamName: values.docTypeParamName || prev.docTypeParamName,
+              issuedDocsPath: values.issuedDocsPath || prev.issuedDocsPath,
+              creditsPerSuccess: values.creditsPerSuccess || prev.creditsPerSuccess,
+            }));
           } else if (tab === "request-logs") {
             const [customers, rows] = await Promise.all([
               getPlatformCustomers("").catch(() => []),
@@ -3385,6 +3416,98 @@ const PlatformSettingsPage = () => {
                 }
               }}>
                 Save Integration Catalog
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {tab === "digilocker" && (
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle>DigiLocker Master Config</CardTitle>
+            <CardDescription>
+              Platform DigiLocker requester credentials and endpoints. Tenants call Textzy KYC APIs; Textzy calls DigiLocker using these platform settings.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-4 text-sm text-slate-800">
+              <p className="font-semibold text-slate-900">Important</p>
+              <p className="mt-1">
+                Tenant users never enter DigiLocker credentials. They only use Textzy API headers (`X-Tenant-Slug`, `X-API-Key`, `X-API-Secret`).
+                Textzy uses this master config to call DigiLocker on their behalf.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Client ID</Label>
+                <Input value={digilocker.clientId} onChange={(e) => setDigilocker((p) => ({ ...p, clientId: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Client Secret</Label>
+                <Input type="password" value={digilocker.clientSecret} onChange={(e) => setDigilocker((p) => ({ ...p, clientSecret: e.target.value }))} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Redirect URI</Label>
+                <Input value={digilocker.redirectUri} onChange={(e) => setDigilocker((p) => ({ ...p, redirectUri: e.target.value }))} placeholder="https://api.textzy.in/api/public/kyc/digilocker/callback" />
+                <p className="text-xs text-slate-500">Must match DigiLocker app config.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Authorize URL</Label>
+                <Input value={digilocker.authorizeUrl} onChange={(e) => setDigilocker((p) => ({ ...p, authorizeUrl: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Token URL</Label>
+                <Input value={digilocker.tokenUrl} onChange={(e) => setDigilocker((p) => ({ ...p, tokenUrl: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>API Base URL</Label>
+                <Input value={digilocker.apiBaseUrl} onChange={(e) => setDigilocker((p) => ({ ...p, apiBaseUrl: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Scope</Label>
+                <Input value={digilocker.scope} onChange={(e) => setDigilocker((p) => ({ ...p, scope: e.target.value }))} placeholder="files.issueddocs" />
+              </div>
+              <div className="space-y-2">
+                <Label>Issued Docs Path</Label>
+                <Input value={digilocker.issuedDocsPath} onChange={(e) => setDigilocker((p) => ({ ...p, issuedDocsPath: e.target.value }))} placeholder="/issuedDocs" />
+              </div>
+              <div className="space-y-2">
+                <Label>DocType Param Name (optional)</Label>
+                <Input value={digilocker.docTypeParamName} onChange={(e) => setDigilocker((p) => ({ ...p, docTypeParamName: e.target.value }))} placeholder="doctype" />
+              </div>
+              <div className="space-y-2">
+                <Label>Legacy Credits Per Success (fallback)</Label>
+                <Input type="number" min="0" max="50" step="1" value={digilocker.creditsPerSuccess} onChange={(e) => setDigilocker((p) => ({ ...p, creditsPerSuccess: e.target.value }))} />
+                <p className="text-xs text-slate-500">Prefer per-plugin credits in Integration Catalog; this is fallback only.</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button className="bg-orange-500 hover:bg-orange-600" disabled={loading} onClick={async () => {
+                try {
+                  setLoading(true);
+                  await savePlatformSettings("digilocker", {
+                    clientId: digilocker.clientId || "",
+                    clientSecret: digilocker.clientSecret || "",
+                    redirectUri: digilocker.redirectUri || "",
+                    authorizeUrl: digilocker.authorizeUrl || "",
+                    tokenUrl: digilocker.tokenUrl || "",
+                    apiBaseUrl: digilocker.apiBaseUrl || "",
+                    scope: digilocker.scope || "",
+                    docTypeParamName: digilocker.docTypeParamName || "",
+                    issuedDocsPath: digilocker.issuedDocsPath || "",
+                    creditsPerSuccess: String(digilocker.creditsPerSuccess || "3"),
+                  });
+                  toast.success("DigiLocker config saved");
+                } catch (e) {
+                  toast.error(e?.message || "Failed to save DigiLocker config");
+                } finally {
+                  setLoading(false);
+                }
+              }}>
+                Save DigiLocker Config
               </Button>
             </div>
           </CardContent>
