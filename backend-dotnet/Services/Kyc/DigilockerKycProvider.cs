@@ -303,6 +303,18 @@ public class DigiLockerKycProvider(
                 // ignore best-effort extraction errors
             }
         }
+
+        // Collect what we can from issued-doc metadata even if file download is blocked.
+        // Many DigiLocker environments return PAN/DL identifiers inside the URI itself.
+        try
+        {
+            var meta = TryCollectFromIssuedItems(collected, issuedItems);
+            if (meta is not null) parsedDocs.Add(new { source = "issuedDocsMeta", parsed = meta });
+        }
+        catch
+        {
+            // ignore best-effort extraction errors
+        }
         if (issuedOk && settings.IncludeFilesInResult && issuedItems.Count > 0)
         {
             var maxFiles = settings.MaxFilesPerSession > 0 ? settings.MaxFilesPerSession : DefaultMaxFilesPerSession;
@@ -517,6 +529,8 @@ public class DigiLockerKycProvider(
         var email = (GetStr("email") ?? string.Empty).Trim();
         var mobile = (GetStr("mobile") ?? string.Empty).Trim();
         var picture = (GetStr("picture") ?? string.Empty).Trim();
+        var eaadhaar = (GetStr("eaadhaar") ?? string.Empty).Trim();
+        var referenceKey = (GetStr("reference_key") ?? string.Empty).Trim();
 
         string? dob = null;
         int? ageYears = null;
@@ -564,6 +578,8 @@ public class DigiLockerKycProvider(
         if (!string.IsNullOrWhiteSpace(mobile)) collected["mobile"] = mobile;
         // DigiLocker returns picture as base64 (no data-uri prefix). Store as photoBase64 for frontend.
         if (!string.IsNullOrWhiteSpace(picture)) collected["photoBase64"] = picture;
+        if (!string.IsNullOrWhiteSpace(eaadhaar)) collected["aadhaarVerified"] = eaadhaar.Equals("Y", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(referenceKey)) collected["aadhaarReferenceKey"] = referenceKey;
 
         parsed = new
         {
@@ -573,7 +589,9 @@ public class DigiLockerKycProvider(
             ageYears,
             email,
             mobile,
-            hasPicture = !string.IsNullOrWhiteSpace(picture)
+            hasPicture = !string.IsNullOrWhiteSpace(picture),
+            aadhaarVerified = eaadhaar.Equals("Y", StringComparison.OrdinalIgnoreCase),
+            aadhaarReferenceKey = string.IsNullOrWhiteSpace(referenceKey) ? null : referenceKey
         };
         return !string.IsNullOrWhiteSpace(name)
                || !string.IsNullOrWhiteSpace(dob)
@@ -581,6 +599,69 @@ public class DigiLockerKycProvider(
                || !string.IsNullOrWhiteSpace(email)
                || !string.IsNullOrWhiteSpace(mobile)
                || !string.IsNullOrWhiteSpace(picture);
+    }
+
+    private static object? TryCollectFromIssuedItems(Dictionary<string, object?> collected, List<IssuedItem> items)
+    {
+        if (items is null || items.Count == 0) return null;
+
+        string? pan = null;
+        string? drivingLicense = null;
+
+        foreach (var it in items)
+        {
+            var doctype = (it.DocType ?? string.Empty).Trim().ToUpperInvariant();
+            var uri = (it.Uri ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(uri)) continue;
+
+            // Example URIs:
+            // - in.gov.pan-PANCR-BEQPK9277N
+            // - in.gov.transport-DRVLC-RJ1820120000536
+            var last = uri;
+            var idx = uri.LastIndexOf('-');
+            if (idx >= 0 && idx + 1 < uri.Length) last = uri[(idx + 1)..];
+            last = last.Trim();
+
+            if (string.IsNullOrWhiteSpace(last)) continue;
+
+            if (doctype.Contains("PAN", StringComparison.OrdinalIgnoreCase))
+            {
+                if (IsPanLike(last)) pan = last.ToUpperInvariant();
+                continue;
+            }
+            if (doctype.Contains("DRV", StringComparison.OrdinalIgnoreCase) || doctype.Contains("DL", StringComparison.OrdinalIgnoreCase))
+            {
+                drivingLicense ??= last;
+                continue;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(pan)) collected["pan"] = pan;
+        if (!string.IsNullOrWhiteSpace(drivingLicense)) collected["drivingLicense"] = drivingLicense;
+
+        if (pan is null && drivingLicense is null) return null;
+        return new { pan, drivingLicense };
+    }
+
+    private static bool IsPanLike(string s)
+    {
+        // PAN format: AAAAA9999A
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        var t = s.Trim();
+        if (t.Length != 10) return false;
+        for (var i = 0; i < 10; i++)
+        {
+            var c = t[i];
+            if (i < 5 || i == 9)
+            {
+                if (!(c >= 'A' && c <= 'Z') && !(c >= 'a' && c <= 'z')) return false;
+            }
+            else
+            {
+                if (!(c >= '0' && c <= '9')) return false;
+            }
+        }
+        return true;
     }
 
 
