@@ -76,7 +76,14 @@ public class AuthMiddleware(RequestDelegate next)
                 return;
             }
         }
-        if (IsUnsafeMethod(context.Request.Method) && !isCsrfExemptPath && !apiClientAuthenticated)
+
+        // CSRF protection is only needed for ambient cookie auth.
+        // If the caller sends an explicit Bearer token header, a third-party site cannot forge it,
+        // so requiring double-submit CSRF would break legitimate API usage (desktop shells, mobile, etc.).
+        var hasExplicitBearer = context.Request.Headers.Authorization.ToString()
+            .StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+
+        if (IsUnsafeMethod(context.Request.Method) && !isCsrfExemptPath && !apiClientAuthenticated && !hasExplicitBearer)
         {
             if (!HasValidDoubleSubmitCsrf(context, authCookie))
             {
