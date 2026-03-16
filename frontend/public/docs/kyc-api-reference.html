@@ -122,8 +122,38 @@
           <div class="endpoint"><span class="method post">POST</span><span class="path">/api/kyc/sessions</span></div>
           <div class="endpoint"><span class="method get">GET</span><span class="path">/api/kyc/sessions/{sessionId}</span></div>
           <div class="endpoint"><span class="method get">GET</span><span class="path">/api/kyc/sessions?take=50</span></div>
+          <div class="endpoint"><span class="method post">POST</span><span class="path">/api/public/kyc/sessions</span></div>
+          <div class="endpoint"><span class="method get">GET</span><span class="path">/api/public/kyc/sessions/create?tenantSlug=...&amp;user=...&amp;pswd=...&amp;apikey=...&amp;docType=PAN</span></div>
           <div class="endpoint"><span class="method get">GET</span><span class="path">/api/public/kyc/digilocker/callback?sessionId=...&amp;code=...&amp;state=...</span></div>
           <div class="note">For customer integrations (API key auth), the same tenant endpoints are supported using <code>X-API-Key</code>/<code>X-API-Secret</code> plus <code>X-Tenant-Slug</code>.</div>
+        </section>
+
+        <section class="card">
+          <h2>Simple Public API (Like SMS)</h2>
+          <p>Use the same credential style as the SMS public API: <code>tenantSlug</code>, <code>user</code>, <code>password/pswd</code>, <code>apiKey/apikey</code>.</p>
+          <div class="endpoint"><span class="method post">POST</span><span class="path">/api/public/kyc/sessions</span></div>
+          <pre>{
+  "tenantSlug": "moneyart",
+  "user": "MONEYART",
+  "password": "YOUR_PASSWORD",
+  "apiKey": "YOUR_API_KEY",
+  "provider": "digilocker",
+  "docType": "PAN",
+  "customerRef": "user-123",
+  "successRedirectUrl": "https://yourapp.com/kyc/success",
+  "failureRedirectUrl": "https://yourapp.com/kyc/failure",
+  "webhookUrl": "https://yourapp.com/webhooks/textzy-kyc"
+}</pre>
+          <h3>Response</h3>
+          <pre>{
+  "sessionId": "GUID",
+  "provider": "digilocker",
+  "status": "created",
+  "docType": "PAN",
+  "redirectUrl": "https://digilocker.../authorize?...",
+  "state": "..."
+}</pre>
+          <div class="ok">Redirect the end-user to <code>redirectUrl</code> to complete DigiLocker consent/login.</div>
         </section>
 
         <section class="card">

@@ -20,6 +20,55 @@ Required headers:
 - `X-API-Key: <tenantApiKey>`
 - `X-API-Secret: <tenantApiSecret>`
 
+## Simple Public API (Like SMS)
+
+If you want the exact same style as the SMS public API (query/body credentials), use these endpoints:
+
+Base URL: `https://api.textzy.in`
+
+Authentication fields (same as SMS):
+- `tenantSlug`
+- `user`
+- `password` / `pswd`
+- `apiKey` / `apikey`
+
+Supported request formats:
+- `GET /api/public/kyc/sessions/create`
+- `POST /api/public/kyc/sessions` (recommended)
+
+### GET example
+```http
+GET https://api.textzy.in/api/public/kyc/sessions/create?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=digilocker&docType=PAN&customerRef=user-123
+```
+
+### POST example
+```json
+{
+  "tenantSlug": "moneyart",
+  "user": "MONEYART",
+  "password": "YOUR_PASSWORD",
+  "apiKey": "YOUR_API_KEY",
+  "provider": "digilocker",
+  "docType": "PAN",
+  "customerRef": "user-123",
+  "successRedirectUrl": "https://yourapp.com/kyc/success",
+  "failureRedirectUrl": "https://yourapp.com/kyc/failure",
+  "webhookUrl": "https://yourapp.com/webhooks/textzy-kyc"
+}
+```
+
+Response:
+```json
+{
+  "sessionId": "GUID",
+  "provider": "digilocker",
+  "status": "created",
+  "docType": "PAN",
+  "redirectUrl": "https://digilocker.../authorize?...",
+  "state": "..."
+}
+```
+
 ## Document Types (docTypes)
 
 `docTypes` is a **business-level** list that your app uses to ask for specific document categories (for example PAN, Aadhaar, Driving License). Textzy passes these as a requester parameter to DigiLocker (configured via platform setting `digilocker.docTypeParamName`, default `req_doctype`).
