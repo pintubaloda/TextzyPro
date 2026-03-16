@@ -895,7 +895,70 @@ public class DigiLockerKycProvider(
 
     private static string ExtractPdfText(byte[] pdfBytes)
     {
-        // Best-effort extraction:
+        try
+        {
+            var text = ExtractPdfTextPdfPig(pdfBytes);
+            if (!string.IsNullOrWhiteSpace(text)) return text;
+        }
+        catch
+        {
+            // ignore, try heuristic fallback
+        }
+
+        return ExtractPdfTextHeuristic(pdfBytes);
+    }
+
+    private static string ExtractPdfTextPdfPig(byte[] pdfBytes)
+    {
+        try
+        {
+            // Optional runtime dependency:
+            // If UglyToad.PdfPig.dll is deployed next to the app, use it for reliable PDF text extraction.
+            // If not present, return empty and fallback to heuristic extraction.
+            var tDoc = Type.GetType("UglyToad.PdfPig.PdfDocument, UglyToad.PdfPig", throwOnError: false);
+            if (tDoc is null) return string.Empty;
+
+            var miOpen = tDoc.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .FirstOrDefault(m =>
+                    string.Equals(m.Name, "Open", StringComparison.Ordinal)
+                    && m.GetParameters().Length >= 1
+                    && typeof(Stream).IsAssignableFrom(m.GetParameters()[0].ParameterType));
+            if (miOpen is null) return string.Empty;
+
+            using var ms = new MemoryStream(pdfBytes);
+            using var doc = miOpen.Invoke(null, new object?[] { ms }) as IDisposable;
+            if (doc is null) return string.Empty;
+
+            var miGetPages = doc.GetType().GetMethod("GetPages", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            if (miGetPages is null) return string.Empty;
+
+            var pagesObj = miGetPages.Invoke(doc, Array.Empty<object?>());
+            if (pagesObj is not System.Collections.IEnumerable pages) return string.Empty;
+
+            var sb = new StringBuilder();
+            foreach (var page in pages)
+            {
+                if (page is null) continue;
+                var piText = page.GetType().GetProperty("Text", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                var text = piText?.GetValue(page) as string;
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    sb.Append(' ');
+                    sb.Append(text);
+                }
+            }
+
+            return NormalizeWhitespace(sb.ToString());
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string ExtractPdfTextHeuristic(byte[] pdfBytes)
+    {
+        // Fallback extraction (no external deps):
         // - Locate FlateDecode streams
         // - ZLib decompress
         // - Pull literal strings (...) used in text operators
@@ -911,13 +974,10 @@ public class DigiLockerKycProvider(
                 var streamIdx = ascii.IndexOf("stream", idx, StringComparison.Ordinal);
                 if (streamIdx < 0) break;
                 var start = streamIdx + "stream".Length;
-                // skip EOL
                 while (start < ascii.Length && (ascii[start] == '\r' || ascii[start] == '\n' || ascii[start] == ' ')) start++;
                 var endstreamIdx = ascii.IndexOf("endstream", start, StringComparison.Ordinal);
                 if (endstreamIdx < 0) break;
 
-                // Convert start/end back to byte offsets safely by using the same ASCII decoding length.
-                // This works for typical PDFs where stream bytes are binary but the ASCII string has same length.
                 var byteStart = start;
                 var byteEnd = endstreamIdx;
                 if (byteStart >= 0 && byteEnd > byteStart && byteEnd <= pdfBytes.Length)
