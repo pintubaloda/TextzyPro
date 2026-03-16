@@ -148,6 +148,19 @@ This endpoint is called by DigiLocker after the user completes consent/login. Te
 - You do not set them per API call.
 - In Platform Settings → DigiLocker Master Config, you can leave these fields blank to use the default DigiLocker endpoints (recommended unless DigiLocker gives you different URLs for your environment).
 
+### Aadhaar / Extended DigiLocker Flows
+
+DigiLocker may require extra authorize query params for specific login/consent flows (for example Aadhaar), like:
+
+`dl_flow=signin&acr=aadhaar&amr=aadhaar+exists_ac_pin`
+
+Set these once at platform level in **Platform Settings → DigiLocker Master Config → Authorize Extra Params**.
+
+Notes:
+- Textzy always adds core OAuth params automatically: `response_type`, `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge`, `code_challenge_method`.
+- `Authorize Extra Params` cannot override those core keys.
+- If DigiLocker asks you to add scopes like `openid userdetails email picture avs`, put them in the **Scope** field (platform-level).
+
 ## Webhook Payload
 
 If `webhookUrl` is set on session creation, Textzy POSTs JSON:

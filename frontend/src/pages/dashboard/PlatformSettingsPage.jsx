@@ -131,6 +131,7 @@ const PlatformSettingsPage = () => {
     clientSecret: "",
     redirectUri: "",
     authorizeUrl: "",
+    authorizeExtraParams: "",
     tokenUrl: "",
     apiBaseUrl: "",
     scope: "files.issueddocs",
@@ -612,6 +613,7 @@ const PlatformSettingsPage = () => {
               clientSecret: values.clientSecret || prev.clientSecret,
               redirectUri: values.redirectUri || prev.redirectUri,
               authorizeUrl: values.authorizeUrl || prev.authorizeUrl,
+              authorizeExtraParams: values.authorizeExtraParams || prev.authorizeExtraParams,
               tokenUrl: values.tokenUrl || prev.tokenUrl,
               apiBaseUrl: values.apiBaseUrl || prev.apiBaseUrl,
               scope: values.scope || prev.scope,
@@ -3504,6 +3506,19 @@ const PlatformSettingsPage = () => {
                 />
                 <p className="text-xs text-slate-500">OAuth2 authorization endpoint. Leave blank to use the default DigiLocker endpoint.</p>
               </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Authorize Extra Params (optional)</Label>
+                <textarea
+                  className="min-h-[90px] w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                  value={digilocker.authorizeExtraParams}
+                  onChange={(e) => setDigilocker((p) => ({ ...p, authorizeExtraParams: e.target.value }))}
+                  placeholder={"dl_flow=signin&acr=aadhaar&amr=aadhaar+exists_ac_pin"}
+                />
+                <p className="text-xs text-slate-500">
+                  Extra query params appended to the authorize URL (for example Aadhaar flows). Do not include core keys like <span className="font-mono">client_id</span>,{" "}
+                  <span className="font-mono">redirect_uri</span>, <span className="font-mono">scope</span>, <span className="font-mono">state</span>.
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label>Token URL</Label>
                 <Input
@@ -3550,6 +3565,7 @@ const PlatformSettingsPage = () => {
                     clientSecret: digilocker.clientSecret || "",
                     redirectUri: digilocker.redirectUri || "",
                     authorizeUrl: digilocker.authorizeUrl || "",
+                    authorizeExtraParams: digilocker.authorizeExtraParams || "",
                     tokenUrl: digilocker.tokenUrl || "",
                     apiBaseUrl: digilocker.apiBaseUrl || "",
                     scope: digilocker.scope || "",

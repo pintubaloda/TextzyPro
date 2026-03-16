@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
 using Textzy.Api.Models;
@@ -70,8 +71,18 @@ public class DigiLockerKycProvider(
             ["code_challenge_method"] = "S256",
         };
 
+        // DigiLocker supports extra query params for specific flows (e.g. Aadhaar).
+        // Allow platform to configure these, but do not allow overriding core OAuth keys.
+        foreach (var kv in ParseAuthorizeExtraParams(settings.AuthorizeExtraParams))
+        {
+            if (IsReservedAuthorizeKey(kv.Key)) continue;
+            if (!qs.ContainsKey(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
+                qs[kv.Key] = kv.Value;
+        }
+
         foreach (var kv in extra)
         {
+            if (IsReservedAuthorizeKey(kv.Key)) continue;
             if (!qs.ContainsKey(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
                 qs[kv.Key] = kv.Value;
         }
@@ -194,6 +205,7 @@ public class DigiLockerKycProvider(
         string ClientSecret,
         string RedirectUri,
         string AuthorizeUrl,
+        string AuthorizeExtraParams,
         string TokenUrl,
         string ApiBaseUrl,
         string Scope,
@@ -215,6 +227,7 @@ public class DigiLockerKycProvider(
             ClientSecret: Pick("clientSecret", config["Digilocker:ClientSecret"] ?? config["DIGILOCKER_CLIENT_SECRET"] ?? string.Empty),
             RedirectUri: Pick("redirectUri", config["Digilocker:RedirectUri"] ?? config["DIGILOCKER_REDIRECT_URI"] ?? string.Empty),
             AuthorizeUrl: Pick("authorizeUrl", config["Digilocker:AuthorizeUrl"] ?? config["DIGILOCKER_AUTHORIZE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1/authorize"),
+            AuthorizeExtraParams: Pick("authorizeExtraParams", config["Digilocker:AuthorizeExtraParams"] ?? config["DIGILOCKER_AUTHORIZE_EXTRA_PARAMS"] ?? string.Empty),
             TokenUrl: Pick("tokenUrl", config["Digilocker:TokenUrl"] ?? config["DIGILOCKER_TOKEN_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1/token"),
             ApiBaseUrl: Pick("apiBaseUrl", config["Digilocker:ApiBaseUrl"] ?? config["DIGILOCKER_API_BASE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1"),
             Scope: Pick("scope", config["Digilocker:Scope"] ?? config["DIGILOCKER_SCOPE"] ?? "files.issueddocs"),
@@ -268,6 +281,40 @@ public class DigiLockerKycProvider(
             sb.Append(Uri.EscapeDataString(kv.Value ?? string.Empty));
         }
         return sb.ToString();
+    }
+
+    private static bool IsReservedAuthorizeKey(string key)
+        => key.Equals("response_type", StringComparison.OrdinalIgnoreCase)
+           || key.Equals("client_id", StringComparison.OrdinalIgnoreCase)
+           || key.Equals("redirect_uri", StringComparison.OrdinalIgnoreCase)
+           || key.Equals("scope", StringComparison.OrdinalIgnoreCase)
+           || key.Equals("state", StringComparison.OrdinalIgnoreCase)
+           || key.Equals("code_challenge", StringComparison.OrdinalIgnoreCase)
+           || key.Equals("code_challenge_method", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyDictionary<string, string> ParseAuthorizeExtraParams(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Accept either a typical query string: "a=b&c=d" or a newline/semicolon-separated list.
+        var normalized = raw.Trim();
+        normalized = normalized.TrimStart('?');
+        normalized = normalized.Replace("\r\n", "&").Replace("\n", "&").Replace(";", "&");
+
+        // QueryHelpers requires a leading '?' and will URL-decode values.
+        var parsed = QueryHelpers.ParseQuery("?" + normalized);
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in parsed)
+        {
+            var k = (kv.Key ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(k)) continue;
+            var v = kv.Value.Count > 0 ? kv.Value[0] : string.Empty;
+            v = (v ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(v)) continue;
+            dict[k] = v;
+        }
+
+        return dict;
     }
 
     private static List<string> ParseStringList(string json)
