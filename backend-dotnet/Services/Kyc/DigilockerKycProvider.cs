@@ -531,6 +531,22 @@ public class DigiLockerKycProvider(
         var picture = (GetStr("picture") ?? string.Empty).Trim();
         var eaadhaar = (GetStr("eaadhaar") ?? string.Empty).Trim();
         var referenceKey = (GetStr("reference_key") ?? string.Empty).Trim();
+        var address =
+            (GetStr("address") ?? GetStr("full_address") ?? GetStr("current_address") ?? GetStr("permanent_address") ?? string.Empty).Trim();
+
+        // Some environments may return masked Aadhaar in /user (rare). If present, mask it again.
+        var aadhaarRaw =
+            (GetStr("aadhaar") ?? GetStr("masked_aadhaar") ?? GetStr("aadhaar_number") ?? GetStr("aadhaarNo") ?? string.Empty).Trim();
+        string? aadhaarMasked = null;
+        if (!string.IsNullOrWhiteSpace(aadhaarRaw))
+        {
+            var digits = new string(aadhaarRaw.Where(char.IsDigit).ToArray());
+            if (digits.Length >= 4)
+            {
+                var last4 = digits[^4..];
+                aadhaarMasked = "XXXXXXXX" + last4;
+            }
+        }
 
         string? dob = null;
         int? ageYears = null;
@@ -578,6 +594,8 @@ public class DigiLockerKycProvider(
         if (!string.IsNullOrWhiteSpace(mobile)) collected["mobile"] = mobile;
         // DigiLocker returns picture as base64 (no data-uri prefix). Store as photoBase64 for frontend.
         if (!string.IsNullOrWhiteSpace(picture)) collected["photoBase64"] = picture;
+        if (!string.IsNullOrWhiteSpace(address)) collected["address"] = address;
+        if (!string.IsNullOrWhiteSpace(aadhaarMasked)) collected["aadhaarMasked"] = aadhaarMasked;
         if (!string.IsNullOrWhiteSpace(eaadhaar)) collected["aadhaarVerified"] = eaadhaar.Equals("Y", StringComparison.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(referenceKey)) collected["aadhaarReferenceKey"] = referenceKey;
 
@@ -589,6 +607,8 @@ public class DigiLockerKycProvider(
             ageYears,
             email,
             mobile,
+            address,
+            aadhaarMasked,
             hasPicture = !string.IsNullOrWhiteSpace(picture),
             aadhaarVerified = eaadhaar.Equals("Y", StringComparison.OrdinalIgnoreCase),
             aadhaarReferenceKey = string.IsNullOrWhiteSpace(referenceKey) ? null : referenceKey
@@ -598,6 +618,7 @@ public class DigiLockerKycProvider(
                || !string.IsNullOrWhiteSpace(gender)
                || !string.IsNullOrWhiteSpace(email)
                || !string.IsNullOrWhiteSpace(mobile)
+               || !string.IsNullOrWhiteSpace(address)
                || !string.IsNullOrWhiteSpace(picture);
     }
 

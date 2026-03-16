@@ -170,8 +170,11 @@ export default function KycReportsPage() {
               {previewUrl ? (
                 <iframe title="kyc-preview" src={previewUrl} className="h-[540px] w-full rounded-xl bg-white" />
               ) : (
-                <div className="flex h-[540px] items-center justify-center rounded-xl bg-white text-sm text-slate-500">
-                  No preview available
+                <div className="flex h-[540px] flex-col items-center justify-center gap-2 rounded-xl bg-white px-6 text-center text-sm text-slate-500">
+                  <div>No preview available</div>
+                  <div className="text-xs text-slate-400">
+                    If DigiLocker blocks file download (403), Textzy cannot show the PDF/XML preview. Check Raw (debug) for <span className="font-mono">fileDownloadErrors</span>.
+                  </div>
                 </div>
               )}
             </div>
@@ -204,6 +207,14 @@ export default function KycReportsPage() {
                         <div className="font-medium text-slate-900">{safeGet(collected, "dob", "-")}</div>
                       </div>
                       <div>
+                        <div className="text-slate-500">Mobile</div>
+                        <div className="font-medium text-slate-900">{safeGet(collected, "mobile", "-")}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Email</div>
+                        <div className="truncate font-medium text-slate-900">{safeGet(collected, "email", "-")}</div>
+                      </div>
+                      <div>
                         <div className="text-slate-500">Gender</div>
                         <div className="font-medium text-slate-900">{safeGet(collected, "gender", "-")}</div>
                       </div>
@@ -217,7 +228,10 @@ export default function KycReportsPage() {
                       </div>
                       <div>
                         <div className="text-slate-500">Aadhaar</div>
-                        <div className="font-medium text-slate-900">{safeGet(collected, "aadhaarMasked", "-")}</div>
+                        <div className="font-medium text-slate-900">
+                          {safeGet(collected, "aadhaarMasked", "") ||
+                            (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified (no number)" : "-")}
+                        </div>
                       </div>
                       <div className="col-span-2">
                         <div className="text-slate-500">Address</div>
@@ -241,4 +255,3 @@ export default function KycReportsPage() {
     </div>
   );
 }
-
