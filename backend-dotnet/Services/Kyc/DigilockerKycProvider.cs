@@ -450,7 +450,12 @@ public class DigiLockerKycProvider(
     // Include session id in a parseable state so callbacks can locate the session even when redirect_uri can't carry a dynamic sessionId.
     // Format: v1.<guidN>.<random>
     private static string CreateState(KycSession session)
-        => $"v1.{session.Id:N}.{Base64Url(RandomNumberGenerator.GetBytes(16))}";
+    {
+        // IMPORTANT: IIS requestFiltering denyStrings often blocks sequences like "--" in query strings.
+        // Base64url can include '-' and may generate "--". Use hex to keep state URL-safe and filter-safe.
+        var nonceHex = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)); // 32 hex chars
+        return $"v1.{session.Id:N}.{nonceHex}";
+    }
 
     private static string Base64Url(byte[] input)
         => Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
