@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
 using Textzy.Api.Models;
+using System.Reflection;
+using System.Runtime.Loader;
 
 namespace Textzy.Api.Services.Kyc;
 
@@ -913,10 +915,18 @@ public class DigiLockerKycProvider(
         try
         {
             // Optional runtime dependency:
-            // If PdfPig.dll is deployed next to the app, use it for reliable PDF text extraction.
+            // If PdfPig is deployed, use it for reliable PDF text extraction.
             // If not present, return empty and fallback to heuristic extraction.
-            // NuGet package id: PdfPig. Assembly name: PdfPig. Namespace: UglyToad.PdfPig.
-            var tDoc = Type.GetType("UglyToad.PdfPig.PdfDocument, PdfPig", throwOnError: false);
+            //
+            // We support two deployment modes:
+            // 1) Normal NuGet reference: assemblies are alongside app base directory.
+            // 2) Offline-bundled: assemblies are copied under `Assets/third_party/pdfpig/net8.0` and included in publish output.
+            EnsurePdfPigLoaded();
+
+            // Assembly name is typically `UglyToad.PdfPig`. Some forks may use `PdfPig`.
+            var tDoc =
+                Type.GetType("UglyToad.PdfPig.PdfDocument, UglyToad.PdfPig", throwOnError: false)
+                ?? Type.GetType("UglyToad.PdfPig.PdfDocument, PdfPig", throwOnError: false);
             if (tDoc is null) return string.Empty;
 
             var miOpen = tDoc.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
@@ -954,6 +964,52 @@ public class DigiLockerKycProvider(
         catch
         {
             return string.Empty;
+        }
+    }
+
+    private static void EnsurePdfPigLoaded()
+    {
+        // If already loadable, no-op.
+        if (Type.GetType("UglyToad.PdfPig.PdfDocument, UglyToad.PdfPig", throwOnError: false) is not null) return;
+        if (Type.GetType("UglyToad.PdfPig.PdfDocument, PdfPig", throwOnError: false) is not null) return;
+
+        // Attempt to load bundled assemblies from publish output folder.
+        // In source tree these live under backend-dotnet/Assets/third_party/pdfpig/net8.0 and are copied to output.
+        var baseDir = AppContext.BaseDirectory;
+        var rel = Path.Combine("Assets", "third_party", "pdfpig", "net8.0");
+        var dir = Path.Combine(baseDir, rel);
+        if (!Directory.Exists(dir)) return;
+
+        // Load dependencies first, then main assembly.
+        var ordered = new[]
+        {
+            "UglyToad.PdfPig.Core.dll",
+            "UglyToad.PdfPig.Tokens.dll",
+            "UglyToad.PdfPig.Tokenization.dll",
+            "UglyToad.PdfPig.Fonts.dll",
+            "UglyToad.PdfPig.DocumentLayoutAnalysis.dll",
+            "UglyToad.PdfPig.Package.dll",
+            "UglyToad.PdfPig.dll",
+        };
+
+        foreach (var name in ordered)
+        {
+            var path = Path.Combine(dir, name);
+            if (!File.Exists(path)) continue;
+            try
+            {
+                // Avoid re-loading if already loaded.
+                var simple = Path.GetFileNameWithoutExtension(path);
+                var already = AppDomain.CurrentDomain.GetAssemblies()
+                    .Any(a => string.Equals(a.GetName().Name, simple, StringComparison.OrdinalIgnoreCase));
+                if (already) continue;
+
+                AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+            }
+            catch
+            {
+                // best-effort
+            }
         }
     }
 

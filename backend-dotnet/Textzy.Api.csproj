@@ -21,4 +21,11 @@
     <PackageReference Include="WebPush" Version="1.0.12" />
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Offline-bundled PdfPig assemblies. Copied to publish output under Assets/third_party/... -->
+    <Content Include="Assets\third_party\pdfpig\net8.0\**\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 </Project>
