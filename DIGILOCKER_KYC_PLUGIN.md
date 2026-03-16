@@ -16,6 +16,11 @@ Textzy implements DigiLocker KYC as a plugin-style provider:
 
 Metric key: `digilockerKyc`
 
+Credits per successful KYC:
+
+- Config key: Platform Settings scope `digilocker`, `creditsPerSuccess`
+- Default: `3`
+
 You can sell DigiLocker KYC as a prepaid usage pack using Billing Plans:
 
 - Create a Billing Plan with:
@@ -46,6 +51,7 @@ Keys:
 - `scope`: default `files.issueddocs`
 - `docTypeParamName`: default `req_doctype` (optional; used to request specific document types)
 - `issuedDocsPath`: default `/files/issued`
+- `creditsPerSuccess`: how many credits to consume per successful KYC (default `3`)
 
 All values are encrypted at rest in the control DB.
 
@@ -120,7 +126,7 @@ Textzy will:
 2. Exchange `code` for access token
 3. Fetch issued documents (`apiBaseUrl + issuedDocsPath`)
 4. Mark the session verified/failed
-5. Consume 1 `digilockerKyc` unit on success
+5. Consume `creditsPerSuccess` units of `digilockerKyc` on success (default `3`)
 6. Call `webhookUrl` (if provided)
 7. Redirect the end-user to `successRedirectUrl` or `failureRedirectUrl` (if provided), and append:
    - `sessionId`
@@ -129,4 +135,3 @@ Textzy will:
 ## Notes / Limitations
 
 - This implementation stores the provider result encrypted. It does not yet download and store document PDFs/XML; it stores the issued docs payload and doc type list. If you want full document downloads inside Textzy, we will extend the provider with provider-specific download endpoints once confirmed in your DigiLocker integration docs.
-

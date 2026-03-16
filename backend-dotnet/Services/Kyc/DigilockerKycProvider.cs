@@ -120,6 +120,9 @@ public class DigiLockerKycProvider(
         if (string.IsNullOrWhiteSpace(accessToken))
             return new KycProviderCallbackResult(false, "failed", "Missing access_token from provider.", tokenBody, Array.Empty<string>());
 
+        var requestedDocTypes = ParseStringList(session.RequestedDocTypesJson);
+        var redactedToken = RedactTokenPayload(tokenJson.RootElement);
+
         var apiBase = Require(settings.ApiBaseUrl, "apiBaseUrl").TrimEnd('/');
         var issuedPath = string.IsNullOrWhiteSpace(settings.IssuedDocsPath) ? "/files/issued" : settings.IssuedDocsPath.Trim();
         var issuedUrl = apiBase + (issuedPath.StartsWith("/") ? issuedPath : "/" + issuedPath);
@@ -165,6 +168,13 @@ public class DigiLockerKycProvider(
         {
             provider = "digilocker",
             fetchedAtUtc = DateTime.UtcNow,
+            requestedDocTypes,
+            documentTypes = docTypes.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            oauth = new
+            {
+                tokenExchangeStatus = (int)tokenRes.StatusCode,
+                token = redactedToken
+            },
             issuedDocsStatus = (int)issuedRes.StatusCode,
             issuedDocs = TryParseJson(issuedBody),
         };
@@ -274,5 +284,34 @@ public class DigiLockerKycProvider(
             return new { raw = raw };
         }
     }
-}
 
+    private static object RedactTokenPayload(JsonElement root)
+    {
+        try
+        {
+            if (root.ValueKind != JsonValueKind.Object) return new { };
+            var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in root.EnumerateObject())
+            {
+                var name = p.Name;
+                if (string.Equals(name, "access_token", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(name, "refresh_token", StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(name, "id_token", StringComparison.OrdinalIgnoreCase)) continue;
+                dict[name] = p.Value.ValueKind switch
+                {
+                    JsonValueKind.String => p.Value.GetString(),
+                    JsonValueKind.Number => p.Value.TryGetInt64(out var n) ? n : p.Value.GetDouble(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.Null => null,
+                    _ => p.Value.ToString()
+                };
+            }
+            return dict;
+        }
+        catch
+        {
+            return new { };
+        }
+    }
+}

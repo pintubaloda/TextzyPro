@@ -19,6 +19,8 @@ public class PublicKycController(
     IHttpClientFactory httpClientFactory,
     ILogger<PublicKycController> logger) : ControllerBase
 {
+    private const string DigilockerSettingsScope = "digilocker";
+
     // Example:
     // GET /api/public/kyc/digilocker/callback?sessionId=...&code=...&state=...
     [HttpGet("{provider}/callback")]
@@ -64,10 +66,11 @@ public class PublicKycController(
 
         if (result.Ok)
         {
-            // Bill 1 unit only on successful verification.
+            // Bill credits only on successful verification.
             try
             {
-                await billingGuard.TryConsumeAsync(row.TenantId, "digilockerKyc", 1, ct);
+                var credits = await ResolveCreditsPerSuccessAsync(ct);
+                await billingGuard.TryConsumeAsync(row.TenantId, "digilockerKyc", credits, ct);
             }
             catch (Exception ex)
             {
@@ -102,6 +105,17 @@ public class PublicKycController(
 
         try
         {
+            object? result = null;
+            if (!string.IsNullOrWhiteSpace(session.ResultJsonEncrypted))
+            {
+                var raw = crypto.Decrypt(session.ResultJsonEncrypted);
+                try { result = JsonSerializer.Deserialize<object>(raw); } catch { result = new { raw }; }
+            }
+
+            List<string> requestedDocTypes;
+            try { requestedDocTypes = JsonSerializer.Deserialize<List<string>>(session.RequestedDocTypesJson) ?? []; }
+            catch { requestedDocTypes = []; }
+
             var http = httpClientFactory.CreateClient();
             using var req = new HttpRequestMessage(HttpMethod.Post, url);
             req.Headers.UserAgent.Add(new ProductInfoHeaderValue("Textzy", "1.0"));
@@ -111,7 +125,12 @@ public class PublicKycController(
                 tenantId = session.TenantId,
                 provider = session.ProviderCode,
                 status = session.Status,
-                ok
+                ok,
+                customerRef = session.CustomerRef,
+                requestedDocTypes,
+                failureReason = session.FailureReason,
+                completedAtUtc = session.CompletedAtUtc,
+                result
             }), Encoding.UTF8, "application/json");
             using var res = await http.SendAsync(req, ct);
             _ = await res.Content.ReadAsStringAsync(ct);
@@ -119,6 +138,27 @@ public class PublicKycController(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "KYC webhook failed for session {SessionId}", session.Id);
+        }
+    }
+
+    private async Task<int> ResolveCreditsPerSuccessAsync(CancellationToken ct)
+    {
+        try
+        {
+            var raw = await db.PlatformSettings
+                .AsNoTracking()
+                .Where(x => x.Scope == DigilockerSettingsScope && x.Key == "creditsPerSuccess")
+                .Select(x => x.ValueEncrypted)
+                .FirstOrDefaultAsync(ct);
+            var value = crypto.Decrypt(raw ?? string.Empty).Trim();
+            if (!int.TryParse(value, out var credits)) credits = 3;
+            if (credits < 1) credits = 1;
+            if (credits > 50) credits = 50;
+            return credits;
+        }
+        catch
+        {
+            return 3;
         }
     }
 }
