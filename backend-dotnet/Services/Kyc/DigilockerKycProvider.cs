@@ -1391,33 +1391,31 @@ public class DigiLockerKycProvider(
                 list.Add(v);
         }
 
-        var tpl = string.IsNullOrWhiteSpace(templateRaw) ? "/oauth2/1/files/{uri}" : templateRaw.Trim();
-        if (!tpl.Contains("{uri}", StringComparison.OrdinalIgnoreCase))
-            tpl = tpl.TrimEnd('/') + "/{uri}";
-
-        if (tpl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || tpl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-        {
-            Add(tpl.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase));
-        }
-        else
-        {
-            var path = tpl.StartsWith("/") ? tpl : "/" + tpl;
-            Add(CombineApiUrl(apiBase, path.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase)));
-
-            if (path.Contains("/files/", StringComparison.OrdinalIgnoreCase) && !path.Contains("/files/issued/", StringComparison.OrdinalIgnoreCase))
-            {
-                var issued = path.Replace("/files/", "/files/issued/", StringComparison.OrdinalIgnoreCase);
-                Add(CombineApiUrl(apiBase, issued.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase)));
-            }
-            if (path.Contains("/files/issued/", StringComparison.OrdinalIgnoreCase))
-            {
-                var nonIssued = path.Replace("/files/issued/", "/files/", StringComparison.OrdinalIgnoreCase);
-                Add(CombineApiUrl(apiBase, nonIssued.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase)));
-            }
-        }
-
+        // Preferred fallback order (stop at first 200):
+        // 1) /public/oauth2/1/files/{uri}
+        // 2) /public/oauth2/1/files/issued/{uri}
+        // 3) /public/oauth2/1/docs/{uri}
+        // 4) /public/oauth2/1/file/{uri}
+        // Note: CombineApiUrl supports apiBaseUrl being either .../public or .../public/oauth2/1.
         Add(CombineApiUrl(apiBase, "/oauth2/1/files/" + encodedUri));
         Add(CombineApiUrl(apiBase, "/oauth2/1/files/issued/" + encodedUri));
+        Add(CombineApiUrl(apiBase, "/oauth2/1/docs/" + encodedUri));
+        Add(CombineApiUrl(apiBase, "/oauth2/1/file/" + encodedUri));
+
+        // If a custom template is configured, try it after the known-good list (still deduped).
+        var tpl = string.IsNullOrWhiteSpace(templateRaw) ? string.Empty : templateRaw.Trim();
+        if (!string.IsNullOrWhiteSpace(tpl))
+        {
+            if (!tpl.Contains("{uri}", StringComparison.OrdinalIgnoreCase))
+                tpl = tpl.TrimEnd('/') + "/{uri}";
+
+            if (tpl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || tpl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                Add(tpl.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase));
+            else
+                Add(CombineApiUrl(apiBase, (tpl.StartsWith("/") ? tpl : "/" + tpl).Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        // Extra legacy fallbacks (older/newer versions).
         Add(CombineApiUrl(apiBase, "/oauth2/2/files/" + encodedUri));
         Add(CombineApiUrl(apiBase, "/oauth2/2/files/issued/" + encodedUri));
         return list;
