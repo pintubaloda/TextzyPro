@@ -20,6 +20,10 @@ public class PublicKycSessionsController(
     IntegrationCatalogBillingService integrationBilling,
     KycProviderRouter router) : ControllerBase
 {
+    // NOTE: On some IIS setups, requestFiltering denyStrings may block paths containing "create"
+    // (common SQL-injection blocklists). Keep /create for backward compatibility, but provide
+    // /start alias to avoid false positives.
+
     [HttpGet("sessions/create")]
     public async Task<IActionResult> CreateByQuery(CancellationToken ct)
     {
@@ -40,8 +44,16 @@ public class PublicKycSessionsController(
         return await CreateCore(req, ct);
     }
 
+    [HttpGet("sessions/start")]
+    public async Task<IActionResult> StartByQuery(CancellationToken ct)
+        => await CreateByQuery(ct);
+
     [HttpPost("sessions/create")]
     public async Task<IActionResult> CreateByPost([FromBody] PublicKycCreateRequest request, CancellationToken ct)
+        => await CreateCore(request, ct);
+
+    [HttpPost("sessions/start")]
+    public async Task<IActionResult> StartByPost([FromBody] PublicKycCreateRequest request, CancellationToken ct)
         => await CreateCore(request, ct);
 
     // SMS-style "simple API": POST /api/public/kyc/sessions

@@ -33,12 +33,13 @@ Authentication fields (same as SMS):
 - `apiKey` / `apikey`
 
 Supported request formats:
-- `GET /api/public/kyc/sessions/create`
+- `GET /api/public/kyc/sessions/start` (preferred on IIS)
+- `GET /api/public/kyc/sessions/create` (legacy; may be blocked by IIS requestFiltering rules that deny the word `create`)
 - `POST /api/public/kyc/sessions` (recommended)
 
 ### GET example
 ```http
-GET https://api.textzy.in/api/public/kyc/sessions/create?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=digilocker&docType=PAN&customerRef=user-123
+GET https://api.textzy.in/api/public/kyc/sessions/start?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=digilocker&docType=PAN&customerRef=user-123
 ```
 
 ### POST example
