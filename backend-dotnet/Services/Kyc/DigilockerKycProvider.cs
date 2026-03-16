@@ -398,12 +398,16 @@ public class DigiLockerKycProvider(
         };
 
         var resultJson = JsonSerializer.Serialize(normalized);
-        var ok = issuedOk; // treat failure as failed KYC (can be retried by user)
+        // Decide success based on what the tenant requested, not only "issued-docs list succeeded".
+        // Otherwise "aadhaar" requests can wrongly show PAN/DL records and be marked verified.
+        var ok = issuedOk && IsRequestedDocSatisfied(requestedDocTypes, issuedItems, collected);
         var failureReason = string.Empty;
         if (!ok)
         {
             // Keep it short, but include the upstream error when present.
-            failureReason = $"Unable to fetch DigiLocker documents. status={issuedDocsStatus}";
+            failureReason = issuedOk
+                ? "Requested document not available from DigiLocker."
+                : $"Unable to fetch DigiLocker documents. status={issuedDocsStatus}";
             try
             {
                 using var err = JsonDocument.Parse(string.IsNullOrWhiteSpace(issuedBody) ? "{}" : issuedBody);
@@ -662,6 +666,37 @@ public class DigiLockerKycProvider(
 
         if (pan is null && drivingLicense is null) return null;
         return new { pan, drivingLicense };
+    }
+
+    private static bool IsRequestedDocSatisfied(IReadOnlyList<string> requestedDocTypes, List<IssuedItem> issuedItems, Dictionary<string, object?> collected)
+    {
+        if (requestedDocTypes is null || requestedDocTypes.Count == 0) return true;
+        var req = (requestedDocTypes[0] ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(req)) return true;
+
+        bool HasDocTypePrefix(string prefix)
+            => issuedItems.Any(x => !string.IsNullOrWhiteSpace(x.DocType) && x.DocType!.Trim().StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+        if (req is "PAN")
+        {
+            // PAN is typically PANCR (verification record) in DigiLocker.
+            return HasDocTypePrefix("PAN") || !string.IsNullOrWhiteSpace(collected.TryGetValue("pan", out var p) ? p?.ToString() : null);
+        }
+        if (req is "DL" or "DRIVING_LICENCE" or "DRIVING-LICENCE" or "DRIVINGLICENSE")
+        {
+            return HasDocTypePrefix("DRV") || HasDocTypePrefix("DL") || !string.IsNullOrWhiteSpace(collected.TryGetValue("drivingLicense", out var dl) ? dl?.ToString() : null);
+        }
+        if (req is "AADHAAR" or "AADHAR")
+        {
+            // Some DigiLocker clients cannot pull e-Aadhaar document; treat verified account as "satisfied"
+            // but keep number/address blank unless we actually parse Aadhaar XML/PDF.
+            if (HasDocTypePrefix("ADH") || HasDocTypePrefix("AADH")) return true;
+            if (collected.TryGetValue("aadhaarVerified", out var v) && v is bool b && b) return true;
+            return false;
+        }
+
+        // Unknown docType: do not block verification.
+        return true;
     }
 
     private static bool IsPanLike(string s)
@@ -1537,6 +1572,15 @@ public class DigiLockerKycProvider(
                 }
 
                 var bytes = ms.ToArray();
+
+                // Guard: Some endpoints return JSON/HTML (e.g. listing or error) with 200.
+                // Only treat as downloadable file if it looks like a real PDF/XML/ZIP payload.
+                if (!LooksLikeSupportedFile(bytes))
+                {
+                    var snippet = SafeUtf8Snippet(bytes, 2000);
+                    lastEx = new InvalidOperationException($"File download returned non-file payload. url={url} mime={mime} body={snippet}");
+                    continue;
+                }
                 var sha256 = SHA256.HashData(bytes);
                 var sha256Hex = Convert.ToHexString(sha256).ToLowerInvariant();
 
@@ -1577,6 +1621,36 @@ public class DigiLockerKycProvider(
         }
 
         throw lastEx ?? new InvalidOperationException("File download failed.");
+    }
+
+    private static bool LooksLikeSupportedFile(byte[] bytes)
+    {
+        if (bytes is null || bytes.Length < 2) return false;
+        if (IsPdf(bytes) || IsZip(bytes)) return true;
+        // XML usually starts with "<" (possibly with BOM/whitespace)
+        for (var i = 0; i < Math.Min(bytes.Length, 64); i++)
+        {
+            var b = bytes[i];
+            if (b == 0xEF || b == 0xBB || b == 0xBF) continue; // UTF-8 BOM bytes
+            if (b is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n') continue;
+            return b == (byte)'<';
+        }
+        return false;
+    }
+
+    private static string SafeUtf8Snippet(byte[] bytes, int maxChars)
+    {
+        try
+        {
+            var s = Encoding.UTF8.GetString(bytes);
+            s = s.Replace("\r", " ").Replace("\n", " ").Trim();
+            if (s.Length > maxChars) s = s[..maxChars];
+            return s;
+        }
+        catch
+        {
+            return "<binary>";
+        }
     }
 
     private static IReadOnlyList<string> BuildFileDownloadCandidates(string apiBase, string templateRaw, string uri)
