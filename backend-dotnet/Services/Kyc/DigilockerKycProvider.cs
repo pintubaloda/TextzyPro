@@ -336,12 +336,15 @@ public class DigiLockerKycProvider(
             AuthorizeUrl: Pick("authorizeUrl", config["Digilocker:AuthorizeUrl"] ?? config["DIGILOCKER_AUTHORIZE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1/authorize"),
             AuthorizeExtraParams: Pick("authorizeExtraParams", config["Digilocker:AuthorizeExtraParams"] ?? config["DIGILOCKER_AUTHORIZE_EXTRA_PARAMS"] ?? string.Empty),
             TokenUrl: Pick("tokenUrl", config["Digilocker:TokenUrl"] ?? config["DIGILOCKER_TOKEN_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1/token"),
-            ApiBaseUrl: Pick("apiBaseUrl", config["Digilocker:ApiBaseUrl"] ?? config["DIGILOCKER_API_BASE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1"),
-            Scope: Pick("scope", config["Digilocker:Scope"] ?? config["DIGILOCKER_SCOPE"] ?? "files.issueddocs"),
+            ApiBaseUrl: Pick("apiBaseUrl", config["Digilocker:ApiBaseUrl"] ?? config["DIGILOCKER_API_BASE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public"),
+            // IMPORTANT: Do NOT include "openid" unless your DigiLocker client is configured for it.
+            // Many DigiLocker environments reject openid token flows if enabled incorrectly.
+            Scope: Pick("scope", config["Digilocker:Scope"] ?? config["DIGILOCKER_SCOPE"] ?? "issued-documents profile email address picture age-verification"),
             DocTypeParamName: Pick("docTypeParamName", "req_doctype"),
-            IssuedDocsPath: Pick("issuedDocsPath", "/files/issued"),
+            // Your desired flow uses /oauth2/1/files; keep configurable because DigiLocker versions differ.
+            IssuedDocsPath: Pick("issuedDocsPath", "/oauth2/1/files"),
             UserDetailsPath: Pick("userDetailsPath", "/oauth2/1/user"),
-            FileDownloadPathTemplate: Pick("fileDownloadPathTemplate", config["Digilocker:FileDownloadPathTemplate"] ?? "/file/{uri}"),
+            FileDownloadPathTemplate: Pick("fileDownloadPathTemplate", config["Digilocker:FileDownloadPathTemplate"] ?? "/oauth2/1/files/{uri}"),
             MaxFileBytes: ParseInt(Pick("maxFileBytes", config["Digilocker:MaxFileBytes"] ?? DefaultMaxFileBytes.ToString()), DefaultMaxFileBytes),
             MaxFilesPerSession: ParseInt(Pick("maxFilesPerSession", config["Digilocker:MaxFilesPerSession"] ?? DefaultMaxFilesPerSession.ToString()), DefaultMaxFilesPerSession),
             IncludeUserDetailsInResult: ParseBool(Pick("includeUserDetailsInResult", config["Digilocker:IncludeUserDetailsInResult"] ?? "true"), true),
@@ -454,9 +457,10 @@ public class DigiLockerKycProvider(
         if (string.IsNullOrWhiteSpace(dt)) return string.Empty;
         dt = dt.Replace("-", "_", StringComparison.OrdinalIgnoreCase).Replace(" ", "_", StringComparison.OrdinalIgnoreCase);
 
-        // DigiLocker ACR known values: pan, aadhaar, driving_licence
+        // DigiLocker ACR known values: pan, aadhaar, driving_licence.
+        // Some DigiLocker setups accept multiple ACR values separated by spaces (or + in URLs).
         if (dt.Equals("PAN", StringComparison.OrdinalIgnoreCase)) return "pan";
-        if (dt.Equals("AADHAAR", StringComparison.OrdinalIgnoreCase) || dt.Equals("AADHAR", StringComparison.OrdinalIgnoreCase)) return "aadhaar";
+        if (dt.Equals("AADHAAR", StringComparison.OrdinalIgnoreCase) || dt.Equals("AADHAR", StringComparison.OrdinalIgnoreCase)) return "aadhaar mobile email";
         if (dt.Equals("DL", StringComparison.OrdinalIgnoreCase)
             || dt.Equals("DRIVING_LICENCE", StringComparison.OrdinalIgnoreCase)
             || dt.Equals("DRIVING_LICENSE", StringComparison.OrdinalIgnoreCase))
