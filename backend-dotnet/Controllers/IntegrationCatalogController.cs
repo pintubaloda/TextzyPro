@@ -57,6 +57,8 @@ public class IntegrationCatalogController(
                     x.Price,
                     x.Currency,
                     x.TaxMode,
+                    x.BillingMetric,
+                    x.CreditsPerSuccess,
                     isActive = entitled,
                     isVisible = x.IsVisible,
                     x.SortOrder,
@@ -152,6 +154,8 @@ public class IntegrationCatalogController(
         Price = Math.Max(0m, item.Price),
         Currency = string.IsNullOrWhiteSpace(item.Currency) ? "INR" : item.Currency.Trim().ToUpperInvariant(),
         TaxMode = string.Equals(item.TaxMode, "inclusive", StringComparison.OrdinalIgnoreCase) ? "inclusive" : "exclusive",
+        BillingMetric = (item.BillingMetric ?? string.Empty).Trim(),
+        CreditsPerSuccess = Math.Clamp(item.CreditsPerSuccess, 0, 50),
         IsActive = item.IsActive,
         IsVisible = item.IsVisible,
         SortOrder = item.SortOrder > 0 ? item.SortOrder : sortOrder
@@ -183,7 +187,7 @@ public class IntegrationCatalogController(
         new() { Slug = "zapier", Name = "Zapier", Category = "automation", Description = "Bridge Textzy with external tools.", PricingType = "paid", BillingFrequency = "monthly", Price = 1499m, Currency = "INR", TaxMode = "exclusive", IsActive = true, IsVisible = true, SortOrder = 4 },
         new() { Slug = "google-authenticator", Name = "Google Authenticator", Category = "security", Description = "QR-based TOTP for secure account sign-in.", PricingType = "free", BillingFrequency = "monthly", Price = 0m, Currency = "INR", TaxMode = "exclusive", IsActive = true, IsVisible = true, SortOrder = 5 },
         new() { Slug = "microsoft-authenticator", Name = "Microsoft Authenticator", Category = "security", Description = "QR-based TOTP enrollment for Microsoft Authenticator.", PricingType = "free", BillingFrequency = "monthly", Price = 0m, Currency = "INR", TaxMode = "exclusive", IsActive = true, IsVisible = true, SortOrder = 6 },
-        new() { Slug = "digilocker-kyc", Name = "DigiLocker KYC", Category = "kyc", Description = "End-user consent flow to fetch DigiLocker documents. Charged per verification via DigiLocker KYC credits.", PricingType = "free", BillingFrequency = "one_time", Price = 0m, Currency = "INR", TaxMode = "exclusive", IsActive = true, IsVisible = true, SortOrder = 7 }
+        new() { Slug = "digilocker-kyc", Name = "DigiLocker KYC", Category = "kyc", Description = "End-user consent flow to fetch DigiLocker documents. Charged per verification via KYC credits.", PricingType = "free", BillingFrequency = "one_time", Price = 0m, Currency = "INR", TaxMode = "exclusive", BillingMetric = "digilockerKyc", CreditsPerSuccess = 3, IsActive = true, IsVisible = true, SortOrder = 7 }
     ];
 
     private async Task<HashSet<string>> ResolveTenantEntitlementTokensAsync(CancellationToken ct)
@@ -306,6 +310,8 @@ public class IntegrationCatalogController(
         public decimal Price { get; set; }
         public string Currency { get; set; } = "INR";
         public string TaxMode { get; set; } = "exclusive";
+        public string BillingMetric { get; set; } = string.Empty;
+        public int CreditsPerSuccess { get; set; } = 0;
         public bool IsActive { get; set; } = true;
         public bool IsVisible { get; set; } = true;
         public int SortOrder { get; set; } = 1;

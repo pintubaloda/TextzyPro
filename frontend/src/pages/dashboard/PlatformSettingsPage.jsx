@@ -867,7 +867,7 @@ const PlatformSettingsPage = () => {
         <Card className="border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle>Documentation Center</CardTitle>
-            <CardDescription>Use the same professional references your tenants use, with direct access to SMS and WhatsApp integration documentation.</CardDescription>
+            <CardDescription>Use the same professional references your tenants use, with direct access to SMS, WhatsApp, and KYC integration documentation.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 xl:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -894,6 +894,19 @@ const PlatformSettingsPage = () => {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "whatsapp" })}>Read in App</Button>
                 <Button variant="outline" onClick={() => window.open("/docs/whatsapp-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-slate-950">KYC API Reference (DigiLocker)</p>
+                  <p className="mt-1 text-sm text-slate-500">KYC session APIs, redirect + callback flow, webhook payload, document types, and credit-based billing.</p>
+                </div>
+                <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "kyc" })}>Read in App</Button>
+                <Button variant="outline" onClick={() => window.open("/docs/kyc-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
               </div>
             </div>
           </CardContent>
@@ -3236,6 +3249,12 @@ const PlatformSettingsPage = () => {
             <CardDescription>Set commercial status, pricing model, GST display, and visibility for integrations shown to every tenant.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-900">
+              <span className="font-semibold">Per-plugin credit billing:</span>{" "}
+              assign a wallet (for example <span className="font-semibold">KYC credits</span>) and set{" "}
+              <span className="font-semibold">Credits / success</span>. You can change these any time and it will apply
+              to the next successful verification.
+            </div>
             <div className="grid gap-4 md:grid-cols-4">
               {[
                 { label: "Visible", value: integrationCatalog.filter((x) => x?.isVisible !== false).length },
@@ -3258,6 +3277,7 @@ const PlatformSettingsPage = () => {
                     <th className="px-4 py-3 text-left font-medium text-slate-600">Pricing</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-600">Frequency</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-600">Tax Label</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate-600">Credit Billing</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-600">Status</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-600">Visible</th>
                   </tr>
@@ -3303,6 +3323,34 @@ const PlatformSettingsPage = () => {
                         </Select>
                       </td>
                       <td className="px-4 py-3 align-top">
+                        <div className="grid gap-2">
+                          <Select
+                            value={item.billingMetric || ""}
+                            onValueChange={(value) => setIntegrationCatalog((prev) => prev.map((row, i) => i === index ? { ...row, billingMetric: value } : row))}
+                          >
+                            <SelectTrigger><SelectValue placeholder="No credits" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">No credits</SelectItem>
+                              <SelectItem value="smsCredits">SMS credits</SelectItem>
+                              <SelectItem value="digilockerKyc">KYC credits</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="50"
+                            step="1"
+                            disabled={!item.billingMetric}
+                            value={Number(item.creditsPerSuccess ?? 0)}
+                            onChange={(e) => setIntegrationCatalog((prev) => prev.map((row, i) => i === index ? { ...row, creditsPerSuccess: Number(e.target.value || 0) } : row))}
+                            placeholder="Credits / success"
+                          />
+                          <p className="text-[11px] text-slate-500">
+                            When set, successful plugin operations consume this many credits from the selected wallet.
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top">
                         <div className="flex items-center gap-2">
                           <Switch checked={item.isActive !== false} onCheckedChange={(checked) => setIntegrationCatalog((prev) => prev.map((row, i) => i === index ? { ...row, isActive: checked } : row))} />
                           <span className="text-xs text-slate-500">{item.isActive !== false ? "Active" : "Inactive"}</span>
@@ -3318,7 +3366,7 @@ const PlatformSettingsPage = () => {
                   ))}
                   {integrationCatalog.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-center text-slate-500">No integration catalog entries found.</td>
+                      <td colSpan={8} className="px-4 py-6 text-center text-slate-500">No integration catalog entries found.</td>
                     </tr>
                   ) : null}
                 </tbody>

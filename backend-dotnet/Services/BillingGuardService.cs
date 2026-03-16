@@ -61,6 +61,25 @@ public class BillingGuardService(ControlDbContext db)
         };
     }
 
+    /// <summary>
+    /// Returns the total units available for a metric combining prepaid usage-pack balance and plan remaining.
+    /// For unlimited plan limits, returns <see cref="int.MaxValue"/>.
+    /// </summary>
+    public async Task<int> GetTotalAvailableUnitsAsync(Guid tenantId, string key, CancellationToken ct = default)
+    {
+        var current = await GetCurrentUsageAsync(tenantId, key, ct);
+        if (!IsUsagePackCreditMetric(key))
+        {
+            var remaining = await GetPlanRemainingAsync(tenantId, key, current, ct);
+            return remaining;
+        }
+
+        var prepaidBalance = await GetCreditBalanceAsync(tenantId, key, ct);
+        var planRemaining = await GetPlanRemainingAsync(tenantId, key, current, ct);
+        if (planRemaining == int.MaxValue) return int.MaxValue;
+        return prepaidBalance + Math.Max(0, planRemaining);
+    }
+
     public async Task<(bool Allowed, int Limit, int Used, string Message)> TryConsumeAsync(Guid tenantId, string key, int delta = 1, CancellationToken ct = default)
     {
         var usage = await GetOrCreateUsageAsync(tenantId, ct);

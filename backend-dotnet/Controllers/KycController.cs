@@ -17,6 +17,7 @@ public class KycController(
     TenancyContext tenancy,
     RbacService rbac,
     BillingGuardService billingGuard,
+    IntegrationCatalogBillingService integrationBilling,
     SecretCryptoService crypto,
     KycProviderRouter router,
     AuditLogService audit) : ControllerBase
@@ -34,11 +35,26 @@ public class KycController(
         if (provider.Length > 40) return BadRequest("provider is too long.");
         if (request.DocTypes.Count > 25) return BadRequest("Too many docTypes.");
 
-        // Pre-check credits/limits (non-destructive). Actual consumption happens on verified callback.
-        var current = await billingGuard.GetCurrentUsageAsync(tenancy.TenantId, "digilockerKyc", ct);
-        var check = await billingGuard.CheckLimitAsync(tenancy.TenantId, "digilockerKyc", current + 1, ct);
+        // Pre-check credits/limits (non-destructive). Actual consumption happens only on verified callback.
+        var pluginSlug = $"{provider}-kyc";
+        var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
+        var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
+        var creditsNeeded = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
+
+        var current = await billingGuard.GetCurrentUsageAsync(tenancy.TenantId, metricKey, ct);
+        var check = await billingGuard.CheckLimitAsync(tenancy.TenantId, metricKey, current + creditsNeeded, ct);
         if (!check.Allowed)
-            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = check.Message, key = "digilockerKyc" });
+            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = check.Message, key = metricKey });
+
+        var available = await billingGuard.GetTotalAvailableUnitsAsync(tenancy.TenantId, metricKey, ct);
+        if (available != int.MaxValue && available < creditsNeeded)
+        {
+            return StatusCode(StatusCodes.Status402PaymentRequired, new
+            {
+                error = $"Insufficient credits. Need {creditsNeeded} {metricKey} units, available {available}.",
+                key = metricKey
+            });
+        }
 
         var row = new KycSession
         {
@@ -151,4 +167,3 @@ public class KycController(
         public string WebhookUrl { get; set; } = string.Empty;
     }
 }
-

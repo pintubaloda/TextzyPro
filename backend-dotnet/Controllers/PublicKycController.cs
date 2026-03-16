@@ -15,12 +15,11 @@ public class PublicKycController(
     ControlDbContext db,
     KycProviderRouter router,
     BillingGuardService billingGuard,
+    IntegrationCatalogBillingService integrationBilling,
     SecretCryptoService crypto,
     IHttpClientFactory httpClientFactory,
     ILogger<PublicKycController> logger) : ControllerBase
 {
-    private const string DigilockerSettingsScope = "digilocker";
-
     // Example:
     // GET /api/public/kyc/digilocker/callback?sessionId=...&code=...&state=...
     [HttpGet("{provider}/callback")]
@@ -69,8 +68,11 @@ public class PublicKycController(
             // Bill credits only on successful verification.
             try
             {
-                var credits = await ResolveCreditsPerSuccessAsync(ct);
-                await billingGuard.TryConsumeAsync(row.TenantId, "digilockerKyc", credits, ct);
+                var pluginSlug = $"{provider}-kyc";
+                var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
+                var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
+                var credits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
+                await billingGuard.TryConsumeAsync(row.TenantId, metricKey, credits, ct);
             }
             catch (Exception ex)
             {
@@ -141,24 +143,4 @@ public class PublicKycController(
         }
     }
 
-    private async Task<int> ResolveCreditsPerSuccessAsync(CancellationToken ct)
-    {
-        try
-        {
-            var raw = await db.PlatformSettings
-                .AsNoTracking()
-                .Where(x => x.Scope == DigilockerSettingsScope && x.Key == "creditsPerSuccess")
-                .Select(x => x.ValueEncrypted)
-                .FirstOrDefaultAsync(ct);
-            var value = crypto.Decrypt(raw ?? string.Empty).Trim();
-            if (!int.TryParse(value, out var credits)) credits = 3;
-            if (credits < 1) credits = 1;
-            if (credits > 50) credits = 50;
-            return credits;
-        }
-        catch
-        {
-            return 3;
-        }
-    }
 }
