@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useBranding } from "@/hooks/useBranding";
 
 function safeGet(obj, key, fallback = "") {
   try {
@@ -41,7 +42,101 @@ function decodeBase64ToBlobUrl(base64, mime = "application/pdf") {
   return URL.createObjectURL(blob);
 }
 
+function KycPreviewCard({ brand, collected, active }) {
+  const name = safeGet(collected, "name", "-");
+  const dob = safeGet(collected, "dob", "-");
+  const gender = safeGet(collected, "gender", "-");
+  const fatherName = safeGet(collected, "fatherName", "-");
+  const aadhaar = safeGet(collected, "aadhaarMasked", "") || (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified" : "-");
+  const pan = safeGet(collected, "pan", "-");
+  const address = safeGet(collected, "address", "-");
+  const photo = toDataUrl(collected.photoBase64);
+  const docType = (Array.isArray(active?.docTypes) && active.docTypes[0]) ? String(active.docTypes[0]).toUpperCase() : "KYC";
+
+  return (
+    <div className="relative h-[540px] w-full overflow-hidden rounded-xl bg-white">
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.08]">
+        {brand?.logoUrl ? (
+          <img src={brand.logoUrl} alt={brand.name || "Textzy"} className="h-36 w-36 object-contain" />
+        ) : (
+          <div className="text-6xl font-black tracking-tight text-slate-900">{brand?.name || "Textzy"}</div>
+        )}
+      </div>
+
+      <div className="relative p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {brand?.logoUrl ? (
+              <img src={brand.logoUrl} alt={brand.name || "Textzy"} className="h-10 w-10 rounded-xl border border-slate-200 object-cover" />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-900">
+                {String(brand?.name || "Textzy").slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div className="text-sm font-semibold text-slate-900">{brand?.name || "Textzy"}</div>
+              <div className="text-xs text-slate-500">{docType} KYC Record</div>
+            </div>
+          </div>
+          <Badge className="bg-emerald-600 hover:bg-emerald-600">Verified</Badge>
+        </div>
+
+        <div className="mt-4 grid grid-cols-[1fr_140px] gap-4 rounded-2xl border border-slate-200 p-4">
+          <div className="space-y-2 text-xs">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-slate-500">Name</div>
+                <div className="font-semibold text-slate-900">{name}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">DOB</div>
+                <div className="font-semibold text-slate-900">{dob}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Gender</div>
+                <div className="font-semibold text-slate-900">{gender}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Father Name</div>
+                <div className="font-semibold text-slate-900">{fatherName}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Aadhaar</div>
+                <div className="font-semibold text-slate-900">{aadhaar}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">PAN</div>
+                <div className="font-semibold text-slate-900">{pan}</div>
+              </div>
+              <div className="col-span-2">
+                <div className="text-slate-500">Address</div>
+                <div className="font-semibold text-slate-900">{address}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center gap-2">
+            {photo ? (
+              <img src={photo} alt="photo" className="h-[150px] w-[120px] rounded-xl border border-slate-200 object-cover" />
+            ) : (
+              <div className="flex h-[150px] w-[120px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400">
+                No photo
+              </div>
+            )}
+            <div className="text-[11px] text-slate-500">Powered by {brand?.name || "Textzy"}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 text-[11px] text-slate-500">
+          Note: If DigiLocker blocks PDF/XML download, this preview is generated from available profile and issued-doc metadata.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function KycReportsPage() {
+  const { brand } = useBranding();
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -168,14 +263,18 @@ export default function KycReportsPage() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <div className="mb-2 text-xs font-medium text-slate-500">Document preview</div>
               {previewUrl ? (
-                <iframe title="kyc-preview" src={previewUrl} className="h-[540px] w-full rounded-xl bg-white" />
-              ) : (
-                <div className="flex h-[540px] flex-col items-center justify-center gap-2 rounded-xl bg-white px-6 text-center text-sm text-slate-500">
-                  <div>No preview available</div>
-                  <div className="text-xs text-slate-400">
-                    If DigiLocker blocks file download (403), Textzy cannot show the PDF/XML preview. Check Raw (debug) for <span className="font-mono">fileDownloadErrors</span>.
+                <div className="relative h-[540px] w-full rounded-xl bg-white overflow-hidden">
+                  <iframe title="kyc-preview" src={previewUrl} className="h-full w-full" />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.08]">
+                    {brand?.logoUrl ? (
+                      <img src={brand.logoUrl} alt={brand.name || "Textzy"} className="h-36 w-36 object-contain" />
+                    ) : (
+                      <div className="text-6xl font-black tracking-tight text-slate-900">{brand?.name || "Textzy"}</div>
+                    )}
                   </div>
                 </div>
+              ) : (
+                <KycPreviewCard brand={brand} collected={activeDetail?.result?.collected || active?.collected || {}} active={activeDetail || active} />
               )}
             </div>
 
@@ -232,6 +331,10 @@ export default function KycReportsPage() {
                           {safeGet(collected, "aadhaarMasked", "") ||
                             (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified (no number)" : "-")}
                         </div>
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-slate-500">Father Name</div>
+                        <div className="font-medium text-slate-900">{safeGet(collected, "fatherName", "-")}</div>
                       </div>
                       <div className="col-span-2">
                         <div className="text-slate-500">Address</div>
