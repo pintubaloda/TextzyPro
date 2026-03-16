@@ -223,7 +223,7 @@
           </ul>
           <div class="ok"><strong>One session = one docType:</strong> Textzy can charge different credits per docType. Create one KYC session per docType for predictable billing.</div>
           <div class="note"><strong>Authorize URL</strong> and <strong>Token URL</strong> are OAuth2 endpoints. They are platform-level (platform owns DigiLocker client credentials) and are not configured per request. In Platform Settings, you can leave them blank to use default DigiLocker endpoints.</div>
-          <div class="note"><strong>Aadhaar / extended flows:</strong> DigiLocker may require extra authorize query params (e.g. <code>dl_flow=signin&amp;acr=aadhaar&amp;amr=aadhaar+exists_ac_pin</code>). Configure these in Platform Settings → DigiLocker Master Config → <strong>Authorize Extra Params</strong>. If DigiLocker asks for additional scopes like <code>openid</code> or <code>userdetails</code>, set them in the platform <strong>Scope</strong> field.</div>
+          <div class="note"><strong>Aadhaar / extended flows:</strong> DigiLocker may require extra authorize query params (e.g. <code>dl_flow=signin&amp;acr={acr}&amp;amr=aadhaar+exists_ac_pin</code>). Configure these in Platform Settings → DigiLocker Master Config → <strong>Authorize Extra Params</strong>. Textzy expands <code>{acr}</code> from requested <code>docTypes</code> (PAN→pan, AADHAAR→aadhaar, DL→driving_licence). If DigiLocker asks for additional scopes like <code>openid</code> or <code>userdetails</code>, set them in the platform <strong>Scope</strong> field.</div>
         </section>
 
         <section class="card">

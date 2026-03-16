@@ -3512,10 +3512,12 @@ const PlatformSettingsPage = () => {
                   className="min-h-[90px] w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                   value={digilocker.authorizeExtraParams}
                   onChange={(e) => setDigilocker((p) => ({ ...p, authorizeExtraParams: e.target.value }))}
-                  placeholder={"dl_flow=signin&acr=aadhaar&amr=aadhaar+exists_ac_pin"}
+                  placeholder={"dl_flow=signin&acr={acr}&amr=aadhaar+exists_ac_pin"}
                 />
                 <p className="text-xs text-slate-500">
-                  Extra query params appended to the authorize URL (for example Aadhaar flows). Do not include core keys like <span className="font-mono">client_id</span>,{" "}
+                  Extra query params appended to the authorize URL (for example Aadhaar flows). Use <span className="font-mono">acr={"{"}acr{"}"}</span> to auto-pick <span className="font-mono">pan</span>,{" "}
+                  <span className="font-mono">aadhaar</span>, or <span className="font-mono">driving_licence</span> from the requested <span className="font-mono">docTypes</span>. Do not include core keys like{" "}
+                  <span className="font-mono">client_id</span>,{" "}
                   <span className="font-mono">redirect_uri</span>, <span className="font-mono">scope</span>, <span className="font-mono">state</span>.
                 </p>
               </div>

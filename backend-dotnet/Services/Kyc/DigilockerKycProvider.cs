@@ -53,6 +53,7 @@ public class DigiLockerKycProvider(
         await db.SaveChangesAsync(ct);
 
         var requestedDocTypes = ParseStringList(session.RequestedDocTypesJson);
+        var acrFromDocType = TryResolveAcrFromDocTypes(requestedDocTypes);
         var extra = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (requestedDocTypes.Count > 0 && !string.IsNullOrWhiteSpace(settings.DocTypeParamName))
         {
@@ -76,8 +77,9 @@ public class DigiLockerKycProvider(
         foreach (var kv in ParseAuthorizeExtraParams(settings.AuthorizeExtraParams))
         {
             if (IsReservedAuthorizeKey(kv.Key)) continue;
-            if (!qs.ContainsKey(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
-                qs[kv.Key] = kv.Value;
+            var v = ExpandAuthorizePlaceholders(kv.Value, acrFromDocType);
+            if (!qs.ContainsKey(kv.Key) && !string.IsNullOrWhiteSpace(v))
+                qs[kv.Key] = v;
         }
 
         foreach (var kv in extra)
@@ -315,6 +317,41 @@ public class DigiLockerKycProvider(
         }
 
         return dict;
+    }
+
+    private static string ExpandAuthorizePlaceholders(string value, string acrFromDocType)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var v = value;
+        if (!string.IsNullOrWhiteSpace(acrFromDocType))
+        {
+            v = v.Replace("{acr}", acrFromDocType, StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            // If acr isn't resolvable (e.g. multiple docTypes), keep placeholder so it is obvious.
+            // Callers can remove it or enforce single-docType sessions.
+        }
+
+        return v.Trim();
+    }
+
+    private static string TryResolveAcrFromDocTypes(IReadOnlyList<string> requestedDocTypes)
+    {
+        if (requestedDocTypes == null || requestedDocTypes.Count != 1) return string.Empty;
+        var dt = (requestedDocTypes[0] ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(dt)) return string.Empty;
+        dt = dt.Replace("-", "_", StringComparison.OrdinalIgnoreCase).Replace(" ", "_", StringComparison.OrdinalIgnoreCase);
+
+        // DigiLocker ACR known values: pan, aadhaar, driving_licence
+        if (dt.Equals("PAN", StringComparison.OrdinalIgnoreCase)) return "pan";
+        if (dt.Equals("AADHAAR", StringComparison.OrdinalIgnoreCase) || dt.Equals("AADHAR", StringComparison.OrdinalIgnoreCase)) return "aadhaar";
+        if (dt.Equals("DL", StringComparison.OrdinalIgnoreCase)
+            || dt.Equals("DRIVING_LICENCE", StringComparison.OrdinalIgnoreCase)
+            || dt.Equals("DRIVING_LICENSE", StringComparison.OrdinalIgnoreCase))
+            return "driving_licence";
+
+        return string.Empty;
     }
 
     private static List<string> ParseStringList(string json)
