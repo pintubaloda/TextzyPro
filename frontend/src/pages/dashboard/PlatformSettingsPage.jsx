@@ -2291,7 +2291,7 @@ const PlatformSettingsPage = () => {
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Unified Webhook Logs</CardTitle>
-            <CardDescription>WABA + Payment webhook events in one stream.</CardDescription>
+            <CardDescription>WABA + Payment + KYC webhook events in one stream.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2358,6 +2358,7 @@ const PlatformSettingsPage = () => {
                   <SelectItem value="razorpay">Razorpay</SelectItem>
                   <SelectItem value="stripe">Stripe</SelectItem>
                   <SelectItem value="cashfree">Cashfree</SelectItem>
+                  <SelectItem value="digilocker">DigiLocker (KYC)</SelectItem>
                 </SelectContent>
               </Select>
               <Button variant="outline" onClick={async () => setLogs(await getPlatformWebhookLogs({ provider: logProvider, limit: 100 }))}>Refresh</Button>

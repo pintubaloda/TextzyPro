@@ -917,6 +917,26 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycSessions_Status" ON "KycSessions" ("Status");""");
 
     db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS "KycWebhookDeliveries" (
+            "Id" uuid PRIMARY KEY,
+            "CreatedAtUtc" timestamp with time zone NOT NULL DEFAULT now(),
+            "TenantId" uuid NOT NULL,
+            "SessionId" uuid NOT NULL,
+            "Provider" text NOT NULL DEFAULT '',
+            "Url" text NOT NULL DEFAULT '',
+            "Ok" boolean NOT NULL DEFAULT false,
+            "StatusCode" integer NOT NULL DEFAULT 0,
+            "DurationMs" integer NOT NULL DEFAULT 0,
+            "RequestJson" text NOT NULL DEFAULT '',
+            "ResponseBody" text NOT NULL DEFAULT '',
+            "Error" text NOT NULL DEFAULT ''
+        );
+        """);
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycWebhookDeliveries_Tenant_CreatedAt" ON "KycWebhookDeliveries" ("TenantId","CreatedAtUtc" DESC);""");
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycWebhookDeliveries_Provider_CreatedAt" ON "KycWebhookDeliveries" ("Provider","CreatedAtUtc" DESC);""");
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycWebhookDeliveries_SessionId" ON "KycWebhookDeliveries" ("SessionId");""");
+
+    db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "TeamInvitations" (
             "Id" uuid PRIMARY KEY,
             "TenantId" uuid NOT NULL,

@@ -1,9 +1,11 @@
 using System.Net.Http.Headers;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
+using Textzy.Api.Models;
 using Textzy.Api.Services;
 using Textzy.Api.Services.Kyc;
 
@@ -126,10 +128,7 @@ public class PublicKycController(
             try { requestedDocTypes = JsonSerializer.Deserialize<List<string>>(session.RequestedDocTypesJson) ?? []; }
             catch { requestedDocTypes = []; }
 
-            var http = httpClientFactory.CreateClient();
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.UserAgent.Add(new ProductInfoHeaderValue("Textzy", "1.0"));
-            req.Content = new StringContent(JsonSerializer.Serialize(new
+            var payload = new
             {
                 sessionId = session.Id,
                 tenantId = session.TenantId,
@@ -141,13 +140,62 @@ public class PublicKycController(
                 failureReason = session.FailureReason,
                 completedAtUtc = session.CompletedAtUtc,
                 result
-            }), Encoding.UTF8, "application/json");
+            };
+            var payloadJson = JsonSerializer.Serialize(payload);
+
+            var http = httpClientFactory.CreateClient();
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.UserAgent.Add(new ProductInfoHeaderValue("Textzy", "1.0"));
+            req.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+
+            var sw = Stopwatch.StartNew();
             using var res = await http.SendAsync(req, ct);
-            _ = await res.Content.ReadAsStringAsync(ct);
+            var responseBody = await res.Content.ReadAsStringAsync(ct);
+            sw.Stop();
+
+            db.KycWebhookDeliveries.Add(new KycWebhookDelivery
+            {
+                Id = Guid.NewGuid(),
+                CreatedAtUtc = DateTime.UtcNow,
+                TenantId = session.TenantId,
+                SessionId = session.Id,
+                Provider = (session.ProviderCode ?? string.Empty).Trim().ToLowerInvariant(),
+                Url = url,
+                Ok = res.IsSuccessStatusCode,
+                StatusCode = (int)res.StatusCode,
+                DurationMs = (int)Math.Clamp(sw.ElapsedMilliseconds, 0, int.MaxValue),
+                RequestJson = payloadJson.Length > 20000 ? payloadJson[..20000] : payloadJson,
+                ResponseBody = string.IsNullOrWhiteSpace(responseBody) ? string.Empty : (responseBody.Length > 4000 ? responseBody[..4000] : responseBody),
+                Error = string.Empty
+            });
+            await db.SaveChangesAsync(ct);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "KYC webhook failed for session {SessionId}", session.Id);
+            try
+            {
+                db.KycWebhookDeliveries.Add(new KycWebhookDelivery
+                {
+                    Id = Guid.NewGuid(),
+                    CreatedAtUtc = DateTime.UtcNow,
+                    TenantId = session.TenantId,
+                    SessionId = session.Id,
+                    Provider = (session.ProviderCode ?? string.Empty).Trim().ToLowerInvariant(),
+                    Url = url,
+                    Ok = false,
+                    StatusCode = 0,
+                    DurationMs = 0,
+                    RequestJson = string.Empty,
+                    ResponseBody = string.Empty,
+                    Error = ex.Message.Length > 1500 ? ex.Message[..1500] : ex.Message
+                });
+                await db.SaveChangesAsync(ct);
+            }
+            catch
+            {
+                // ignore logging failures
+            }
         }
     }
 

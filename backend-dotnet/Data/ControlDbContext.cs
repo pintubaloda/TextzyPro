@@ -40,4 +40,5 @@ public class ControlDbContext(DbContextOptions<ControlDbContext> options) : DbCo
     public DbSet<MobilePairingRequest> MobilePairingRequests => Set<MobilePairingRequest>();
     public DbSet<MobileTelemetryEvent> MobileTelemetryEvents => Set<MobileTelemetryEvent>();
     public DbSet<KycSession> KycSessions => Set<KycSession>();
+    public DbSet<KycWebhookDelivery> KycWebhookDeliveries => Set<KycWebhookDelivery>();
 }

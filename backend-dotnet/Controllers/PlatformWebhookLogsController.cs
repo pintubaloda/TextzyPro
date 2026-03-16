@@ -59,8 +59,29 @@ public class PlatformWebhookLogsController(ControlDbContext db, AuthContext auth
             })
             .ToListAsync(ct);
 
+        var kycQuery = db.KycWebhookDeliveries.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(provider))
+            kycQuery = kycQuery.Where(x => x.Provider == provider);
+
+        var kycRows = await kycQuery
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(limit)
+            .Select(x => new
+            {
+                source = "kyc",
+                x.Id,
+                provider = x.Provider,
+                action = "kyc.webhook.delivery",
+                details = $"{x.StatusCode} {x.DurationMs}ms url={x.Url} sessionId={x.SessionId}",
+                status = x.Ok ? "Delivered" : "Failed",
+                retryCount = 0,
+                x.CreatedAtUtc
+            })
+            .ToListAsync(ct);
+
         var merged = auditRows
             .Concat(eventRows)
+            .Concat(kycRows)
             .OrderByDescending(x => x.CreatedAtUtc)
             .Take(limit)
             .ToList();
