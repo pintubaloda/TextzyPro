@@ -46,7 +46,7 @@ public class DigiLockerKycProvider(
         var authorizeUrl = Require(settings.AuthorizeUrl, "authorizeUrl");
         var clientId = Require(settings.ClientId, "clientId");
         var redirectUri = Require(settings.RedirectUri, "redirectUri");
-        var scope = string.IsNullOrWhiteSpace(settings.Scope) ? "files.issueddocs" : settings.Scope.Trim();
+        var scope = NormalizeScope(settings.Scope);
 
         var state = CreateState(session);
         var (verifier, challenge) = CreatePkcePair();
@@ -107,6 +107,69 @@ public class DigiLockerKycProvider(
 
         var redirect = AppendQuery(authorizeUrl, qs);
         return (redirect, state);
+    }
+
+    private static string NormalizeScope(string? rawScope)
+    {
+        // DigiLocker scope names in the wild are inconsistent across docs/samples.
+        // Our UI allows "friendly" names; normalize to DigiLocker's actual scope tokens.
+        //
+        // Common DigiLocker OAuth2 scopes:
+        // - files.issueddocs (issued documents)
+        // - userdetails (profile info like name/dob/gender)
+        // - email, address, picture
+        // - avs (age verification)
+        //
+        // IMPORTANT: Do not include `openid` (causes token exchange issues on some DigiLocker client configs).
+        var input = (rawScope ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(input))
+            return "files.issueddocs";
+
+        var tokens = new List<string>();
+        foreach (var part in input.Split(new[] { ' ', '\t', '\r', '\n', ',', '+', ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var t = part.Trim();
+            if (t.Length == 0) continue;
+            var key = t.Replace('_', '-').Trim().ToLowerInvariant();
+
+            if (key == "openid") continue;
+
+            var mapped = key switch
+            {
+                "issued-documents" => "files.issueddocs",
+                "issued-docs" => "files.issueddocs",
+                "issued-doc" => "files.issueddocs",
+                "issueddocuments" => "files.issueddocs",
+                "issued-document" => "files.issueddocs",
+                "files.issueddocs" => "files.issueddocs",
+                "files-issued-docs" => "files.issueddocs",
+                "profile" => "userdetails",
+                "user-details" => "userdetails",
+                "userdetails" => "userdetails",
+                "age-verification" => "avs",
+                "ageverification" => "avs",
+                "avs" => "avs",
+                "email" => "email",
+                "address" => "address",
+                "picture" => "picture",
+                _ => t.Trim()
+            };
+
+            mapped = mapped.Trim();
+            if (mapped.Length == 0) continue;
+            tokens.Add(mapped);
+        }
+
+        // Stable distinct while preserving order.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (var t in tokens)
+        {
+            if (seen.Add(t)) result.Add(t);
+        }
+
+        if (result.Count == 0) return "files.issueddocs";
+        return string.Join(' ', result);
     }
 
     public async Task<KycProviderCallbackResult> HandleCallbackAsync(KycSession session, string code, string state, CancellationToken ct)
@@ -352,9 +415,10 @@ public class DigiLockerKycProvider(
             AuthorizeExtraParams: Pick("authorizeExtraParams", config["Digilocker:AuthorizeExtraParams"] ?? config["DIGILOCKER_AUTHORIZE_EXTRA_PARAMS"] ?? string.Empty),
             TokenUrl: Pick("tokenUrl", config["Digilocker:TokenUrl"] ?? config["DIGILOCKER_TOKEN_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1/token"),
             ApiBaseUrl: Pick("apiBaseUrl", config["Digilocker:ApiBaseUrl"] ?? config["DIGILOCKER_API_BASE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public"),
+            // Default to the real DigiLocker scope tokens.
+            // UI can still send "friendly" tokens (issued-documents/profile/age-verification); BuildRedirect normalizes.
             // IMPORTANT: Do NOT include "openid" unless your DigiLocker client is configured for it.
-            // Many DigiLocker environments reject openid token flows if enabled incorrectly.
-            Scope: Pick("scope", config["Digilocker:Scope"] ?? config["DIGILOCKER_SCOPE"] ?? "issued-documents profile email address picture age-verification"),
+            Scope: Pick("scope", config["Digilocker:Scope"] ?? config["DIGILOCKER_SCOPE"] ?? "files.issueddocs userdetails email address picture avs"),
             DocTypeParamName: Pick("docTypeParamName", "req_doctype"),
             // Your desired flow uses /oauth2/1/files; keep configurable because DigiLocker versions differ.
             IssuedDocsPath: Pick("issuedDocsPath", "/oauth2/1/files"),
