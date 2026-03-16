@@ -55,7 +55,7 @@ function persistCsrfFromResponse(res) {
 export function getSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { tenantSlug: '', role: '', email: '', permissions: [] }
+    if (!raw) return { tenantSlug: '', projectName: '', role: '', email: '', permissions: [], accessToken: '' }
     const p = JSON.parse(raw)
     const permissions = Array.isArray(p.permissions)
       ? p.permissions.filter((x) => typeof x === 'string' && x.trim())
@@ -65,10 +65,12 @@ export function getSession() {
       projectName: p.projectName || '',
       role: p.role || '',
       email: p.email || '',
-      permissions
+      permissions,
+      // Optional bearer token fallback (useful for desktop shells / environments where cookies are unreliable).
+      accessToken: p.accessToken || ''
     }
   } catch {
-    return { tenantSlug: '', projectName: '', role: '', email: '', permissions: [] }
+    return { tenantSlug: '', projectName: '', role: '', email: '', permissions: [], accessToken: '' }
   }
 }
 
@@ -78,6 +80,7 @@ export function setSession(next) {
   merged.permissions = Array.isArray(merged.permissions)
     ? merged.permissions.filter((x) => typeof x === 'string' && x.trim())
     : []
+  merged.accessToken = String(merged.accessToken || '').trim()
   if (merged.tenantSlug) {
     try {
       localStorage.setItem(LAST_TENANT_KEY, String(merged.tenantSlug).trim().toLowerCase())
@@ -282,6 +285,11 @@ async function baseFetch(path, options = {}, useAuth = true) {
     if (csrfToken) headers['X-CSRF-Token'] = csrfToken
   }
 
+  // If cookies are missing/unreliable (common in desktop shells), allow bearer auth fallback.
+  if (useAuth && s.accessToken && !headers.Authorization) {
+    headers.Authorization = `Bearer ${s.accessToken}`
+  }
+
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include', cache: 'no-store' })
   persistCsrfFromResponse(res)
   return res
@@ -384,7 +392,9 @@ async function refresh() {
       if (res.status === 401) redirectToLogin(reason)
       return false
     }
-    await res.json().catch(() => ({}))
+    const data = await res.json().catch(() => ({}))
+    const token = (data?.accessToken || data?.AccessToken || '').trim()
+    if (token) setSession({ accessToken: token })
     return true
   })()
   try {
@@ -544,6 +554,10 @@ export async function authLogin({ email, password, tenantSlug, emailVerification
   if (data?.requiresTwoFactor) {
     return data
   }
+
+  // Persist bearer token fallback if server returned it.
+  const token = (data?.accessToken || data?.AccessToken || '').trim()
+  if (token) setSession({ accessToken: token })
   return data
 }
 
