@@ -99,6 +99,80 @@ public class PublicKycSessionsController(
         });
     }
 
+    // Download a DigiLocker-issued file (PDF) that was attached into the session result.
+    // Caller must provide the same public API credentials as GetSession.
+    //
+    // Example:
+    // GET /api/public/kyc/sessions/{sessionId}/file?tenantSlug=...&user=...&pswd=...&apikey=...&uri=in.gov.pan-PANCR-XXXX
+    [HttpGet("sessions/{id:guid}/file")]
+    public async Task<IActionResult> GetSessionFile(
+        Guid id,
+        [FromQuery] string tenantSlug,
+        [FromQuery] string user,
+        [FromQuery] string pswd,
+        [FromQuery] string apikey,
+        [FromQuery] string uri,
+        CancellationToken ct)
+    {
+        var auth = new PublicKycAuthRequest
+        {
+            TenantSlug = tenantSlug,
+            User = user,
+            Password = pswd,
+            ApiKey = apikey
+        };
+        var (tenantId, _, errorResult) = await ValidatePublicAuthAsync(auth, ct);
+        if (tenantId == Guid.Empty) return errorResult!;
+
+        if (string.IsNullOrWhiteSpace(uri)) return BadRequest("uri is required.");
+
+        var row = await controlDb.KycSessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId, ct);
+        if (row is null) return NotFound("KYC session not found.");
+
+        if (string.IsNullOrWhiteSpace(row.ResultJsonEncrypted))
+            return NotFound("No KYC result recorded for this session.");
+
+        var raw = crypto.Decrypt(row.ResultJsonEncrypted);
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(raw) ? "{}" : raw);
+        if (!doc.RootElement.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array)
+            return NotFound("No files recorded for this session.");
+
+        JsonElement? match = null;
+        foreach (var f in files.EnumerateArray())
+        {
+            if (f.ValueKind != JsonValueKind.Object) continue;
+            if (!f.TryGetProperty("uri", out var u) || u.ValueKind != JsonValueKind.String) continue;
+            if (!string.Equals(u.GetString(), uri, StringComparison.OrdinalIgnoreCase)) continue;
+            match = f;
+            break;
+        }
+
+        if (match is null) return NotFound("File not found in this session result.");
+
+        var fileBase64 = match.Value.TryGetProperty("fileBase64", out var fb) && fb.ValueKind == JsonValueKind.String ? fb.GetString() ?? "" : "";
+        if (string.IsNullOrWhiteSpace(fileBase64)) return NotFound("File content is missing for this session.");
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(fileBase64); }
+        catch { return StatusCode(StatusCodes.Status500InternalServerError, "Stored file content is corrupt."); }
+
+        var mime = match.Value.TryGetProperty("mime", out var mm) && mm.ValueKind == JsonValueKind.String
+            ? (mm.GetString() ?? "application/octet-stream")
+            : "application/octet-stream";
+
+        var name = match.Value.TryGetProperty("name", out var nn) && nn.ValueKind == JsonValueKind.String
+            ? (nn.GetString() ?? string.Empty).Trim()
+            : string.Empty;
+
+        // Safe fallback file name for browsers.
+        var fileName = !string.IsNullOrWhiteSpace(name) ? name : uri;
+        foreach (var c in Path.GetInvalidFileNameChars()) fileName = fileName.Replace(c, '_');
+        if (!fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && mime.Contains("pdf", StringComparison.OrdinalIgnoreCase))
+            fileName += ".pdf";
+
+        return File(bytes, mime, fileName);
+    }
+
     private async Task<IActionResult> CreateCore(PublicKycCreateRequest request, CancellationToken ct)
     {
         var (tenantId, profile, errorResult) = await ValidatePublicAuthAsync(request, ct);

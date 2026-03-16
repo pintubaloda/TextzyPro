@@ -33,6 +33,8 @@ public class DigiLockerKycProvider(
     public string Code => "digilocker";
 
     private const string SettingsScope = "digilocker";
+    private const int DefaultMaxFileBytes = 2 * 1024 * 1024; // 2 MiB, keep result/webhook sizes bounded
+    private const int DefaultMaxFilesPerSession = 5;
 
     public async Task<(string RedirectUrl, string State)> BuildRedirectAsync(KycSession session, CancellationToken ct)
     {
@@ -147,6 +149,7 @@ public class DigiLockerKycProvider(
         var issuedBody = await issuedRes.Content.ReadAsStringAsync(ct);
 
         var docTypes = new List<string>();
+        var issuedItems = new List<IssuedItem>();
         try
         {
             using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(issuedBody) ? "{}" : issuedBody);
@@ -158,6 +161,7 @@ public class DigiLockerKycProvider(
                     if (it.ValueKind != JsonValueKind.Object) continue;
                     if (it.TryGetProperty("doctype", out var dt) && !string.IsNullOrWhiteSpace(dt.GetString()))
                         docTypes.Add(dt.GetString()!.Trim());
+                    issuedItems.Add(ParseIssuedItem(it));
                 }
             }
             else if (doc.RootElement.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
@@ -169,12 +173,70 @@ public class DigiLockerKycProvider(
                         docTypes.Add(dt.GetString()!.Trim());
                     else if (it.TryGetProperty("doc_type", out var dt2) && !string.IsNullOrWhiteSpace(dt2.GetString()))
                         docTypes.Add(dt2.GetString()!.Trim());
+                    issuedItems.Add(ParseIssuedItem(it));
                 }
             }
         }
         catch
         {
             // ignore parsing errors, we still store raw payload
+        }
+
+        // Optionally download actual file bytes so tenants can get a "complete record with file"
+        // via session GET or webhook payload. Keep strict limits to avoid blowing up DB/webhook sizes.
+        var downloaded = new List<object>();
+        var downloadErrors = new List<object>();
+        if (issuedRes.IsSuccessStatusCode && settings.IncludeFilesInResult && issuedItems.Count > 0)
+        {
+            var maxFiles = settings.MaxFilesPerSession > 0 ? settings.MaxFilesPerSession : DefaultMaxFilesPerSession;
+            var maxBytes = settings.MaxFileBytes > 0 ? settings.MaxFileBytes : DefaultMaxFileBytes;
+
+            // De-dupe by URI; DigiLocker may return duplicates in some environments.
+            var unique = issuedItems
+                .Where(x => !string.IsNullOrWhiteSpace(x.Uri))
+                .GroupBy(x => x.Uri!, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .Take(maxFiles)
+                .ToList();
+
+            foreach (var it in unique)
+            {
+                try
+                {
+                    var file = await DownloadFileAsync(
+                        http,
+                        apiBase,
+                        settings.FileDownloadPathTemplate,
+                        accessToken,
+                        it.Uri!,
+                        clientSecret,
+                        maxBytes,
+                        ct);
+
+                    downloaded.Add(new
+                    {
+                        uri = it.Uri,
+                        doctype = it.DocType,
+                        name = it.Name,
+                        mime = file.Mime,
+                        sizeBytes = file.SizeBytes,
+                        sha256 = file.Sha256Hex,
+                        hmac = file.HmacBase64,
+                        hmacValid = file.HmacValid,
+                        fileBase64 = file.Base64
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // Best-effort: do not fail the KYC if only the file download fails.
+                    downloadErrors.Add(new
+                    {
+                        uri = it.Uri,
+                        doctype = it.DocType,
+                        error = ex.Message
+                    });
+                }
+            }
         }
 
         var normalized = new
@@ -190,6 +252,8 @@ public class DigiLockerKycProvider(
             },
             issuedDocsStatus = (int)issuedRes.StatusCode,
             issuedDocs = TryParseJson(issuedBody),
+            files = downloaded,
+            fileDownloadErrors = downloadErrors
         };
 
         var resultJson = JsonSerializer.Serialize(normalized);
@@ -212,7 +276,11 @@ public class DigiLockerKycProvider(
         string ApiBaseUrl,
         string Scope,
         string DocTypeParamName,
-        string IssuedDocsPath);
+        string IssuedDocsPath,
+        string FileDownloadPathTemplate,
+        int MaxFileBytes,
+        int MaxFilesPerSession,
+        bool IncludeFilesInResult);
 
     private async Task<DigilockerSettings> LoadSettingsAsync(CancellationToken ct)
     {
@@ -222,6 +290,8 @@ public class DigiLockerKycProvider(
             .ToDictionaryAsync(x => x.Key, x => crypto.Decrypt(x.ValueEncrypted), StringComparer.OrdinalIgnoreCase, ct);
 
         string Pick(string key, string fallback) => map.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v.Trim() : fallback;
+        static int ParseInt(string raw, int fallback) => int.TryParse(raw, out var n) ? n : fallback;
+        static bool ParseBool(string raw, bool fallback) => bool.TryParse(raw, out var b) ? b : fallback;
 
         // Defaults match common DigiLocker requester OAuth base. Operators can override via platform settings.
         return new DigilockerSettings(
@@ -234,7 +304,11 @@ public class DigiLockerKycProvider(
             ApiBaseUrl: Pick("apiBaseUrl", config["Digilocker:ApiBaseUrl"] ?? config["DIGILOCKER_API_BASE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1"),
             Scope: Pick("scope", config["Digilocker:Scope"] ?? config["DIGILOCKER_SCOPE"] ?? "files.issueddocs"),
             DocTypeParamName: Pick("docTypeParamName", "req_doctype"),
-            IssuedDocsPath: Pick("issuedDocsPath", "/files/issued")
+            IssuedDocsPath: Pick("issuedDocsPath", "/files/issued"),
+            FileDownloadPathTemplate: Pick("fileDownloadPathTemplate", config["Digilocker:FileDownloadPathTemplate"] ?? "/file/{uri}"),
+            MaxFileBytes: ParseInt(Pick("maxFileBytes", config["Digilocker:MaxFileBytes"] ?? DefaultMaxFileBytes.ToString()), DefaultMaxFileBytes),
+            MaxFilesPerSession: ParseInt(Pick("maxFilesPerSession", config["Digilocker:MaxFilesPerSession"] ?? DefaultMaxFilesPerSession.ToString()), DefaultMaxFilesPerSession),
+            IncludeFilesInResult: ParseBool(Pick("includeFilesInResult", config["Digilocker:IncludeFilesInResult"] ?? "true"), true)
         );
     }
 
@@ -399,5 +473,104 @@ public class DigiLockerKycProvider(
         {
             return new { };
         }
+    }
+
+    private sealed record IssuedItem(string? Uri, string? DocType, string? Name);
+
+    private static IssuedItem ParseIssuedItem(JsonElement it)
+    {
+        string? GetStr(string key)
+        {
+            if (!it.TryGetProperty(key, out var v)) return null;
+            if (v.ValueKind == JsonValueKind.String) return v.GetString();
+            return v.ToString();
+        }
+
+        var uri = (GetStr("uri") ?? string.Empty).Trim();
+        var doctype = (GetStr("doctype") ?? GetStr("doc_type") ?? string.Empty).Trim();
+        var name = (GetStr("name") ?? string.Empty).Trim();
+
+        return new IssuedItem(
+            Uri: string.IsNullOrWhiteSpace(uri) ? null : uri,
+            DocType: string.IsNullOrWhiteSpace(doctype) ? null : doctype,
+            Name: string.IsNullOrWhiteSpace(name) ? null : name);
+    }
+
+    private sealed record DownloadedFile(string Mime, int SizeBytes, string Sha256Hex, string? HmacBase64, bool? HmacValid, string Base64);
+
+    private static async Task<DownloadedFile> DownloadFileAsync(
+        HttpClient http,
+        string apiBase,
+        string fileDownloadPathTemplate,
+        string accessToken,
+        string uri,
+        string clientSecret,
+        int maxBytes,
+        CancellationToken ct)
+    {
+        var template = string.IsNullOrWhiteSpace(fileDownloadPathTemplate) ? "/file/{uri}" : fileDownloadPathTemplate.Trim();
+        if (!template.StartsWith("/")) template = "/" + template;
+        if (!template.Contains("{uri}", StringComparison.OrdinalIgnoreCase))
+            template = template.TrimEnd('/') + "/{uri}";
+
+        var encodedUri = Uri.EscapeDataString(uri);
+        var path = template.Replace("{uri}", encodedUri, StringComparison.OrdinalIgnoreCase);
+        var url = apiBase.TrimEnd('/') + path;
+
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        res.EnsureSuccessStatusCode();
+
+        var mime = res.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var contentLen = res.Content.Headers.ContentLength;
+        if (contentLen.HasValue && contentLen.Value > maxBytes)
+            throw new InvalidOperationException($"File too large ({contentLen.Value} bytes). Max allowed is {maxBytes} bytes.");
+
+        await using var stream = await res.Content.ReadAsStreamAsync(ct);
+        using var ms = new MemoryStream();
+        var buffer = new byte[81920];
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            if (read <= 0) break;
+            if (ms.Length + read > maxBytes)
+                throw new InvalidOperationException($"File too large (streamed > {maxBytes} bytes).");
+            ms.Write(buffer, 0, read);
+        }
+
+        var bytes = ms.ToArray();
+        var sha256 = SHA256.HashData(bytes);
+        var sha256Hex = Convert.ToHexString(sha256).ToLowerInvariant();
+
+        string? hmacHeader = null;
+        bool? hmacValid = null;
+        if (res.Headers.TryGetValues("hmac", out var hv))
+        {
+            hmacHeader = hv.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(hmacHeader))
+            {
+                try
+                {
+                    using var h = new HMACSHA256(Encoding.UTF8.GetBytes(clientSecret ?? string.Empty));
+                    var computed = h.ComputeHash(bytes);
+                    var computedB64 = Convert.ToBase64String(computed);
+                    hmacValid = FixedTimeEquals(computedB64, hmacHeader.Trim());
+                }
+                catch
+                {
+                    hmacValid = null;
+                }
+            }
+        }
+
+        return new DownloadedFile(
+            Mime: mime,
+            SizeBytes: bytes.Length,
+            Sha256Hex: sha256Hex,
+            HmacBase64: hmacHeader,
+            HmacValid: hmacValid,
+            Base64: Convert.ToBase64String(bytes));
     }
 }
