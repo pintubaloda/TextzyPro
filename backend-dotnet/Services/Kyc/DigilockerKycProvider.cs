@@ -237,14 +237,18 @@ public class DigiLockerKycProvider(
             }
         }
 
-        var issuedPath = string.IsNullOrWhiteSpace(settings.IssuedDocsPath) ? "/files/issued" : settings.IssuedDocsPath.Trim();
-        var issuedUrl = CombineApiUrl(apiBase, issuedPath);
-
-        // Best-effort "issued docs" fetch. Exact schema varies by environment; store raw payload anyway.
-        using var issuedReq = new HttpRequestMessage(HttpMethod.Get, issuedUrl);
-        issuedReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var issuedRes = await http.SendAsync(issuedReq, ct);
-        var issuedBody = await issuedRes.Content.ReadAsStringAsync(ct);
+        // Issued docs endpoint differs by DigiLocker environment/version.
+        // Try configured path first, then fall back to known endpoints.
+        var issuedFetch = await TryGetIssuedDocsAsync(
+            http,
+            apiBase,
+            string.IsNullOrWhiteSpace(settings.IssuedDocsPath) ? "/oauth2/1/files" : settings.IssuedDocsPath.Trim(),
+            accessToken,
+            ct);
+        var issuedDocsUrl = issuedFetch.Url;
+        var issuedDocsStatus = issuedFetch.StatusCode;
+        var issuedBody = issuedFetch.Body;
+        var issuedOk = issuedDocsStatus >= 200 && issuedDocsStatus <= 299;
 
         var docTypes = new List<string>();
         var issuedItems = new List<IssuedItem>();
@@ -286,7 +290,7 @@ public class DigiLockerKycProvider(
         var downloadErrors = new List<object>();
         var parsedDocs = new List<object>();
         var collected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        if (issuedRes.IsSuccessStatusCode && settings.IncludeFilesInResult && issuedItems.Count > 0)
+        if (issuedOk && settings.IncludeFilesInResult && issuedItems.Count > 0)
         {
             var maxFiles = settings.MaxFilesPerSession > 0 ? settings.MaxFilesPerSession : DefaultMaxFilesPerSession;
             var maxBytes = settings.MaxFileBytes > 0 ? settings.MaxFileBytes : DefaultMaxFileBytes;
@@ -359,7 +363,8 @@ public class DigiLockerKycProvider(
             },
             userDetailsStatus,
             userDetails = string.IsNullOrWhiteSpace(userDetailsBody) ? null : TryParseJson(userDetailsBody),
-            issuedDocsStatus = (int)issuedRes.StatusCode,
+            issuedDocsStatus = issuedDocsStatus,
+            issuedDocsUrl = issuedDocsUrl,
             issuedDocs = TryParseJson(issuedBody),
             files = downloaded,
             fileDownloadErrors = downloadErrors,
@@ -368,11 +373,28 @@ public class DigiLockerKycProvider(
         };
 
         var resultJson = JsonSerializer.Serialize(normalized);
-        var ok = issuedRes.IsSuccessStatusCode; // treat failure as failed KYC (can be retried by user)
+        var ok = issuedOk; // treat failure as failed KYC (can be retried by user)
+        var failureReason = string.Empty;
+        if (!ok)
+        {
+            // Keep it short, but include the upstream error when present.
+            failureReason = $"Unable to fetch DigiLocker documents. status={issuedDocsStatus}";
+            try
+            {
+                using var err = JsonDocument.Parse(string.IsNullOrWhiteSpace(issuedBody) ? "{}" : issuedBody);
+                if (err.RootElement.ValueKind == JsonValueKind.Object &&
+                    err.RootElement.TryGetProperty("error", out var ev) &&
+                    !string.IsNullOrWhiteSpace(ev.GetString()))
+                {
+                    failureReason += $" error={ev.GetString()!.Trim()}";
+                }
+            }
+            catch { }
+        }
         return new KycProviderCallbackResult(
             ok,
             ok ? "verified" : "failed",
-            ok ? string.Empty : "Unable to fetch DigiLocker documents.",
+            ok ? string.Empty : failureReason,
             resultJson,
             docTypes.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
     }
@@ -462,6 +484,58 @@ public class DigiLockerKycProvider(
             path = path["/public/oauth2/1".Length..];
 
         return baseUrl + path;
+    }
+
+    private sealed record IssuedDocsFetch(string Url, int StatusCode, string Body);
+
+    private static async Task<IssuedDocsFetch> TryGetIssuedDocsAsync(
+        HttpClient http,
+        string apiBase,
+        string configuredPath,
+        string accessToken,
+        CancellationToken ct)
+    {
+        var candidates = new List<string>();
+        void Add(string? p)
+        {
+            var v = (p ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(v)) return;
+            if (!candidates.Any(x => string.Equals(x, v, StringComparison.OrdinalIgnoreCase)))
+                candidates.Add(v);
+        }
+
+        Add(configuredPath);
+
+        // Known working endpoints across environments.
+        // Common: /public/oauth2/1/files
+        Add("/oauth2/1/files");
+        // Some environments require explicit "issued" list.
+        Add("/oauth2/1/files/issued");
+        // Newer docs describe oauth2/2 issued list.
+        Add("/oauth2/2/files/issued");
+        // Older samples show /files/issued when apiBase already includes /oauth2/1.
+        Add("/files/issued");
+
+        IssuedDocsFetch last = new(CombineApiUrl(apiBase, candidates[0]), 0, string.Empty);
+        foreach (var path in candidates)
+        {
+            var url = CombineApiUrl(apiBase, path);
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                using var res = await http.SendAsync(req, ct);
+                var body = await res.Content.ReadAsStringAsync(ct);
+                last = new IssuedDocsFetch(url, (int)res.StatusCode, body);
+                if (res.IsSuccessStatusCode) return last;
+            }
+            catch (Exception ex)
+            {
+                last = new IssuedDocsFetch(url, 0, JsonSerializer.Serialize(new { error = ex.Message }));
+            }
+        }
+
+        return last;
     }
 
     private static (string Verifier, string Challenge) CreatePkcePair()
