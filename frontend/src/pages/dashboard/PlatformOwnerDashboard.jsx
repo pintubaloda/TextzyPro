@@ -28,6 +28,7 @@ import {
   ReceiptText,
   Rocket,
   ServerCog,
+  ShieldCheck,
   ShieldAlert,
   Users,
   Wifi,
