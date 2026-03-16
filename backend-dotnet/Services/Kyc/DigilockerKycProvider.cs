@@ -290,6 +290,19 @@ public class DigiLockerKycProvider(
         var downloadErrors = new List<object>();
         var parsedDocs = new List<object>();
         var collected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        // Always collect basic profile fields from /user even when document download is blocked.
+        if (settings.IncludeUserDetailsInResult && userDetailsStatus >= 200 && userDetailsStatus <= 299)
+        {
+            try
+            {
+                if (TryCollectFromUserDetails(collected, userDetailsBody, out var parsedUser))
+                    parsedDocs.Add(new { source = "userDetails", parsed = parsedUser });
+            }
+            catch
+            {
+                // ignore best-effort extraction errors
+            }
+        }
         if (issuedOk && settings.IncludeFilesInResult && issuedItems.Count > 0)
         {
             var maxFiles = settings.MaxFilesPerSession > 0 ? settings.MaxFilesPerSession : DefaultMaxFilesPerSession;
@@ -485,6 +498,91 @@ public class DigiLockerKycProvider(
 
         return baseUrl + path;
     }
+
+    private static bool TryCollectFromUserDetails(Dictionary<string, object?> collected, string userDetailsBody, out object parsed)
+    {
+        parsed = new { };
+        if (string.IsNullOrWhiteSpace(userDetailsBody)) return false;
+
+        using var doc = JsonDocument.Parse(userDetailsBody);
+        if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
+
+        var root = doc.RootElement;
+        string? GetStr(string key)
+            => root.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+        var name = (GetStr("name") ?? string.Empty).Trim();
+        var dobRaw = (GetStr("dob") ?? string.Empty).Trim();
+        var genderRaw = (GetStr("gender") ?? string.Empty).Trim();
+        var email = (GetStr("email") ?? string.Empty).Trim();
+        var mobile = (GetStr("mobile") ?? string.Empty).Trim();
+        var picture = (GetStr("picture") ?? string.Empty).Trim();
+
+        string? dob = null;
+        int? ageYears = null;
+        if (!string.IsNullOrWhiteSpace(dobRaw))
+        {
+            // Common in DigiLocker /user: "ddMMyyyy" (e.g. 15011986)
+            if (dobRaw.Length == 8 && dobRaw.All(char.IsDigit))
+            {
+                var dd = int.Parse(dobRaw[..2]);
+                var mm = int.Parse(dobRaw.Substring(2, 2));
+                var yy = int.Parse(dobRaw.Substring(4, 4));
+                try
+                {
+                    var dt = new DateTime(yy, mm, dd, 0, 0, 0, DateTimeKind.Utc);
+                    dob = dt.ToString("dd/MM/yyyy");
+                    ageYears = ComputeAgeYears(dt, DateTime.UtcNow.Date);
+                }
+                catch { }
+            }
+            else
+            {
+                // Keep as-is (some envs send dd-MM-yyyy or yyyy-MM-dd).
+                dob = dobRaw;
+            }
+        }
+
+        var gender = genderRaw;
+        if (!string.IsNullOrWhiteSpace(genderRaw))
+        {
+            var g = genderRaw.Trim().ToUpperInvariant();
+            gender = g switch
+            {
+                "M" => "Male",
+                "F" => "Female",
+                "O" => "Other",
+                _ => genderRaw
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(name)) collected["name"] = name;
+        if (!string.IsNullOrWhiteSpace(dob)) collected["dob"] = dob;
+        if (!string.IsNullOrWhiteSpace(gender)) collected["gender"] = gender;
+        if (ageYears.HasValue && ageYears.Value >= 0 && ageYears.Value <= 150) collected["ageYears"] = ageYears.Value;
+        if (!string.IsNullOrWhiteSpace(email)) collected["email"] = email;
+        if (!string.IsNullOrWhiteSpace(mobile)) collected["mobile"] = mobile;
+        // DigiLocker returns picture as base64 (no data-uri prefix). Store as photoBase64 for frontend.
+        if (!string.IsNullOrWhiteSpace(picture)) collected["photoBase64"] = picture;
+
+        parsed = new
+        {
+            name,
+            dob,
+            gender,
+            ageYears,
+            email,
+            mobile,
+            hasPicture = !string.IsNullOrWhiteSpace(picture)
+        };
+        return !string.IsNullOrWhiteSpace(name)
+               || !string.IsNullOrWhiteSpace(dob)
+               || !string.IsNullOrWhiteSpace(gender)
+               || !string.IsNullOrWhiteSpace(email)
+               || !string.IsNullOrWhiteSpace(mobile)
+               || !string.IsNullOrWhiteSpace(picture);
+    }
+
 
     private sealed record IssuedDocsFetch(string Url, int StatusCode, string Body);
 
