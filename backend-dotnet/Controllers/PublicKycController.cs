@@ -1,0 +1,124 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Textzy.Api.Data;
+using Textzy.Api.Services;
+using Textzy.Api.Services.Kyc;
+
+namespace Textzy.Api.Controllers;
+
+[ApiController]
+[Route("api/public/kyc")]
+public class PublicKycController(
+    ControlDbContext db,
+    KycProviderRouter router,
+    BillingGuardService billingGuard,
+    SecretCryptoService crypto,
+    IHttpClientFactory httpClientFactory,
+    ILogger<PublicKycController> logger) : ControllerBase
+{
+    // Example:
+    // GET /api/public/kyc/digilocker/callback?sessionId=...&code=...&state=...
+    [HttpGet("{provider}/callback")]
+    public async Task<IActionResult> Callback(
+        string provider,
+        [FromQuery] string sessionId,
+        [FromQuery] string? code,
+        [FromQuery] string? state,
+        [FromQuery] string? error,
+        CancellationToken ct)
+    {
+        if (!Guid.TryParse((sessionId ?? string.Empty).Trim(), out var id))
+            return BadRequest("Invalid sessionId.");
+        var row = await db.KycSessions.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (row is null) return NotFound("KYC session not found.");
+        if (!string.Equals(row.ProviderCode, provider ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+            return BadRequest("Provider mismatch.");
+
+        // Provider error (user denied consent, etc.)
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            row.Status = "failed";
+            row.FailureReason = $"provider_error:{error}";
+            row.CompletedAtUtc = DateTime.UtcNow;
+            row.UpdatedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            await TryWebhookAsync(row, ok: false, ct);
+            return RedirectToOutcome(row, ok: false);
+        }
+
+        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(state))
+            return BadRequest("Missing code/state.");
+
+        var providerImpl = router.Resolve(provider ?? string.Empty);
+        var result = await providerImpl.HandleCallbackAsync(row, code.Trim(), state.Trim(), ct);
+
+        row.Status = result.Status;
+        row.FailureReason = result.FailureReason ?? string.Empty;
+        row.ResultJsonEncrypted = string.IsNullOrWhiteSpace(result.ResultJson) ? string.Empty : crypto.Encrypt(result.ResultJson);
+        row.CompletedAtUtc = DateTime.UtcNow;
+        row.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        if (result.Ok)
+        {
+            // Bill 1 unit only on successful verification.
+            try
+            {
+                await billingGuard.TryConsumeAsync(row.TenantId, "digilockerKyc", 1, ct);
+            }
+            catch (Exception ex)
+            {
+                // Billing should not break the user flow; log and continue.
+                logger.LogError(ex, "Failed to consume digilockerKyc for tenant {TenantId} session {SessionId}", row.TenantId, row.Id);
+            }
+        }
+
+        await TryWebhookAsync(row, ok: result.Ok, ct);
+        return RedirectToOutcome(row, ok: result.Ok);
+    }
+
+    private IActionResult RedirectToOutcome(Textzy.Api.Models.KycSession session, bool ok)
+    {
+        var raw = ok ? session.SuccessRedirectUrl : session.FailureRedirectUrl;
+        var target = (raw ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            // Default: show a minimal response for integrations that don't provide redirect URLs.
+            return Content(ok ? "KYC verified." : "KYC failed.", "text/plain; charset=utf-8");
+        }
+
+        // Append sessionId and status for clients.
+        var sep = target.Contains('?') ? "&" : "?";
+        return Redirect(target + sep + "sessionId=" + Uri.EscapeDataString(session.Id.ToString()) + "&status=" + Uri.EscapeDataString(session.Status));
+    }
+
+    private async Task TryWebhookAsync(Textzy.Api.Models.KycSession session, bool ok, CancellationToken ct)
+    {
+        var url = (session.WebhookUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        try
+        {
+            var http = httpClientFactory.CreateClient();
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.UserAgent.Add(new ProductInfoHeaderValue("Textzy", "1.0"));
+            req.Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                sessionId = session.Id,
+                tenantId = session.TenantId,
+                provider = session.ProviderCode,
+                status = session.Status,
+                ok
+            }), Encoding.UTF8, "application/json");
+            using var res = await http.SendAsync(req, ct);
+            _ = await res.Content.ReadAsStringAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "KYC webhook failed for session {SessionId}", session.Id);
+        }
+    }
+}

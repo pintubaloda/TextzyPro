@@ -8,6 +8,10 @@ public class BillingGuardService(ControlDbContext db)
 {
     public string CurrentMonthKey => DateTime.UtcNow.ToString("yyyy-MM");
 
+    private static bool IsUsagePackCreditMetric(string key)
+        => string.Equals(key, "smsCredits", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase);
+
     public async Task<(bool Allowed, int Limit, int Used, string Message)> CheckLimitAsync(Guid tenantId, string key, int nextUsed, CancellationToken ct = default)
     {
         var sub = await db.TenantSubscriptions
@@ -21,12 +25,14 @@ public class BillingGuardService(ControlDbContext db)
 
         var plan = await db.BillingPlans.FirstOrDefaultAsync(x => x.Id == sub.PlanId && x.IsActive, ct);
         if (plan is null) return (false, 0, nextUsed, "Subscription plan is inactive or missing.");
-        if (string.Equals(key, "smsCredits", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(plan.PricingModel, "usage_pack", StringComparison.OrdinalIgnoreCase))
+        if (IsUsagePackCreditMetric(key) && string.Equals(plan.PricingModel, "usage_pack", StringComparison.OrdinalIgnoreCase))
         {
             var balance = await GetCreditBalanceAsync(tenantId, key, ct);
             if (balance <= 0)
-                return (false, 0, nextUsed, "No prepaid SMS credits available. Please buy a new SMS pack.");
+                return (false, 0, nextUsed,
+                    string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase)
+                        ? "No DigiLocker KYC credits available. Please buy a DigiLocker KYC pack."
+                        : "No prepaid SMS credits available. Please buy a new SMS pack.");
         }
 
         Dictionary<string, int> limits;
@@ -50,6 +56,7 @@ public class BillingGuardService(ControlDbContext db)
             "chatbots" => usage.ChatbotsUsed,
             "flows" => usage.FlowsUsed,
             "apiCalls" => usage.ApiCallsUsed,
+            "digilockerKyc" => usage.DigilockerKycUsed,
             _ => 0
         };
     }
@@ -58,7 +65,7 @@ public class BillingGuardService(ControlDbContext db)
     {
         var usage = await GetOrCreateUsageAsync(tenantId, ct);
         var current = await GetCurrentUsageAsync(tenantId, key, ct);
-        if (string.Equals(key, "smsCredits", StringComparison.OrdinalIgnoreCase))
+        if (IsUsagePackCreditMetric(key))
         {
             var prepaidBalance = await GetCreditBalanceAsync(tenantId, key, ct);
             if (prepaidBalance > 0)
@@ -160,6 +167,7 @@ public class BillingGuardService(ControlDbContext db)
             ChatbotsUsed = 0,
             FlowsUsed = 0,
             ApiCallsUsed = 0,
+            DigilockerKycUsed = 0,
             UpdatedAtUtc = DateTime.UtcNow
         };
         db.TenantUsages.Add(usage);
@@ -230,6 +238,7 @@ public class BillingGuardService(ControlDbContext db)
             case "chatbots": usage.ChatbotsUsed = value; break;
             case "flows": usage.FlowsUsed = value; break;
             case "apiCalls": usage.ApiCallsUsed = value; break;
+            case "digilockerKyc": usage.DigilockerKycUsed = value; break;
         }
     }
 }

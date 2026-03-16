@@ -327,7 +327,8 @@ public class AuthMiddleware(RequestDelegate next)
             || path.StartsWith("/api/sms/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/waba/smoke/", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/automation/meta/flows", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/api/automation/metrics/flows", StringComparison.OrdinalIgnoreCase);
+            || path.StartsWith("/api/automation/metrics/flows", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/kyc/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsHttpsRequest(HttpContext context)

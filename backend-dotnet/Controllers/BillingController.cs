@@ -94,7 +94,8 @@ public class BillingController(
                 ["teamMembers"] = usage.TeamMembersUsed,
                 ["chatbots"] = usage.ChatbotsUsed,
                 ["flows"] = usage.FlowsUsed,
-                ["apiCalls"] = usage.ApiCallsUsed
+                ["apiCalls"] = usage.ApiCallsUsed,
+                ["digilockerKyc"] = usage.DigilockerKycUsed
             },
             creditBalances
         });

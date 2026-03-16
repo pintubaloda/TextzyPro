@@ -105,6 +105,30 @@ public static class SeedData
             db.BillingPlans.Add(enterprise);
         }
 
+        // Optional add-on: DigiLocker KYC credits (usage pack)
+        var digilockerPack = db.BillingPlans.FirstOrDefault(x => x.Code == "digilocker_kyc_pack_100");
+        if (digilockerPack is null)
+        {
+            digilockerPack = new BillingPlan
+            {
+                Id = Guid.NewGuid(),
+                Code = "digilocker_kyc_pack_100",
+                Name = "DigiLocker KYC Pack (100)",
+                PricingModel = "usage_pack",
+                PriceMonthly = 999,   // platform owner can edit later
+                PriceYearly = 0,
+                TaxMode = "exclusive",
+                UsageUnitName = "digilockerKyc",
+                IncludedQuantity = 100,
+                Currency = "INR",
+                IsActive = true,
+                SortOrder = 50,
+                FeaturesJson = JsonSerializer.Serialize(new[] { "100 DigiLocker KYC verifications" }),
+                LimitsJson = JsonSerializer.Serialize(new Dictionary<string, int>())
+            };
+            db.BillingPlans.Add(digilockerPack);
+        }
+
         var monthKey = DateTime.UtcNow.ToString("yyyy-MM");
         EnsureTenantBilling(db, tenantAId, growth.Id, monthKey);
         EnsureTenantBilling(db, tenantBId, starter.Id, monthKey);
@@ -139,7 +163,8 @@ public static class SeedData
                 TeamMembersUsed = 6,
                 ChatbotsUsed = 2,
                 FlowsUsed = 12,
-                ApiCallsUsed = 15500
+                ApiCallsUsed = 15500,
+                DigilockerKycUsed = 0
             });
         }
 

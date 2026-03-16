@@ -12,5 +12,6 @@ public class TenantUsage
     public int ChatbotsUsed { get; set; }
     public int FlowsUsed { get; set; }
     public int ApiCallsUsed { get; set; }
+    public int DigilockerKycUsed { get; set; }
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }

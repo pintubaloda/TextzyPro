@@ -187,6 +187,10 @@ builder.Services.AddScoped<TemplateSyncOrchestrator>();
 builder.Services.Configure<WorkflowRuntimeOptions>(builder.Configuration.GetSection("Workflow"));
 builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection("WhatsApp"));
 builder.Services.AddHttpClient();
+
+// KYC providers (plugin-style routing)
+builder.Services.AddScoped<Textzy.Api.Services.Kyc.IKycProvider, Textzy.Api.Services.Kyc.DigiLockerKycProvider>();
+builder.Services.AddScoped<Textzy.Api.Services.Kyc.KycProviderRouter>();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<WhatsAppCloudService>();
 builder.Services.AddScoped<WabaTenantResolver>();
@@ -888,6 +892,30 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_MobileTelemetryEvents_User_EventAt" ON "MobileTelemetryEvents" ("UserId","EventAtUtc");""");
 
     db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS "KycSessions" (
+            "Id" uuid PRIMARY KEY,
+            "TenantId" uuid NOT NULL,
+            "CreatedByUserId" uuid NOT NULL,
+            "ProviderCode" text NOT NULL DEFAULT 'digilocker',
+            "Status" text NOT NULL DEFAULT 'created',
+            "CustomerRef" text NOT NULL DEFAULT '',
+            "RequestedDocTypesJson" text NOT NULL DEFAULT '[]',
+            "SuccessRedirectUrl" text NOT NULL DEFAULT '',
+            "FailureRedirectUrl" text NOT NULL DEFAULT '',
+            "WebhookUrl" text NOT NULL DEFAULT '',
+            "StateEncrypted" text NOT NULL DEFAULT '',
+            "CodeVerifierEncrypted" text NOT NULL DEFAULT '',
+            "ResultJsonEncrypted" text NOT NULL DEFAULT '',
+            "FailureReason" text NOT NULL DEFAULT '',
+            "CreatedAtUtc" timestamp with time zone NOT NULL DEFAULT now(),
+            "UpdatedAtUtc" timestamp with time zone NOT NULL DEFAULT now(),
+            "CompletedAtUtc" timestamp with time zone NULL
+        );
+        """);
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycSessions_Tenant_CreatedAt" ON "KycSessions" ("TenantId","CreatedAtUtc" DESC);""");
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycSessions_Status" ON "KycSessions" ("Status");""");
+
+    db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "TeamInvitations" (
             "Id" uuid PRIMARY KEY,
             "TenantId" uuid NOT NULL,
@@ -974,10 +1002,12 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
             "ChatbotsUsed" integer NOT NULL,
             "FlowsUsed" integer NOT NULL,
             "ApiCallsUsed" integer NOT NULL,
+            "DigilockerKycUsed" integer NOT NULL DEFAULT 0,
             "UpdatedAtUtc" timestamp with time zone NOT NULL
         );
         """);
     db.Database.ExecuteSqlRaw("""CREATE UNIQUE INDEX IF NOT EXISTS "IX_TenantUsages_Tenant_Month" ON "TenantUsages" ("TenantId","MonthKey");""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantUsages" ADD COLUMN IF NOT EXISTS "DigilockerKycUsed" integer NOT NULL DEFAULT 0;""");
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "TenantUsageCreditBalances" (
