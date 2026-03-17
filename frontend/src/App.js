@@ -46,6 +46,7 @@ const TeamPage = lazy(() => import("@/pages/dashboard/TeamPage"));
 const PlatformSettingsPage = lazy(() => import("@/pages/dashboard/PlatformSettingsPage"));
 const PlatformBrandingPage = lazy(() => import("@/pages/dashboard/PlatformBrandingPage"));
 const PlatformOwnerDashboard = lazy(() => import("@/pages/dashboard/PlatformOwnerDashboard"));
+const PlatformReportsPage = lazy(() => import("@/pages/dashboard/PlatformReportsPage"));
 const PlatformSecurityReportPage = lazy(() => import("@/pages/dashboard/PlatformSecurityReportPage"));
 const PlatformPurchaseReportPage = lazy(() => import("@/pages/dashboard/PlatformPurchaseReportPage"));
 const PlatformSupportDeskPage = lazy(() => import("@/pages/dashboard/PlatformSupportDeskPage"));
@@ -140,6 +141,7 @@ function App() {
               <Route path="mobile-devices" element={!isPlatformView && can("inbox.read") ? <MobileDevicesPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="team" element={!isPlatformView && canManageTeam ? <TeamPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="admin" element={isPlatformView ? <AdminPage /> : <Navigate to={firstTenantPath} replace />} />
+              <Route path="platform-reports" element={isPlatformView ? <PlatformReportsPage /> : <Navigate to={firstTenantPath} replace />} />
               <Route path="platform-purchases" element={isPlatformView ? <PlatformPurchaseReportPage /> : <Navigate to={firstTenantPath} replace />} />
               <Route path="platform-support" element={isPlatformView ? <PlatformSupportDeskPage /> : <Navigate to={firstTenantPath} replace />} />
               <Route path="platform-security-report" element={isPlatformView ? <PlatformSecurityReportPage /> : <Navigate to={firstTenantPath} replace />} />

@@ -252,12 +252,13 @@
         <h1>KYC Status</h1>
         <div class="endpoint"><span class="method get">GET</span> https://api.textzy.in/api/public/kyc/sessions/{sessionId}</div>
         <p class="desc">Fetch verified/failed status and result.</p>
+        <p class="desc">Add <strong>includeBase64=true</strong> to embed base64 inside documents.</p>
 
         <h2>Example (GET)</h2>
         <div class="codebox">
           <div class="header"><span>cURL Request</span><span>Status</span></div>
           <code>curl --request GET \</code><br />
-          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/{sessionId}?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY'</code>
+          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/{sessionId}?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&includeBase64=true'</code>
         </div>
       </section>
 

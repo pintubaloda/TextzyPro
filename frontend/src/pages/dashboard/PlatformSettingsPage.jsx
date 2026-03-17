@@ -122,8 +122,13 @@ function parseOperationCreditsText(text) {
 
 const PlatformSettingsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") || "waba-master";
-  const isAppSettingsTab = tab === "app-settings" || tab === "app-settings-all" || tab.startsWith("app-settings-");
+  const rawTab = searchParams.get("tab");
+  const rawApi = searchParams.get("api");
+  const tab = rawTab || "api-settings";
+  const apiTab = rawApi || "digilocker";
+  const isApiSettingsTab = tab === "api-settings";
+  const activeTab = isApiSettingsTab ? apiTab : tab;
+  const isAppSettingsTab = activeTab === "app-settings" || activeTab === "app-settings-all" || activeTab.startsWith("app-settings-");
   const [gateway, setGateway] = useState("razorpay");
   const [waba, setWaba] = useState({ appId: "", appSecret: "", embeddedConfigId: "", verifyToken: "", webhookUrl: "", systemUserAccessToken: "" });
   const [digilocker, setDigilocker] = useState({
@@ -149,6 +154,9 @@ const PlatformSettingsPage = () => {
   const [gst, setGst] = useState({
     keySecret: "",
     verifyUrl: "https://appyflow.in/api/verifyGST",
+  });
+  const [kycSettings, setKycSettings] = useState({
+    allowedDocTypes: "PAN, AADHAAR, DL, GST",
   });
   const [digilockerCatalogRows, setDigilockerCatalogRows] = useState([]);
   const [digilockerCatalogCreditsPerSuccess, setDigilockerCatalogCreditsPerSuccess] = useState(3);
@@ -337,40 +345,64 @@ const PlatformSettingsPage = () => {
 
   const title = useMemo(
     () => (
-      tab === "payment-gateway"
+      activeTab === "payment-gateway"
         ? "Payment Gateway Setup"
-        : tab === "webhook-logs"
+        : activeTab === "webhook-logs"
         ? "Webhook Logs"
-        : tab === "request-logs"
+        : activeTab === "request-logs"
         ? "Request Logs"
-        : tab === "billing-plans"
+        : activeTab === "billing-plans"
         ? "Billing Plans"
-        : tab === "integration-catalog"
+        : activeTab === "integration-catalog"
         ? "Integration Catalog"
-        : tab === "digilocker"
+        : activeTab === "digilocker"
         ? "DigiLocker Master Config"
-        : tab === "smtp-settings"
+        : activeTab === "smtp-settings"
         ? "SMTP Settings"
-        : tab === "sms-gateway"
+        : activeTab === "sms-gateway"
         ? "SMS Gateway Settings"
-        : tab === "waba-onboarding"
+        : activeTab === "waba-onboarding"
         ? "WABA Onboarding Summary"
-        : tab === "waba-lookup"
+        : activeTab === "waba-lookup"
         ? "WABA ID / Phone ID Lookup"
-        : tab === "security-ops"
+        : activeTab === "security-ops"
         ? "Security Operations"
-        : tab === "idempotency-diagnostics"
+        : activeTab === "idempotency-diagnostics"
         ? "Idempotency Diagnostics"
         : isAppSettingsTab
         ? "Mobile App Base Settings"
-        : tab === "waba-policies"
+        : activeTab === "waba-policies"
         ? "WABA Error Policies"
         : "Waba Master Config"
     ),
-    [tab, isAppSettingsTab],
+    [activeTab, isAppSettingsTab],
   );
 
-  const setTab = (next) => setSearchParams({ tab: next });
+  const apiSelectValue = useMemo(
+    () => (activeTab.startsWith("app-settings") ? "app-settings-core" : activeTab),
+    [activeTab],
+  );
+  const setApiTab = (next) => setSearchParams({ tab: "api-settings", api: next });
+  const apiOptions = useMemo(
+    () => [
+      { value: "digilocker", label: "DigiLocker KYC + GST" },
+      { value: "sms-gateway", label: "SMS Gateway" },
+      { value: "smtp-settings", label: "SMTP / Email" },
+      { value: "payment-gateway", label: "Payment Gateway" },
+      { value: "integration-catalog", label: "Integration Catalog" },
+      { value: "webhook-logs", label: "Webhook Logs" },
+      { value: "request-logs", label: "Request Logs" },
+      { value: "billing-plans", label: "Billing Plans" },
+      { value: "waba-master", label: "WABA Master Config" },
+      { value: "waba-onboarding", label: "WABA Onboarding Summary" },
+      { value: "waba-lookup", label: "WABA Lookup" },
+      { value: "waba-policies", label: "WABA Error Policies" },
+      { value: "idempotency-diagnostics", label: "Idempotency Diagnostics" },
+      { value: "security-ops", label: "Security Ops" },
+      { value: "app-settings-core", label: "Mobile App Settings" },
+    ],
+    [],
+  );
   const refreshSmsGatewayLogs = async (override = {}) => {
     if (!isSuperAdmin) return;
     const filters = { ...smsGatewayLogFilters, ...override };
@@ -450,7 +482,7 @@ const PlatformSettingsPage = () => {
     const load = async () => {
       try {
         setLoading(true);
-        if (tab === "waba-master") {
+        if (activeTab === "waba-master") {
           const res = await getPlatformSettings("waba-master");
           const values = res?.values || {};
           if (!active) return;
@@ -528,7 +560,7 @@ const PlatformSettingsPage = () => {
           const telemetry = await getPlatformMobileTelemetry({ take: 200, days: Number(mobileTelemetryDays || 1) }).catch(() => []);
           if (!active) return;
           setMobileTelemetryRows(telemetry || []);
-        } else if (tab === "payment-gateway") {
+        } else if (activeTab === "payment-gateway") {
           const res = await getPlatformSettings("payment-gateway");
           const values = res?.values || {};
           if (!active) return;
@@ -553,7 +585,7 @@ const PlatformSettingsPage = () => {
             webhookId: selected?.webhookId || "",
             eventsCsv: selected?.eventsCsv || "payment.captured,payment.failed",
           });
-        } else if (tab === "smtp-settings") {
+        } else if (activeTab === "smtp-settings") {
           const res = await getPlatformSettings("smtp");
           const values = res?.values || {};
           if (!active) return;
@@ -576,7 +608,7 @@ const PlatformSettingsPage = () => {
           const report = await getPlatformEmailReport({ days: 7, take: 60 }).catch(() => null);
           if (!active) return;
           setEmailReport(report);
-        } else if (tab === "sms-gateway") {
+        } else if (activeTab === "sms-gateway") {
           const [res, customers, rows] = await Promise.all([
             getPlatformSettings("sms-gateway"),
             getPlatformCustomers("").catch(() => []),
@@ -609,22 +641,24 @@ const PlatformSettingsPage = () => {
           setTenants(customers || []);
           setSmsGatewayLogs(rows || []);
         } else {
-          if (tab === "billing-plans") {
+          if (activeTab === "billing-plans") {
             const rows = await listPlatformBillingPlans();
             if (!active) return;
             setPlans(rows || []);
-          } else if (tab === "integration-catalog") {
+          } else if (activeTab === "integration-catalog") {
             const rows = await getPlatformIntegrationCatalog().catch(() => []);
             if (!active) return;
             setIntegrationCatalog(rows || []);
-          } else if (tab === "digilocker") {
-            const [res, catalog, gstRes] = await Promise.all([
+          } else if (activeTab === "digilocker") {
+            const [res, catalog, gstRes, kycRes] = await Promise.all([
               getPlatformSettings("digilocker").catch(() => ({ values: {} })),
               getPlatformIntegrationCatalog().catch(() => []),
               getPlatformSettings("gst").catch(() => ({ values: {} })),
+              getPlatformSettings("kyc").catch(() => ({ values: {} })),
             ]);
             const values = res?.values || {};
             const gstValues = gstRes?.values || {};
+            const kycValues = kycRes?.values || {};
             if (!active) return;
             setDigilocker((prev) => ({
               ...prev,
@@ -652,6 +686,10 @@ const PlatformSettingsPage = () => {
               keySecret: gstValues.keySecret || prev.keySecret,
               verifyUrl: gstValues.verifyUrl || prev.verifyUrl,
             }));
+            setKycSettings((prev) => ({
+              ...prev,
+              allowedDocTypes: kycValues.allowedDocTypes || prev.allowedDocTypes,
+            }));
 
             const rows = Array.isArray(catalog) ? catalog : [];
             setDigilockerCatalogRows(rows);
@@ -661,7 +699,7 @@ const PlatformSettingsPage = () => {
               setDigilockerCatalogCreditsPerSuccess(cps > 0 ? cps : 3);
               setDigilockerCatalogOpCreditsText(formatOperationCreditsMap(dl.operationCredits || {}));
             }
-          } else if (tab === "request-logs") {
+          } else if (activeTab === "request-logs") {
             const [customers, rows] = await Promise.all([
               getPlatformCustomers("").catch(() => []),
               getPlatformRequestLogs({
@@ -675,19 +713,19 @@ const PlatformSettingsPage = () => {
             if (!active) return;
             setTenants(customers || []);
             setRequestLogs(rows || []);
-          } else if (tab === "waba-onboarding") {
+          } else if (activeTab === "waba-onboarding") {
             const rows = await getPlatformWabaOnboardingSummary();
             if (!active) return;
             setOnboardingSummary(rows || null);
             const firstTenantId = (rows?.projects || [])[0]?.tenantId || "";
             if (firstTenantId) setLifecycleTenantId((prev) => prev || firstTenantId);
-          } else if (tab === "waba-lookup") {
+          } else if (activeTab === "waba-lookup") {
             const customers = await getPlatformCustomers("").catch(() => []);
             if (!active) return;
             const list = customers || [];
             setTenants(list);
             if (list.length) setWabaLookupTenantId((prev) => prev || list[0].tenantId);
-          } else if (tab === "security-ops") {
+          } else if (activeTab === "security-ops") {
             const customers = await getPlatformCustomers("").catch(() => []);
             if (!active) return;
             const list = customers || [];
@@ -711,11 +749,11 @@ const PlatformSettingsPage = () => {
               sessionIdleTimeoutMinutes: authValues.sessionIdleTimeoutMinutes || "30",
               sessionIdleWarningSeconds: authValues.sessionIdleWarningSeconds || "60",
             });
-          } else if (tab === "waba-policies") {
+          } else if (activeTab === "waba-policies") {
             const rows = await listWabaErrorPolicies();
             if (!active) return;
             setWabaPolicies(rows || []);
-          } else if (tab === "idempotency-diagnostics") {
+          } else if (activeTab === "idempotency-diagnostics") {
             const customers = await getPlatformCustomers("").catch(() => []);
             if (!active) return;
             const list = customers || [];
@@ -765,7 +803,7 @@ const PlatformSettingsPage = () => {
       active = false;
     };
   }, [
-    tab,
+    activeTab,
     logProvider,
     securityStatusFilter,
     securityTenantId,
@@ -789,13 +827,18 @@ const PlatformSettingsPage = () => {
   ]);
 
   useEffect(() => {
-    if (tab === "app-settings") {
-      setSearchParams({ tab: "app-settings-core" });
+    if (tab !== "api-settings") {
+      const nextApi = tab === "app-settings" ? "app-settings-core" : tab;
+      setSearchParams({ tab: "api-settings", api: nextApi });
+      return;
     }
-  }, [tab, setSearchParams]);
+    if (!rawApi) {
+      setSearchParams({ tab: "api-settings", api: "digilocker" });
+    }
+  }, [tab, rawApi, setSearchParams]);
 
   return (
-    <div className="space-y-4" data-testid="platform-settings-page">
+      <div className="space-y-4" data-testid="platform-settings-page">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
@@ -813,7 +856,37 @@ const PlatformSettingsPage = () => {
           </div>
         </div>
 
-      {tab === "waba-master" && (
+      {isApiSettingsTab && (
+        <Card className="border-slate-200">
+          <CardHeader>
+            <CardTitle>API Settings</CardTitle>
+            <CardDescription>Select the API configuration you want to manage.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>API / Module</Label>
+              <Select value={apiSelectValue} onValueChange={setApiTab}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose an API" />
+                </SelectTrigger>
+                <SelectContent>
+                  {apiOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">Switching the dropdown updates the panel below.</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
+              Use this screen to manage platform-level API credentials, limits, logs, and billing rules. Tenant apps consume these settings automatically.
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "waba-master" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Meta App Credentials</CardTitle>
@@ -960,7 +1033,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "integration-catalog" && (
+      {activeTab === "integration-catalog" && (
         <Card className="border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle>Documentation Center</CardTitle>
@@ -1017,7 +1090,7 @@ const PlatformSettingsPage = () => {
         onTypeChange={(nextType) => setDocViewer({ open: true, type: nextType })}
       />
 
-      {tab === "payment-gateway" && (
+      {activeTab === "payment-gateway" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Gateway Credentials</CardTitle>
@@ -1204,7 +1277,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {isAppSettingsTab && tab !== "app-settings-all" && (
+      {isAppSettingsTab && activeTab !== "app-settings-all" && (
         <div className="space-y-4">
           <Card className="border-slate-200 bg-gradient-to-r from-orange-50 via-white to-slate-50">
             <CardHeader>
@@ -1223,9 +1296,9 @@ const PlatformSettingsPage = () => {
                 <Button
                   key={key}
                   type="button"
-                  variant={tab === key ? "default" : "outline"}
-                  className={tab === key ? "bg-orange-500 hover:bg-orange-600" : ""}
-                  onClick={() => setSearchParams({ tab: key })}
+                  variant={activeTab === key ? "default" : "outline"}
+                  className={activeTab === key ? "bg-orange-500 hover:bg-orange-600" : ""}
+                  onClick={() => setApiTab(key)}
                 >
                   {label}
                 </Button>
@@ -1233,7 +1306,7 @@ const PlatformSettingsPage = () => {
             </CardContent>
           </Card>
 
-          {tab === "app-settings-core" && (
+          {activeTab === "app-settings-core" && (
             <Card className="border-slate-200">
               <CardHeader>
                 <CardTitle>Core Runtime</CardTitle>
@@ -1251,7 +1324,7 @@ const PlatformSettingsPage = () => {
             </Card>
           )}
 
-          {tab === "app-settings-firebase" && (
+          {activeTab === "app-settings-firebase" && (
             <Card className="border-slate-200">
               <CardHeader><CardTitle>Firebase & Push</CardTitle></CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -1270,7 +1343,7 @@ const PlatformSettingsPage = () => {
             </Card>
           )}
 
-          {tab === "app-settings-security" && (
+          {activeTab === "app-settings-security" && (
             <Card className="border-slate-200">
               <CardHeader><CardTitle>API Security</CardTitle></CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -1283,7 +1356,7 @@ const PlatformSettingsPage = () => {
             </Card>
           )}
 
-          {tab === "app-settings-pairing" && (
+          {activeTab === "app-settings-pairing" && (
             <Card className="border-slate-200">
               <CardHeader><CardTitle>Pairing Policy</CardTitle></CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -1296,7 +1369,7 @@ const PlatformSettingsPage = () => {
             </Card>
           )}
 
-          {tab === "app-settings-releases" && (
+          {activeTab === "app-settings-releases" && (
             <Card className="border-slate-200">
               <CardHeader><CardTitle>Release Endpoints</CardTitle></CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
@@ -1312,7 +1385,7 @@ const PlatformSettingsPage = () => {
         </div>
       )}
 
-      {tab === "app-settings-all" && (
+      {activeTab === "app-settings-all" && (
         <div className="space-y-4">
           <Card className="border-slate-200 bg-gradient-to-r from-orange-50 via-white to-slate-50">
             <CardHeader>
@@ -1814,7 +1887,7 @@ const PlatformSettingsPage = () => {
         </div>
       )}
 
-      {tab === "sms-gateway" && (
+      {activeTab === "sms-gateway" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Professional SMS Gateway Setup</CardTitle>
@@ -2097,7 +2170,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "smtp-settings" && (
+      {activeTab === "smtp-settings" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Email Delivery Configuration</CardTitle>
@@ -2329,7 +2402,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "webhook-logs" && (
+      {activeTab === "webhook-logs" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Unified Webhook Logs</CardTitle>
@@ -2476,7 +2549,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "request-logs" && (
+      {activeTab === "request-logs" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>API Request / Response Logs</CardTitle>
@@ -2601,7 +2674,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "waba-onboarding" && (
+      {activeTab === "waba-onboarding" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Project Onboarding States</CardTitle>
@@ -2814,7 +2887,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "waba-lookup" && (
+      {activeTab === "waba-lookup" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>WABA ID / Phone ID Lookup</CardTitle>
@@ -2931,7 +3004,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "waba-policies" && (
+      {activeTab === "waba-policies" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>WABA Error Classification Policies</CardTitle>
@@ -2998,7 +3071,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "idempotency-diagnostics" && (
+      {activeTab === "idempotency-diagnostics" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Idempotency Key Diagnostics</CardTitle>
@@ -3086,7 +3159,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "security-ops" && (
+      {activeTab === "security-ops" && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle>Security Operations</CardTitle>
@@ -3340,7 +3413,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "integration-catalog" && (
+      {activeTab === "integration-catalog" && (
         <Card className="border-slate-200 shadow-sm">
           <CardHeader>
             <CardTitle>Integration Catalog</CardTitle>
@@ -3506,7 +3579,7 @@ const PlatformSettingsPage = () => {
         </Card>
       )}
 
-      {tab === "digilocker" && (
+      {activeTab === "digilocker" && (
         <div className="space-y-6">
           <Card className="border-slate-200 shadow-sm">
             <CardHeader>
@@ -3781,10 +3854,48 @@ const PlatformSettingsPage = () => {
               </div>
             </CardContent>
           </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>KYC Allowed Doc Types</CardTitle>
+              <CardDescription>
+                Only these docTypes will be accepted by Textzy KYC APIs. Separate multiple values with commas or new lines.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Allowed Doc Types</Label>
+                <textarea
+                  className="min-h-[90px] w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                  value={kycSettings.allowedDocTypes}
+                  onChange={(e) => setKycSettings((p) => ({ ...p, allowedDocTypes: e.target.value }))}
+                  placeholder="PAN, AADHAAR, DL, GST"
+                />
+                <p className="text-xs text-slate-500">Example: PAN, AADHAAR, DL, GST</p>
+              </div>
+              <div className="flex justify-end">
+                <Button className="bg-orange-500 hover:bg-orange-600" onClick={async () => {
+                  try {
+                    setLoading(true);
+                    await savePlatformSettings("kyc", {
+                      allowedDocTypes: kycSettings.allowedDocTypes,
+                    });
+                    toast.success("KYC doc types saved");
+                  } catch (e) {
+                    toast.error(e?.message || "Failed to save KYC doc types");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}>
+                  Save KYC Doc Types
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
-      {tab === "billing-plans" && (
+      {activeTab === "billing-plans" && (
         <div className="space-y-6">
           <Card className="border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-orange-950 text-white shadow-sm">
             <CardContent className="p-6">

@@ -40,12 +40,18 @@ public class KycController(
         if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(gstNo))
             return BadRequest("gstNo is required for GST verification.");
 
+        var normalizedDocTypes = NormalizeDocTypes(request.DocTypes);
+        if (normalizedDocTypes.Count == 0) return BadRequest("docType is required.");
+        var allowed = await LoadAllowedDocTypesAsync(ct);
+        if (allowed.Count > 0 && normalizedDocTypes.Any(x => !allowed.Contains(x)))
+            return BadRequest($"docType not allowed. Allowed: {string.Join(", ", allowed)}");
+
         // Pre-check credits/limits (non-destructive). Actual consumption happens only on verified callback.
         var pluginSlug = $"{provider}-kyc";
         var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
         var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
         var baseCredits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
-        var operationCode = request.DocTypes.Count == 1 ? (request.DocTypes[0] ?? string.Empty).Trim().ToUpperInvariant() : string.Empty;
+        var operationCode = normalizedDocTypes.Count == 1 ? normalizedDocTypes[0] : string.Empty;
         var creditsNeeded = billingCfg.ResolveCredits(operationCode, baseCredits);
 
         var current = await billingGuard.GetCurrentUsageAsync(tenancy.TenantId, metricKey, ct);
@@ -72,7 +78,7 @@ public class KycController(
             Status = "created",
             CustomerRef = (request.CustomerRef ?? string.Empty).Trim(),
             GstNumber = gstNo,
-            RequestedDocTypesJson = KycSession.NormalizeDocTypes(request.DocTypes),
+            RequestedDocTypesJson = KycSession.NormalizeDocTypes(normalizedDocTypes),
             SuccessRedirectUrl = (request.SuccessRedirectUrl ?? string.Empty).Trim(),
             FailureRedirectUrl = (request.FailureRedirectUrl ?? string.Empty).Trim(),
             WebhookUrl = (request.WebhookUrl ?? string.Empty).Trim(),
@@ -209,5 +215,50 @@ public class KycController(
         public string SuccessRedirectUrl { get; set; } = string.Empty;
         public string FailureRedirectUrl { get; set; } = string.Empty;
         public string WebhookUrl { get; set; } = string.Empty;
+    }
+
+    private static List<string> NormalizeDocTypes(List<string> docTypes)
+    {
+        return (docTypes ?? [])
+            .Select(x => (x ?? string.Empty).Trim().ToUpperInvariant())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x =>
+            {
+                if (x == "AADHAR") return "AADHAAR";
+                if (x is "DRIVINGLICENSE" or "DRIVING_LICENCE" or "DRIVING-LICENCE") return "DL";
+                return x;
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<HashSet<string>> LoadAllowedDocTypesAsync(CancellationToken ct)
+    {
+        try
+        {
+            var encrypted = await db.PlatformSettings.AsNoTracking()
+                .Where(x => x.Scope == "kyc" && x.Key == "allowedDocTypes")
+                .Select(x => x.ValueEncrypted)
+                .FirstOrDefaultAsync(ct);
+
+            if (string.IsNullOrWhiteSpace(encrypted)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var raw = crypto.Decrypt(encrypted);
+            var parts = raw.Split(new[] { ',', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => (x ?? string.Empty).Trim().ToUpperInvariant())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x =>
+                {
+                    if (x == "AADHAR") return "AADHAAR";
+                    if (x is "DRIVINGLICENSE" or "DRIVING_LICENCE" or "DRIVING-LICENCE") return "DL";
+                    return x;
+                })
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return new HashSet<string>(parts, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 }

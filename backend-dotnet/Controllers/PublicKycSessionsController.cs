@@ -65,7 +65,7 @@ public class PublicKycSessionsController(
         => await CreateCore(request, ct);
 
     [HttpGet("sessions/{id:guid}")]
-    public async Task<IActionResult> GetSession(Guid id, [FromQuery] string tenantSlug, [FromQuery] string user, [FromQuery] string pswd, [FromQuery] string apikey, CancellationToken ct)
+    public async Task<IActionResult> GetSession(Guid id, [FromQuery] string tenantSlug, [FromQuery] string user, [FromQuery] string pswd, [FromQuery] string apikey, [FromQuery] bool includeBase64, CancellationToken ct)
     {
         var auth = new PublicKycAuthRequest
         {
@@ -86,7 +86,7 @@ public class PublicKycSessionsController(
             var raw = crypto.Decrypt(row.ResultJsonEncrypted);
             try
             {
-                result = BuildPublicResult(raw, id);
+                result = BuildPublicResult(raw, id, includeBase64);
             }
             catch
             {
@@ -209,7 +209,7 @@ public class PublicKycSessionsController(
         if (string.IsNullOrWhiteSpace(provider)) provider = "digilocker";
         if (provider.Length > 40) return BadRequest("provider is too long.");
 
-        var docType = (request.DocType ?? string.Empty).Trim().ToUpperInvariant();
+        var docType = NormalizeDocType((request.DocType ?? string.Empty).Trim());
         if (string.IsNullOrWhiteSpace(docType) && string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
             docType = "GST";
         if (string.IsNullOrWhiteSpace(docType)) return BadRequest("docType is required.");
@@ -217,6 +217,10 @@ public class PublicKycSessionsController(
         var gstNo = (request.GstNo ?? string.Empty).Trim();
         if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(gstNo))
             return BadRequest("gstNo is required for GST verification.");
+
+        var allowed = await LoadAllowedDocTypesAsync(ct);
+        if (allowed.Count > 0 && !allowed.Contains(docType))
+            return BadRequest($"docType '{docType}' is not allowed. Allowed: {string.Join(", ", allowed)}");
 
         // Credit pre-check.
         var pluginSlug = $"{provider}-kyc";
@@ -311,7 +315,7 @@ public class PublicKycSessionsController(
         return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
     }
 
-    private object BuildPublicResult(string rawResultJson, Guid sessionId)
+    private object BuildPublicResult(string rawResultJson, Guid sessionId, bool includeBase64)
     {
         using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawResultJson) ? "{}" : rawResultJson);
         var root = doc.RootElement;
@@ -352,7 +356,7 @@ public class PublicKycSessionsController(
         var digilockerId = GetString(userDetails, "digilockerid");
 
         var files = root.TryGetProperty("files", out var f) && f.ValueKind == JsonValueKind.Array ? f : default;
-        var docs = BuildDocumentLinks(files, sessionId, requestedDocTypes);
+        var docs = BuildDocumentLinks(files, sessionId, requestedDocTypes, includeBase64);
 
         return new
         {
@@ -379,7 +383,7 @@ public class PublicKycSessionsController(
         };
     }
 
-    private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes)
+    private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes, bool includeBase64)
     {
         var list = new List<object>();
         if (files.ValueKind != JsonValueKind.Array) return list;
@@ -405,15 +409,32 @@ public class PublicKycSessionsController(
             var sizeBytes = GetInt(f, "sizeBytes");
             var downloadUrl = BuildPublicDownloadUrl(sessionId, uri);
 
-            list.Add(new
+            if (includeBase64)
             {
-                uri,
-                doctype,
-                name,
-                mime,
-                sizeBytes,
-                downloadUrl
-            });
+                var fileBase64 = GetString(f, "fileBase64");
+                list.Add(new
+                {
+                    uri,
+                    doctype,
+                    name,
+                    mime,
+                    sizeBytes,
+                    downloadUrl,
+                    fileBase64
+                });
+            }
+            else
+            {
+                list.Add(new
+                {
+                    uri,
+                    doctype,
+                    name,
+                    mime,
+                    sizeBytes,
+                    downloadUrl
+                });
+            }
         }
 
         return list;
@@ -429,11 +450,43 @@ public class PublicKycSessionsController(
     private static string MapRequestedToDoctype(IReadOnlyList<string> requestedDocTypes)
     {
         if (requestedDocTypes == null || requestedDocTypes.Count == 0) return string.Empty;
-        var req = (requestedDocTypes[0] ?? string.Empty).Trim().ToUpperInvariant();
+        var req = NormalizeDocType((requestedDocTypes[0] ?? string.Empty).Trim());
         if (req == "PAN") return "PANCR";
         if (req is "DL" or "DRIVING_LICENCE" or "DRIVINGLICENSE" or "DRIVING-LICENCE") return "DRVLC";
         if (req is "AADHAAR" or "AADHAR") return "ADHAR";
         return string.Empty;
+    }
+
+    private static string NormalizeDocType(string raw)
+    {
+        var s = (raw ?? string.Empty).Trim().ToUpperInvariant();
+        if (s == "AADHAR") return "AADHAAR";
+        if (s is "DRIVINGLICENSE" or "DRIVING_LICENCE" or "DRIVING-LICENCE") return "DL";
+        return s;
+    }
+
+    private async Task<HashSet<string>> LoadAllowedDocTypesAsync(CancellationToken ct)
+    {
+        try
+        {
+            var encrypted = await controlDb.PlatformSettings.AsNoTracking()
+                .Where(x => x.Scope == "kyc" && x.Key == "allowedDocTypes")
+                .Select(x => x.ValueEncrypted)
+                .FirstOrDefaultAsync(ct);
+
+            if (string.IsNullOrWhiteSpace(encrypted)) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var raw = crypto.Decrypt(encrypted);
+            var parts = raw.Split(new[] { ',', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => NormalizeDocType(x))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return new HashSet<string>(parts, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private static string GetString(JsonElement obj, string key)
