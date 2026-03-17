@@ -43,63 +43,12 @@ function decodeBase64ToBlobUrl(base64, mime = "application/pdf") {
   return URL.createObjectURL(blob);
 }
 
-function maskEmail(email) {
-  const s = String(email || "").trim();
-  if (!s || !s.includes("@")) return s || "-";
-  const [user, domain] = s.split("@");
-  if (!domain) return s;
-  const u = user.length <= 2 ? user[0] + "*" : user[0] + "*".repeat(Math.min(6, Math.max(1, user.length - 2))) + user[user.length - 1];
-  return `${u}@${domain}`;
-}
-
-function maskPhone(mobile) {
-  const s = String(mobile || "").trim();
-  const digits = s.replace(/\D+/g, "");
-  if (digits.length < 4) return s || "-";
-  return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
-}
-
-function maskPan(pan) {
-  const s = String(pan || "").trim();
-  if (s.length !== 10) return s || "-";
-  return `${s.slice(0, 3)}*****${s.slice(-2)}`;
-}
-
-function maskIdTail(id, keep = 4) {
-  const s = String(id || "").trim();
-  if (!s) return "-";
-  if (s.length <= keep) return s;
-  return `${"*".repeat(Math.min(12, s.length - keep))}${s.slice(-keep)}`;
-}
-
-function redactBase64(base64) {
-  const s = String(base64 || "");
-  if (!s) return s;
-  const len = s.length;
-  return `<redacted base64 len=${len}>`;
-}
-
-function debugRedactingReplacer(key, value) {
-  const k = String(key || "").toLowerCase();
-  if (k.endsWith("base64") || k === "filebase64" || k === "photobase64") {
-    if (typeof value === "string" && value.length > 40) return redactBase64(value);
-  }
-  if (k === "email") return maskEmail(value);
-  if (k === "mobile" || k === "phone" || k === "phonenumber") return maskPhone(value);
-  if (k === "pan") return maskPan(value);
-  if (k === "drivinglicense" || k === "driving_licence" || k === "driving_licence_number") return maskIdTail(value, 4);
-  if (k === "aadhaarreferencekey") return maskIdTail(value, 6);
-  if (k === "access_token" || k === "refresh_token") return "<redacted>";
-  if (k === "token" && typeof value === "string") return "<redacted>";
-  return value;
-}
-
 function KycPreviewCard({ brand, collected, active }) {
   const name = safeGet(collected, "name", "-");
   const dob = safeGet(collected, "dob", "-");
   const gender = safeGet(collected, "gender", "-");
   const fatherName = safeGet(collected, "fatherName", "-");
-  const aadhaar = safeGet(collected, "aadhaarMasked", "") || (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified" : "-");
+  const aadhaar = safeGet(collected, "aadhaarNumber", "") || safeGet(collected, "aadhaarMasked", "") || (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified" : "-");
   const pan = safeGet(collected, "pan", "-");
   const address = safeGet(collected, "address", "-");
   const photo = toDataUrl(collected.photoBase64);
@@ -309,9 +258,8 @@ export default function KycReportsPage() {
                 <tr>
                   <th className="px-4 py-3">Doc</th>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">DOB</th>
-                  <th className="px-4 py-3">Gender</th>
+                  <th className="px-4 py-3">Mobile</th>
+                  <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Created</th>
                   <th className="px-4 py-3"></th>
                 </tr>
@@ -334,9 +282,8 @@ export default function KycReportsPage() {
                         <td className="px-4 py-3">
                           <Badge variant={status.variant}>{status.label}</Badge>
                         </td>
-                        <td className="px-4 py-3">{safeGet(c, "name", "-")}</td>
-                        <td className="px-4 py-3">{safeGet(c, "dob", "-")}</td>
-                        <td className="px-4 py-3">{safeGet(c, "gender", "-")}</td>
+                        <td className="px-4 py-3">{safeGet(c, "mobile", "-")}</td>
+                        <td className="px-4 py-3">{safeGet(c, "email", "-")}</td>
                         <td className="px-4 py-3 text-slate-500">{String(r.createdAtUtc || "").replace("T", " ").replace("Z", "")}</td>
                         <td className="px-4 py-3 text-right">
                           <Button variant="outline" className="rounded-xl" onClick={() => openRow(r)}>
@@ -449,6 +396,8 @@ export default function KycReportsPage() {
 
               {(() => {
                 const collected = activeDetail?.result?.collected || active?.collected || {};
+                const digilockerId = safeGet(activeDetail?.result?.userDetails, "digilockerid", "-");
+                const aadhaarNo = safeGet(collected, "aadhaarNumber", "-");
                 const photo = toDataUrl(collected.photoBase64);
                 return (
                   <div className="space-y-3">
@@ -463,13 +412,9 @@ export default function KycReportsPage() {
                     ) : null}
 
                     <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <div className="text-slate-500">Name</div>
-                        <div className="font-medium text-slate-900">{safeGet(collected, "name", "-")}</div>
-                      </div>
-                      <div>
-                        <div className="text-slate-500">DOB</div>
-                        <div className="font-medium text-slate-900">{safeGet(collected, "dob", "-")}</div>
+                      <div className="col-span-2">
+                        <div className="text-slate-500">DigiLocker ID</div>
+                        <div className="font-medium text-slate-900">{digilockerId}</div>
                       </div>
                       <div>
                         <div className="text-slate-500">Mobile</div>
@@ -492,31 +437,18 @@ export default function KycReportsPage() {
                         <div className="font-medium text-slate-900">{safeGet(collected, "pan", "-")}</div>
                       </div>
                       <div>
-                        <div className="text-slate-500">Aadhaar</div>
-                        <div className="font-medium text-slate-900">
-                          {safeGet(collected, "aadhaarMasked", "") ||
-                            (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified (no number)" : "-")}
-                        </div>
+                        <div className="text-slate-500">DL No</div>
+                        <div className="font-medium text-slate-900">{safeGet(collected, "drivingLicense", "-")}</div>
                       </div>
                       <div className="col-span-2">
-                        <div className="text-slate-500">Father Name</div>
-                        <div className="font-medium text-slate-900">{safeGet(collected, "fatherName", "-")}</div>
-                      </div>
-                      <div className="col-span-2">
-                        <div className="text-slate-500">Address</div>
-                        <div className="font-medium text-slate-900">{safeGet(collected, "address", "-")}</div>
+                        <div className="text-slate-500">Aadhaar No</div>
+                        <div className="font-medium text-slate-900">{aadhaarNo}</div>
                       </div>
                     </div>
                   </div>
                 );
               })()}
 
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <div className="text-xs font-medium text-slate-500">Raw (debug)</div>
-                <pre className="mt-2 max-h-56 overflow-auto rounded-xl bg-white p-3 text-xs text-slate-800">
-                  {JSON.stringify(activeDetail || active, debugRedactingReplacer, 2)}
-                </pre>
-              </div>
             </div>
           </div>
         </DialogContent>

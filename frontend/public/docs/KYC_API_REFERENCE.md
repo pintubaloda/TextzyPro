@@ -1,61 +1,19 @@
-# KYC API Reference (DigiLocker Plugin)
+# KYC API (Simple)
 
-This reference documents Textzy's tenant-scoped KYC API and the DigiLocker callback/webhook model.
-
-## Billing Model (Credits)
-
-- Default metric key: `digilockerKyc` (shown in UI as **KYC credits**)
-- Credits consumed per successful verification:
-  - Preferred: Platform Integration Catalog per-plugin `creditsPerSuccess` (for `digilocker-kyc`)
-  - Fallback: platform setting `digilocker.creditsPerSuccess` (default `3`)
-- Credits are consumed only when the session is marked `verified`.
-
-## Authentication (Customer Integrations)
-
-Textzy supports API-key auth for KYC endpoints.
-
-Required headers:
-
-- `X-Tenant-Slug: <tenantSlug>`
-- `X-API-Key: <tenantApiKey>`
-- `X-API-Secret: <tenantApiSecret>`
-
-## Simple Public API (Like SMS)
-
-If you want the exact same style as the SMS public API (query/body credentials), use these endpoints:
+This is the **simple, SMS‑style** DigiLocker KYC API for testing.
 
 Base URL: `https://api.textzy.in`
 
-Authentication fields (same as SMS):
+Auth fields (same as SMS):
 - `tenantSlug`
 - `user`
-- `password` / `pswd`
-- `apiKey` / `apikey`
+- `pswd` (or `password`)
+- `apikey` (or `apiKey`)
 
-Supported request formats:
-- `GET /api/public/kyc/sessions/start` (preferred on IIS)
-- `GET /api/public/kyc/sessions/create` (legacy; may be blocked by IIS requestFiltering rules that deny the word `create`)
-- `POST /api/public/kyc/sessions` (recommended)
+## 1) Start KYC Session (GET)
 
-### GET example
 ```http
-GET https://api.textzy.in/api/public/kyc/sessions/start?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=digilocker&docType=PAN&customerRef=user-123
-```
-
-### POST example
-```json
-{
-  "tenantSlug": "moneyart",
-  "user": "MONEYART",
-  "password": "YOUR_PASSWORD",
-  "apiKey": "YOUR_API_KEY",
-  "provider": "digilocker",
-  "docType": "PAN",
-  "customerRef": "user-123",
-  "successRedirectUrl": "https://yourapp.com/kyc/success",
-  "failureRedirectUrl": "https://yourapp.com/kyc/failure",
-  "webhookUrl": "https://yourapp.com/webhooks/textzy-kyc"
-}
+GET https://api.textzy.in/api/public/kyc/sessions/start?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=digilocker&docType=AADHAAR&customerRef=test-001&successRedirectUrl=https%3A%2F%2Fyourapp.com%2Fkyc%2Fsuccess&failureRedirectUrl=https%3A%2F%2Fyourapp.com%2Fkyc%2Ffailed
 ```
 
 Response:
@@ -64,139 +22,82 @@ Response:
   "sessionId": "GUID",
   "provider": "digilocker",
   "status": "created",
-  "docType": "PAN",
+  "docType": "AADHAAR",
   "redirectUrl": "https://digilocker.../authorize?...",
   "state": "..."
 }
 ```
 
-## Document Types (docTypes)
+Your app must redirect the user to `redirectUrl`.
 
-`docTypes` is a **business-level** list that your app uses to ask for specific document categories (for example PAN, Aadhaar, Driving License). Textzy passes these as a requester parameter to DigiLocker (configured via platform setting `digilocker.docTypeParamName`, default `req_doctype`).
+## 2) Get Session Status + Result (GET)
 
-Examples (common values you can use):
-
-- `PAN`
-- `AADHAAR`
-- `DL`
-- `RC`
-- `PASSPORT`
-
-Notes:
-- DigiLocker availability depends on what the end-user has in DigiLocker and what your requester is allowed to access.
-- `scope` is different: it is the OAuth scope (typically `files.issueddocs`) configured at platform level, not per request.
-- **One session = one docType (recommended):** Textzy supports charging different credits per docType. To keep billing predictable, create one KYC session per docType.
-
-## Create KYC Session
-
-`POST /api/kyc/sessions`
-
-Body:
-```json
-{
-  "provider": "digilocker",
-  "customerRef": "user-123",
-  "docTypes": ["PAN", "DL"],
-  "successRedirectUrl": "https://yourapp.com/kyc/success",
-  "failureRedirectUrl": "https://yourapp.com/kyc/failure",
-  "webhookUrl": "https://yourapp.com/webhooks/textzy-kyc"
-}
+```http
+GET https://api.textzy.in/api/public/kyc/sessions/{sessionId}?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY
 ```
 
-Webhook behavior:
-- If `webhookUrl` is omitted/empty, Textzy uses the tenant default `kycWebhookUrl` (configure once in **Integrations → Public API Access**).
-
-Response:
+Response (simple fields only):
 ```json
 {
   "sessionId": "GUID",
-  "provider": "digilocker",
-  "status": "created",
-  "redirectUrl": "https://digilocker.../authorize?...",
-  "state": "..."
-}
-```
-
-Your app must redirect the end-user to `redirectUrl` to complete consent/login.
-
-## Read Session Status + Result
-
-`GET /api/kyc/sessions/{sessionId}`
-
-Response fields:
-
-- `status`: `created | redirected | verified | failed | expired`
-- `requestedDocTypes`
-- `result`: full DigiLocker payload snapshot (stored encrypted server-side)
-
-## DigiLocker Callback
-
-`GET /api/public/kyc/digilocker/callback?sessionId=...&code=...&state=...`
-
-This endpoint is called by DigiLocker after the user completes consent/login. Textzy:
-
-1. exchanges `code` for an access token (OAuth2 token endpoint)
-2. fetches issued docs (configured `apiBaseUrl + issuedDocsPath`)
-3. sets session status `verified` or `failed`
-4. consumes DigiLocker credits on success
-5. POSTs a webhook (if configured)
-6. redirects end-user to `successRedirectUrl` / `failureRedirectUrl` (if configured)
-
-## Platform OAuth Endpoints (Authorize URL / Token URL)
-
-`authorizeUrl` and `tokenUrl` are **OAuth2 endpoints** for your DigiLocker requester app. They are platform-level because the platform owns the DigiLocker client credentials.
-
-- You do not set them per API call.
-- In Platform Settings → DigiLocker Master Config, you can leave these fields blank to use the default DigiLocker endpoints (recommended unless DigiLocker gives you different URLs for your environment).
-
-### Aadhaar / Extended DigiLocker Flows
-
-DigiLocker may require extra authorize query params for specific login/consent flows (for example Aadhaar), like:
-
-`dl_flow=signin&acr={acr}&amr=aadhaar+exists_ac_pin`
-
-Set these once at platform level in **Platform Settings → DigiLocker Master Config → Authorize Extra Params**.
-
-Notes:
-- Textzy always adds core OAuth params automatically: `response_type`, `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge`, `code_challenge_method`.
-- `Authorize Extra Params` cannot override those core keys.
-- If DigiLocker asks you to add scopes like `openid userdetails email picture avs`, put them in the **Scope** field (platform-level).
-- `{acr}` auto-expands from your requested `docTypes` when you create a session:
-  - `PAN` → `pan`
-  - `AADHAAR` → `aadhaar`
-  - `DL` / `DRIVING_LICENCE` → `driving_licence`
-- **Multiple document types:** Textzy recommends **one session per docType**. DigiLocker ACR is typically a single value (not a `+` list), so treat "multiple-doc" URLs as not supported unless DigiLocker explicitly confirms for your requester app.
-
-## Webhook Payload
-
-If `webhookUrl` is set on session creation, Textzy POSTs JSON:
-
-```json
-{
-  "sessionId": "GUID",
-  "tenantId": "GUID",
   "provider": "digilocker",
   "status": "verified",
-  "ok": true,
-  "customerRef": "user-123",
-  "requestedDocTypes": ["pan", "dl"],
+  "customerRef": "test-001",
+  "docTypes": ["aadhaar"],
   "failureReason": "",
-  "completedAtUtc": "2026-03-16T00:00:00Z",
+  "createdAtUtc": "2026-03-17T07:25:49Z",
+  "updatedAtUtc": "2026-03-17T07:26:29Z",
+  "completedAtUtc": "2026-03-17T07:26:29Z",
   "result": {
     "provider": "digilocker",
-    "fetchedAtUtc": "2026-03-16T00:00:00Z",
-    "requestedDocTypes": ["pan", "dl"],
-    "documentTypes": ["PAN", "DL"],
-    "oauth": {
-      "tokenExchangeStatus": 200,
-      "token": { "token_type": "Bearer", "expires_in": 3600 }
+    "fetchedAtUtc": "2026-03-17T07:26:29Z",
+    "requestedDocTypes": ["aadhaar"],
+    "documentTypes": ["DRVLC","PANCR"],
+    "user": {
+      "digilockerId": "xxxx",
+      "name": "Rakesh Kumar",
+      "dob": "15-01-1986",
+      "gender": "Male",
+      "email": "bmrjjn@gmail.com",
+      "mobile": "9460943374",
+      "address": "..."
     },
-    "issuedDocsStatus": 200,
-    "issuedDocs": { }
+    "panNo": "BEQPK9277N",
+    "aadhaarNo": "123412341234",
+    "dlNo": "RJ1820120000536",
+    "documents": [
+      {
+        "uri": "textzy/aadhaar-report",
+        "doctype": "AADHAAR_REPORT",
+        "name": "Textzy Aadhaar Verification Report",
+        "mime": "text/html; charset=utf-8",
+        "sizeBytes": 12345,
+        "downloadUrl": "https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file?uri=textzy%2Faadhaar-report"
+      }
+    ]
   }
 }
 ```
 
-Notes:
-- access tokens are never included.
-- If you want Textzy to download/store document files, we can extend the plugin once you confirm DigiLocker download endpoints for your requester setup.
+## 3) Download a File from Textzy (GET)
+
+```http
+GET https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&uri=in.gov.pan-PANCR-XXXX
+```
+
+This returns the file as PDF/HTML using your server credentials (no base64 in the response).
+
+## Webhook (Optional)
+
+If `webhookUrl` is passed when creating the session, Textzy will POST the same response after DigiLocker completes.
+
+## Header‑Based API (If you want it)
+
+Headers:
+- `X-Tenant-Slug`
+- `X-API-Key`
+- `X-API-Secret`
+
+Endpoints:
+- `POST /api/kyc/sessions`
+- `GET /api/kyc/sessions/{sessionId}`

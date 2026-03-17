@@ -1462,6 +1462,7 @@ public class DigiLockerKycProvider(
 
             // Prefer masked ids where present.
             PutIf("pan", Get("panNumber"));
+            PutIf("aadhaarNumber", Get("aadhaarNumber"));
             PutIf("aadhaarMasked", Get("aadhaarMasked"));
 
             var photo = Get("photoBase64");
@@ -1621,6 +1622,7 @@ public class DigiLockerKycProvider(
 
             return new
             {
+                aadhaarNumber = uid,
                 aadhaarMasked = masked,
                 name,
                 dob,
