@@ -356,7 +356,7 @@ app.Use(async (context, next) =>
     {
         context.Response.Headers["Access-Control-Allow-Origin"] = origin;
         context.Response.Headers["Access-Control-Allow-Credentials"] = "true";
-        context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization, X-Access-Token, X-CSRF-Token, Content-Type";
+        context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization, X-Access-Token, X-CSRF-Token, X-Tenant-Slug, Content-Type";
         context.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
         context.Response.Headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, X-CSRF-Token, X-Textzy-Build, X-Textzy-Body-Len";
         if (context.Request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
