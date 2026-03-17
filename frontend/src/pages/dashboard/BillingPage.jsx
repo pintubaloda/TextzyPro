@@ -523,7 +523,7 @@ const BillingPage = () => {
             {[
               { key: "whatsapp", label: "WhatsApp Messages", icon: MessageSquare, color: "text-green-600", suffix: "messages" },
               { key: "sms", label: "SMS Credits", icon: MessageSquare, color: "text-orange-600", suffix: "credits" },
-              { key: "digilockerKyc", label: "DigiLocker KYC", icon: ShieldCheck, color: "text-emerald-600", suffix: "verifications" },
+              { key: "digilockerKyc", label: "KYC Credits", icon: ShieldCheck, color: "text-emerald-600", suffix: "verifications" },
               { key: "contacts", label: "Contacts", icon: Users, color: "text-blue-600", suffix: "contacts" },
               { key: "team", label: "Team Members", icon: Users, color: "text-purple-600", suffix: "members" },
               { key: "flows", label: "Flows", icon: Workflow, color: "text-indigo-600", suffix: "flows" },

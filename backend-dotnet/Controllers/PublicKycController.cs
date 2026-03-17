@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Diagnostics;
 using System.Text;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -67,7 +68,7 @@ public class PublicKycController(
         row.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        if (result.Ok)
+        if (result.Ok && row.CreditsUsed <= 0)
         {
             // Bill credits only on successful verification.
             try
@@ -84,7 +85,14 @@ public class PublicKycController(
                 }
                 catch { }
                 var credits = billingCfg.ResolveCredits(operationCode, baseCredits);
-                await billingGuard.TryConsumeAsync(row.TenantId, metricKey, credits, ct);
+                var consume = await billingGuard.TryConsumeAsync(row.TenantId, metricKey, credits, ct);
+                if (consume.Allowed)
+                {
+                    row.BillingMetric = metricKey;
+                    row.CreditsUsed = credits;
+                    row.UpdatedAtUtc = DateTime.UtcNow;
+                    await db.SaveChangesAsync(ct);
+                }
             }
             catch (Exception ex)
             {
@@ -143,23 +151,19 @@ public class PublicKycController(
             if (!string.IsNullOrWhiteSpace(session.ResultJsonEncrypted))
             {
                 var raw = crypto.Decrypt(session.ResultJsonEncrypted);
-                try { result = JsonSerializer.Deserialize<object>(raw); } catch { result = new { raw }; }
+                try { result = BuildPublicResult(raw, session.Id); } catch { result = new { }; }
             }
-
-            List<string> requestedDocTypes;
-            try { requestedDocTypes = JsonSerializer.Deserialize<List<string>>(session.RequestedDocTypesJson) ?? []; }
-            catch { requestedDocTypes = []; }
 
             var payload = new
             {
                 sessionId = session.Id,
-                tenantId = session.TenantId,
                 provider = session.ProviderCode,
                 status = session.Status,
-                ok,
                 customerRef = session.CustomerRef,
-                requestedDocTypes,
+                docTypes = ParseStringList(session.RequestedDocTypesJson),
                 failureReason = session.FailureReason,
+                createdAtUtc = session.CreatedAtUtc,
+                updatedAtUtc = session.UpdatedAtUtc,
                 completedAtUtc = session.CompletedAtUtc,
                 result
             };
@@ -219,6 +223,173 @@ public class PublicKycController(
                 // ignore logging failures
             }
         }
+    }
+
+    private object BuildPublicResult(string rawResultJson, Guid sessionId)
+    {
+        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawResultJson) ? "{}" : rawResultJson);
+        var root = doc.RootElement;
+
+        var provider = GetString(root, "provider");
+        if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
+        {
+            return new
+            {
+                provider,
+                fetchedAtUtc = GetString(root, "fetchedAtUtc"),
+                gstNo = GetString(root, "gstNo"),
+                error = GetBool(root, "error"),
+                message = GetString(root, "message"),
+                taxpayerInfo = root.TryGetProperty("taxpayerInfo", out var tp) ? JsonSerializer.Deserialize<object>(tp.GetRawText()) : null,
+                filing = root.TryGetProperty("filing", out var fl) ? JsonSerializer.Deserialize<object>(fl.GetRawText()) : null,
+                compliance = root.TryGetProperty("compliance", out var cp) ? JsonSerializer.Deserialize<object>(cp.GetRawText()) : null
+            };
+        }
+
+        var fetchedAtUtc = GetString(root, "fetchedAtUtc");
+        var requestedDocTypes = GetStringArray(root, "requestedDocTypes");
+        var documentTypes = GetStringArray(root, "documentTypes");
+
+        var collected = root.TryGetProperty("collected", out var c) && c.ValueKind == JsonValueKind.Object ? c : default;
+        var name = GetString(collected, "name");
+        var dob = GetString(collected, "dob");
+        var gender = GetString(collected, "gender");
+        var email = GetString(collected, "email");
+        var mobile = GetString(collected, "mobile");
+        var address = GetString(collected, "address");
+        var aadhaarNumber = GetString(collected, "aadhaarNumber");
+        var aadhaarVerified = GetBool(collected, "aadhaarVerified");
+        var pan = GetString(collected, "pan");
+        var drivingLicense = GetString(collected, "drivingLicense");
+
+        var userDetails = root.TryGetProperty("userDetails", out var ud) && ud.ValueKind == JsonValueKind.Object ? ud : default;
+        var digilockerId = GetString(userDetails, "digilockerid");
+
+        var files = root.TryGetProperty("files", out var f) && f.ValueKind == JsonValueKind.Array ? f : default;
+        var docs = BuildDocumentLinks(files, sessionId, requestedDocTypes);
+
+        return new
+        {
+            provider = provider,
+            fetchedAtUtc,
+            requestedDocTypes,
+            documentTypes,
+            user = new
+            {
+                digilockerId,
+                name,
+                dob,
+                gender,
+                email,
+                mobile,
+                address,
+                aadhaarNo = string.IsNullOrWhiteSpace(aadhaarNumber) ? string.Empty : aadhaarNumber,
+                aadhaarVerified
+            },
+            panNo = pan,
+            aadhaarNo = string.IsNullOrWhiteSpace(aadhaarNumber) ? string.Empty : aadhaarNumber,
+            dlNo = drivingLicense,
+            documents = docs
+        };
+    }
+
+    private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes)
+    {
+        var list = new List<object>();
+        if (files.ValueKind != JsonValueKind.Array) return list;
+
+        var want = MapRequestedToDoctype(requestedDocTypes);
+
+        foreach (var f in files.EnumerateArray())
+        {
+            if (f.ValueKind != JsonValueKind.Object) continue;
+            var uri = GetString(f, "uri");
+            if (string.IsNullOrWhiteSpace(uri)) continue;
+            var doctype = GetString(f, "doctype");
+            if (!string.IsNullOrWhiteSpace(want))
+            {
+                var ok = doctype.Equals(want, StringComparison.OrdinalIgnoreCase);
+                if (!ok && want.Equals("ADHAR", StringComparison.OrdinalIgnoreCase))
+                    ok = doctype.Equals("AADHAAR_REPORT", StringComparison.OrdinalIgnoreCase);
+                if (!ok) continue;
+            }
+
+            var name = GetString(f, "name");
+            var mime = GetString(f, "mime");
+            var sizeBytes = GetInt(f, "sizeBytes");
+            var fileBase64 = GetString(f, "fileBase64");
+
+            list.Add(new
+            {
+                uri,
+                doctype,
+                name,
+                mime,
+                sizeBytes,
+                fileBase64
+            });
+        }
+
+        return list;
+    }
+
+    private static string MapRequestedToDoctype(IReadOnlyList<string> requestedDocTypes)
+    {
+        if (requestedDocTypes == null || requestedDocTypes.Count == 0) return string.Empty;
+        var req = NormalizeDocType((requestedDocTypes[0] ?? string.Empty).Trim());
+        if (req == "PAN") return "PANCR";
+        if (req is "DL" or "DRIVING_LICENCE" or "DRIVINGLICENSE" or "DRIVING-LICENCE") return "DRVLC";
+        if (req is "AADHAAR" or "AADHAR") return "ADHAR";
+        return string.Empty;
+    }
+
+    private static string NormalizeDocType(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var v = value.Trim().ToUpperInvariant();
+        if (v == "AADHAR") return "AADHAAR";
+        if (v is "DRIVINGLICENSE" or "DRIVING_LICENCE" or "DRIVING-LICENCE") return "DL";
+        return v;
+    }
+
+    private static string GetString(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return string.Empty;
+        if (!element.TryGetProperty(key, out var prop)) return string.Empty;
+        return prop.ValueKind == JsonValueKind.String ? (prop.GetString() ?? string.Empty) : string.Empty;
+    }
+
+    private static int GetInt(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return 0;
+        if (!element.TryGetProperty(key, out var prop)) return 0;
+        return prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var v) ? v : 0;
+    }
+
+    private static bool GetBool(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return false;
+        if (!element.TryGetProperty(key, out var prop)) return false;
+        if (prop.ValueKind == JsonValueKind.True) return true;
+        if (prop.ValueKind == JsonValueKind.False) return false;
+        if (prop.ValueKind == JsonValueKind.String && bool.TryParse(prop.GetString(), out var b)) return b;
+        return false;
+    }
+
+    private static List<string> GetStringArray(JsonElement element, string key)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return [];
+        if (!element.TryGetProperty(key, out var prop) || prop.ValueKind != JsonValueKind.Array) return [];
+        return prop.EnumerateArray()
+            .Where(x => x.ValueKind == JsonValueKind.String)
+            .Select(x => x.GetString() ?? string.Empty)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+    }
+
+    private static List<string> ParseStringList(string json)
+    {
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; } catch { return []; }
     }
 
 }

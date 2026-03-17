@@ -13,6 +13,7 @@ public class BillingPlan
     public int IncludedQuantity { get; set; }
     public string Currency { get; set; } = "INR";
     public bool IsActive { get; set; } = true;
+    public bool IsPublic { get; set; } = false;
     public int SortOrder { get; set; }
     public string FeaturesJson { get; set; } = "[]";
     public string LimitsJson { get; set; } = "{}";

@@ -12,7 +12,7 @@ public class PublicPlansController(ControlDbContext db) : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken ct)
     {
-        var rows = await db.BillingPlans.Where(x => x.IsActive).OrderBy(x => x.SortOrder).ToListAsync(ct);
+        var rows = await db.BillingPlans.Where(x => x.IsActive && x.IsPublic).OrderBy(x => x.SortOrder).ToListAsync(ct);
         return Ok(rows.Select(p => new
         {
             p.Code,

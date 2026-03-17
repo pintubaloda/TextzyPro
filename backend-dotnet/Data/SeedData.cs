@@ -36,6 +36,7 @@ public static class SeedData
                 PriceYearly = 29990,
                 Currency = "INR",
                 IsActive = true,
+                IsPublic = true,
                 SortOrder = 1,
                 FeaturesJson = JsonSerializer.Serialize(new[] { "1,000 WhatsApp messages/month", "5,000 SMS credits", "2 Team members", "Basic analytics" }),
                 LimitsJson = JsonSerializer.Serialize(new Dictionary<string, int>
@@ -63,6 +64,7 @@ public static class SeedData
                 PriceYearly = 99990,
                 Currency = "INR",
                 IsActive = true,
+                IsPublic = true,
                 SortOrder = 2,
                 FeaturesJson = JsonSerializer.Serialize(new[] { "10,000 WhatsApp messages/month", "50,000 SMS credits", "10 Team members", "Automation builder" }),
                 LimitsJson = JsonSerializer.Serialize(new Dictionary<string, int>
@@ -90,6 +92,7 @@ public static class SeedData
                 PriceYearly = 499990,
                 Currency = "INR",
                 IsActive = true,
+                IsPublic = false,
                 SortOrder = 3,
                 FeaturesJson = JsonSerializer.Serialize(new[] { "Unlimited messages", "Unlimited team members", "Dedicated support", "Custom integrations" }),
                 LimitsJson = JsonSerializer.Serialize(new Dictionary<string, int>
@@ -122,6 +125,7 @@ public static class SeedData
                 IncludedQuantity = 100,
                 Currency = "INR",
                 IsActive = true,
+                IsPublic = false,
                 SortOrder = 50,
                 FeaturesJson = JsonSerializer.Serialize(new[] { "100 DigiLocker KYC verifications" }),
                 LimitsJson = JsonSerializer.Serialize(new Dictionary<string, int>())

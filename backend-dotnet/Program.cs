@@ -911,12 +911,16 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
             "CodeVerifierEncrypted" text NOT NULL DEFAULT '',
             "ResultJsonEncrypted" text NOT NULL DEFAULT '',
             "FailureReason" text NOT NULL DEFAULT '',
+            "BillingMetric" text NOT NULL DEFAULT '',
+            "CreditsUsed" integer NOT NULL DEFAULT 0,
             "CreatedAtUtc" timestamp with time zone NOT NULL DEFAULT now(),
             "UpdatedAtUtc" timestamp with time zone NOT NULL DEFAULT now(),
             "CompletedAtUtc" timestamp with time zone NULL
         );
         """);
     db.Database.ExecuteSqlRaw("""ALTER TABLE "KycSessions" ADD COLUMN IF NOT EXISTS "GstNumber" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "KycSessions" ADD COLUMN IF NOT EXISTS "BillingMetric" text NOT NULL DEFAULT '';""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "KycSessions" ADD COLUMN IF NOT EXISTS "CreditsUsed" integer NOT NULL DEFAULT 0;""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycSessions_Tenant_CreatedAt" ON "KycSessions" ("TenantId","CreatedAtUtc" DESC);""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycSessions_Status" ON "KycSessions" ("Status");""");
 
@@ -985,6 +989,7 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
             "IncludedQuantity" integer NOT NULL DEFAULT 0,
             "Currency" text NOT NULL,
             "IsActive" boolean NOT NULL,
+            "IsPublic" boolean NOT NULL DEFAULT false,
             "SortOrder" integer NOT NULL,
             "FeaturesJson" text NOT NULL,
             "LimitsJson" text NOT NULL,
@@ -997,6 +1002,7 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
     db.Database.ExecuteSqlRaw("""ALTER TABLE "BillingPlans" ADD COLUMN IF NOT EXISTS "TaxMode" text NOT NULL DEFAULT 'exclusive';""");
     db.Database.ExecuteSqlRaw("""ALTER TABLE "BillingPlans" ADD COLUMN IF NOT EXISTS "UsageUnitName" text NOT NULL DEFAULT '';""");
     db.Database.ExecuteSqlRaw("""ALTER TABLE "BillingPlans" ADD COLUMN IF NOT EXISTS "IncludedQuantity" integer NOT NULL DEFAULT 0;""");
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "BillingPlans" ADD COLUMN IF NOT EXISTS "IsPublic" boolean NOT NULL DEFAULT false;""");
 
     db.Database.ExecuteSqlRaw("""
         CREATE TABLE IF NOT EXISTS "TenantSubscriptions" (

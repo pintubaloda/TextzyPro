@@ -161,6 +161,7 @@ const PlatformSettingsPage = () => {
   const [digilockerCatalogRows, setDigilockerCatalogRows] = useState([]);
   const [digilockerCatalogCreditsPerSuccess, setDigilockerCatalogCreditsPerSuccess] = useState(3);
   const [digilockerCatalogOpCreditsText, setDigilockerCatalogOpCreditsText] = useState("PAN=2\nAADHAAR=2\nDL=2");
+  const [gstCatalogCreditsPerSuccess, setGstCatalogCreditsPerSuccess] = useState(1);
   const [appConfig, setAppConfig] = useState({
     appName: "Textzy",
     baseDomain: "",
@@ -279,6 +280,7 @@ const PlatformSettingsPage = () => {
     includedQuantity: 0,
     currency: "INR",
     isActive: true,
+    isPublic: false,
     sortOrder: 1,
     features: [],
     customFeature: "",
@@ -698,6 +700,11 @@ const PlatformSettingsPage = () => {
               const cps = Number(dl.creditsPerSuccess ?? 0) || 0;
               setDigilockerCatalogCreditsPerSuccess(cps > 0 ? cps : 3);
               setDigilockerCatalogOpCreditsText(formatOperationCreditsMap(dl.operationCredits || {}));
+            }
+            const gstItem = rows.find((x) => String(x?.slug || "").toLowerCase() === "gst-kyc") || null;
+            if (gstItem) {
+              const gstCps = Number(gstItem.creditsPerSuccess ?? 0) || 0;
+              setGstCatalogCreditsPerSuccess(gstCps > 0 ? gstCps : 1);
             }
           } else if (activeTab === "request-logs") {
             const [customers, rows] = await Promise.all([
@@ -3730,7 +3737,7 @@ const PlatformSettingsPage = () => {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="font-semibold text-slate-900">DigiLocker KYC Credits (per docType)</p>
+                  <p className="font-semibold text-slate-900">KYC Credits (per docType)</p>
                   <p className="mt-1 text-xs text-slate-600">
                     These are saved to the Integration Catalog item <span className="font-mono">digilocker-kyc</span>. One KYC session = one docType.
                   </p>
@@ -3833,6 +3840,18 @@ const PlatformSettingsPage = () => {
                   <Label>Verify URL</Label>
                   <Input value={gst.verifyUrl} onChange={(e) => setGst((p) => ({ ...p, verifyUrl: e.target.value }))} placeholder="https://appyflow.in/api/verifyGST" />
                 </div>
+                <div className="space-y-2">
+                  <Label>Credits per success</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="50"
+                    step="1"
+                    value={String(gstCatalogCreditsPerSuccess)}
+                    onChange={(e) => setGstCatalogCreditsPerSuccess(Number(e.target.value || 0))}
+                  />
+                  <p className="text-xs text-slate-500">Controls credit usage for each successful GST verification.</p>
+                </div>
               </div>
               <div className="flex justify-end">
                 <Button className="bg-orange-500 hover:bg-orange-600" onClick={async () => {
@@ -3842,6 +3861,27 @@ const PlatformSettingsPage = () => {
                       keySecret: gst.keySecret,
                       verifyUrl: gst.verifyUrl,
                     });
+                    const nextRows = Array.isArray(digilockerCatalogRows) ? [...digilockerCatalogRows] : [];
+                    const idx = nextRows.findIndex((x) => String(x?.slug || "").toLowerCase() === "gst-kyc");
+                    if (idx >= 0) {
+                      nextRows[idx] = {
+                        ...nextRows[idx],
+                        billingMetric: nextRows[idx]?.billingMetric || "digilockerKyc",
+                        creditsPerSuccess: Number(gstCatalogCreditsPerSuccess || 0),
+                      };
+                    } else {
+                      nextRows.push({
+                        slug: "gst-kyc",
+                        name: "GST Verification",
+                        billingMetric: "digilockerKyc",
+                        creditsPerSuccess: Number(gstCatalogCreditsPerSuccess || 0),
+                        operationCredits: {},
+                        isActive: true,
+                        isVisible: true,
+                      });
+                    }
+                    await savePlatformIntegrationCatalog(nextRows);
+                    setDigilockerCatalogRows(nextRows);
                     toast.success("GST settings saved");
                   } catch (e) {
                     toast.error(e?.message || "Failed to save GST settings");
@@ -3982,6 +4022,25 @@ const PlatformSettingsPage = () => {
 
                 <section className="space-y-4">
                   <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-orange-500" />
+                    <h3 className="text-sm font-semibold text-slate-900">Visibility</h3>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">Show on landing page</p>
+                        <p className="text-xs text-slate-500">Controls whether this plan appears in public pricing.</p>
+                      </div>
+                      <Switch
+                        checked={planForm.isPublic}
+                        onCheckedChange={(checked) => setPlanForm((p) => ({ ...p, isPublic: checked }))}
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <div className="flex items-center gap-2">
                     <BadgeIndianRupee className="h-4 w-4 text-orange-500" />
                     <h3 className="text-sm font-semibold text-slate-900">Commercial model</h3>
                   </div>
@@ -4022,7 +4081,7 @@ const PlatformSettingsPage = () => {
                           <SelectContent>
                             <SelectItem value="smsCredits">SMS Credits</SelectItem>
                             <SelectItem value="whatsappMessages">WhatsApp Messages</SelectItem>
-                            <SelectItem value="digilockerKyc">DigiLocker KYC</SelectItem>
+                              <SelectItem value="digilockerKyc">KYC credits</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -4124,6 +4183,7 @@ const PlatformSettingsPage = () => {
                     <div className="space-y-1.5"><Label className="text-xs text-slate-500">Contacts</Label><Input type="number" value={planForm.limits.contacts ?? 0} onChange={(e) => setPlanForm((p) => ({ ...p, limits: { ...p.limits, contacts: Number(e.target.value || 0) } }))} /></div>
                     <div className="space-y-1.5"><Label className="text-xs text-slate-500">Team Members</Label><Input type="number" value={planForm.limits.teamMembers ?? 0} onChange={(e) => setPlanForm((p) => ({ ...p, limits: { ...p.limits, teamMembers: Number(e.target.value || 0) } }))} /></div>
                     <div className="space-y-1.5"><Label className="text-xs text-slate-500">SMS Credits</Label><Input type="number" value={planForm.limits.smsCredits ?? 0} onChange={(e) => setPlanForm((p) => ({ ...p, limits: { ...p.limits, smsCredits: Number(e.target.value || 0) } }))} /></div>
+                    <div className="space-y-1.5"><Label className="text-xs text-slate-500">KYC Credits</Label><Input type="number" value={planForm.limits.digilockerKyc ?? 0} onChange={(e) => setPlanForm((p) => ({ ...p, limits: { ...p.limits, digilockerKyc: Number(e.target.value || 0) } }))} /></div>
                     <div className="space-y-1.5"><Label className="text-xs text-slate-500">WhatsApp Messages</Label><Input type="number" value={planForm.limits.whatsappMessages ?? 0} onChange={(e) => setPlanForm((p) => ({ ...p, limits: { ...p.limits, whatsappMessages: Number(e.target.value || 0) } }))} /></div>
                     <div className="space-y-1.5"><Label className="text-xs text-slate-500">Chatbots</Label><Input type="number" value={planForm.limits.chatbots ?? 0} onChange={(e) => setPlanForm((p) => ({ ...p, limits: { ...p.limits, chatbots: Number(e.target.value || 0) } }))} /></div>
                     <div className="space-y-1.5"><Label className="text-xs text-slate-500">Flows</Label><Input type="number" value={planForm.limits.flows ?? 0} onChange={(e) => setPlanForm((p) => ({ ...p, limits: { ...p.limits, flows: Number(e.target.value || 0) } }))} /></div>
@@ -4138,7 +4198,7 @@ const PlatformSettingsPage = () => {
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant="outline"
-                      onClick={() => setPlanForm({ id: "", code: "", name: "", pricingModel: "subscription", priceMonthly: 0, priceYearly: 0, taxMode: "exclusive", usageUnitName: "smsCredits", includedQuantity: 0, currency: "INR", isActive: true, sortOrder: 1, features: [], customFeature: "", limits: { ...DEFAULT_LIMITS } })}
+                      onClick={() => setPlanForm({ id: "", code: "", name: "", pricingModel: "subscription", priceMonthly: 0, priceYearly: 0, taxMode: "exclusive", usageUnitName: "smsCredits", includedQuantity: 0, currency: "INR", isActive: true, isPublic: false, sortOrder: 1, features: [], customFeature: "", limits: { ...DEFAULT_LIMITS } })}
                     >
                       Clear draft
                     </Button>
@@ -4155,6 +4215,7 @@ const PlatformSettingsPage = () => {
                           includedQuantity: planForm.includedQuantity,
                           currency: planForm.currency,
                           isActive: planForm.isActive,
+                          isPublic: planForm.isPublic,
                           sortOrder: planForm.sortOrder,
                           features: (planForm.features || []).filter(Boolean),
                           limits: planForm.limits || {}
@@ -4163,7 +4224,7 @@ const PlatformSettingsPage = () => {
                         else await createPlatformBillingPlan(payload);
                         toast.success("Plan saved");
                         setPlans(await listPlatformBillingPlans());
-                        setPlanForm({ id: "", code: "", name: "", pricingModel: "subscription", priceMonthly: 0, priceYearly: 0, taxMode: "exclusive", usageUnitName: "smsCredits", includedQuantity: 0, currency: "INR", isActive: true, sortOrder: 1, features: [], customFeature: "", limits: { ...DEFAULT_LIMITS } });
+                        setPlanForm({ id: "", code: "", name: "", pricingModel: "subscription", priceMonthly: 0, priceYearly: 0, taxMode: "exclusive", usageUnitName: "smsCredits", includedQuantity: 0, currency: "INR", isActive: true, isPublic: false, sortOrder: 1, features: [], customFeature: "", limits: { ...DEFAULT_LIMITS } });
                       } catch {
                         toast.error("Failed to save plan");
                       }
@@ -4220,6 +4281,9 @@ const PlatformSettingsPage = () => {
                             <Badge className={p.isActive ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-50" : "bg-slate-100 text-slate-600 hover:bg-slate-100"}>
                               {p.isActive ? "Active" : "Archived"}
                             </Badge>
+                            <Badge className={p.isPublic ? "bg-blue-50 text-blue-600 hover:bg-blue-50" : "bg-slate-100 text-slate-600 hover:bg-slate-100"}>
+                              {p.isPublic ? "Landing: Visible" : "Landing: Hidden"}
+                            </Badge>
                             <Badge variant="outline">{p.code}</Badge>
                             <Badge variant="outline">{p.pricingModel === "usage_pack" ? "Usage Pack" : "Subscription"}</Badge>
                           </div>
@@ -4244,7 +4308,7 @@ const PlatformSettingsPage = () => {
                             </div>
                           ) : null}
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[360px]">
+                        <div className="grid gap-3 sm:grid-cols-4 xl:min-w-[440px]">
                           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
                             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Contacts</p>
                             <p className="mt-2 text-xl font-bold text-slate-950">{Number(p.limits?.contacts || 0).toLocaleString()}</p>
@@ -4256,6 +4320,10 @@ const PlatformSettingsPage = () => {
                           <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
                             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">WA Messages</p>
                             <p className="mt-2 text-xl font-bold text-slate-950">{Number(p.limits?.whatsappMessages || 0).toLocaleString()}</p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                            <p className="text-xs uppercase tracking-[0.16em] text-slate-500">KYC Credits</p>
+                            <p className="mt-2 text-xl font-bold text-slate-950">{Number(p.limits?.digilockerKyc || 0).toLocaleString()}</p>
                           </div>
                         </div>
                       </div>
@@ -4272,6 +4340,7 @@ const PlatformSettingsPage = () => {
                           includedQuantity: p.includedQuantity || 0,
                           currency: p.currency || "INR",
                           isActive: !!p.isActive,
+                          isPublic: !!p.isPublic,
                           sortOrder: p.sortOrder || 1,
                           features: Array.isArray(p.features) ? p.features : [],
                           customFeature: "",

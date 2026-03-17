@@ -57,6 +57,7 @@ public class PlatformBillingPlansController(
             IncludedQuantity = Math.Max(0, request.IncludedQuantity),
             Currency = string.IsNullOrWhiteSpace(request.Currency) ? "INR" : request.Currency.Trim().ToUpperInvariant(),
             IsActive = request.IsActive,
+            IsPublic = request.IsPublic,
             SortOrder = request.SortOrder,
             FeaturesJson = JsonSerializer.Serialize(request.Features ?? []),
             LimitsJson = JsonSerializer.Serialize(request.Limits ?? new Dictionary<string, int>())
@@ -98,6 +99,7 @@ public class PlatformBillingPlansController(
         row.IncludedQuantity = Math.Max(0, request.IncludedQuantity);
         row.Currency = string.IsNullOrWhiteSpace(request.Currency) ? row.Currency : request.Currency.Trim().ToUpperInvariant();
         row.IsActive = request.IsActive;
+        row.IsPublic = request.IsPublic;
         row.SortOrder = request.SortOrder;
         row.FeaturesJson = JsonSerializer.Serialize(request.Features ?? []);
         row.LimitsJson = JsonSerializer.Serialize(request.Limits ?? new Dictionary<string, int>());
@@ -134,6 +136,7 @@ public class PlatformBillingPlansController(
         row.IncludedQuantity,
         row.Currency,
         row.IsActive,
+        row.IsPublic,
         row.SortOrder,
         Features = ParseStringList(row.FeaturesJson),
         Limits = ParseLimits(row.LimitsJson)
@@ -190,6 +193,7 @@ public class PlatformBillingPlansController(
         public int IncludedQuantity { get; set; }
         public string Currency { get; set; } = "INR";
         public bool IsActive { get; set; } = true;
+        public bool IsPublic { get; set; }
         public int SortOrder { get; set; }
         public List<string> Features { get; set; } = [];
         public Dictionary<string, int> Limits { get; set; } = new();

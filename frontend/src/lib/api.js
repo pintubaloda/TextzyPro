@@ -1356,6 +1356,18 @@ export async function updatePlatformBillingPlan(id, payload) {
   return apiPut(`/api/platform/billing/plans/${id}`, payload)
 }
 
+export async function getPlatformKycReport(filters = {}) {
+  const qs = new URLSearchParams()
+  if (filters.tenantId) qs.set('tenantId', filters.tenantId)
+  if (filters.status) qs.set('status', filters.status)
+  if (filters.q) qs.set('q', filters.q)
+  if (filters.fromUtc) qs.set('fromUtc', filters.fromUtc)
+  if (filters.toUtc) qs.set('toUtc', filters.toUtc)
+  if (filters.take) qs.set('take', String(filters.take))
+  if (filters.skip) qs.set('skip', String(filters.skip))
+  return apiGet(`/api/platform/kyc/reports${qs.toString() ? `?${qs.toString()}` : ''}`)
+}
+
 export async function getPlatformCustomers(q = '', ownerUserId = '') {
   const qs = new URLSearchParams()
   if (q) qs.set('q', q)

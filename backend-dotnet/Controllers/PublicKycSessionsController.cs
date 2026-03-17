@@ -212,15 +212,23 @@ public class PublicKycSessionsController(
         var docType = NormalizeDocType((request.DocType ?? string.Empty).Trim());
         if (string.IsNullOrWhiteSpace(docType) && string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
             docType = "GST";
-        if (string.IsNullOrWhiteSpace(docType)) return BadRequest("docType is required.");
-        if (docType.Length > 64) return BadRequest("docType is too long.");
+        if (string.IsNullOrWhiteSpace(docType))
+        {
+            return Ok(new { status = "failed", failureReason = "docType is required." });
+        }
+        if (docType.Length > 64)
+        {
+            return Ok(new { status = "failed", failureReason = "docType is too long." });
+        }
         var gstNo = (request.GstNo ?? string.Empty).Trim();
         if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(gstNo))
             return BadRequest("gstNo is required for GST verification.");
 
         var allowed = await LoadAllowedDocTypesAsync(ct);
         if (allowed.Count > 0 && !allowed.Contains(docType))
-            return BadRequest($"docType '{docType}' is not allowed. Allowed: {string.Join(", ", allowed)}");
+        {
+            return Ok(new { status = "failed", failureReason = $"docType '{docType}' is not allowed. Allowed: {string.Join(", ", allowed)}" });
+        }
 
         // Credit pre-check.
         var pluginSlug = $"{provider}-kyc";
@@ -244,7 +252,21 @@ public class PublicKycSessionsController(
             });
         }
 
+        var consume = await billingGuard.TryConsumeAsync(tenantId, metricKey, creditsNeeded, ct);
+        if (!consume.Allowed)
+            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = consume.Message, key = metricKey });
+
         var webhookUrl = (request.WebhookUrl ?? string.Empty).Trim();
+        var customerRef = (request.CustomerRef ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(customerRef))
+        {
+            var exists = await controlDb.KycSessions.AsNoTracking()
+                .AnyAsync(x => x.TenantId == tenantId && x.CustomerRef == customerRef, ct);
+            if (exists)
+            {
+                return Ok(new { status = "failed", failureReason = "customerRef already exists." });
+            }
+        }
         if (string.IsNullOrWhiteSpace(webhookUrl))
         {
             var defaultWebhook = (profile?.KycWebhookUrl ?? string.Empty).Trim();
@@ -258,7 +280,7 @@ public class PublicKycSessionsController(
             CreatedByUserId = Guid.Empty,
             ProviderCode = provider,
             Status = "created",
-            CustomerRef = (request.CustomerRef ?? string.Empty).Trim(),
+            CustomerRef = customerRef,
             GstNumber = gstNo,
             RequestedDocTypesJson = JsonSerializer.Serialize(new[] { docType.ToLowerInvariant() }),
             SuccessRedirectUrl = (request.SuccessRedirectUrl ?? string.Empty).Trim(),
@@ -266,6 +288,8 @@ public class PublicKycSessionsController(
             WebhookUrl = webhookUrl,
             ResultJsonEncrypted = string.Empty,
             FailureReason = string.Empty,
+            BillingMetric = metricKey,
+            CreditsUsed = creditsNeeded,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
@@ -281,7 +305,7 @@ public class PublicKycSessionsController(
             if (latest is not null)
             {
                 row = latest;
-                if (string.Equals(row.Status, "verified", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(row.Status, "verified", StringComparison.OrdinalIgnoreCase) && row.CreditsUsed <= 0)
                 {
                     try
                     {
@@ -290,7 +314,14 @@ public class PublicKycSessionsController(
                         var gstMetricKey = string.IsNullOrWhiteSpace(gstBillingCfg.MetricKey) ? "digilockerKyc" : gstBillingCfg.MetricKey.Trim();
                         var gstBaseCredits = gstBillingCfg.CreditsPerSuccess > 0 ? gstBillingCfg.CreditsPerSuccess : 1;
                         var gstCredits = gstBillingCfg.ResolveCredits(docType, gstBaseCredits);
-                        await billingGuard.TryConsumeAsync(row.TenantId, gstMetricKey, gstCredits, ct);
+                        var gstConsume = await billingGuard.TryConsumeAsync(row.TenantId, gstMetricKey, gstCredits, ct);
+                        if (gstConsume.Allowed)
+                        {
+                            row.BillingMetric = gstMetricKey;
+                            row.CreditsUsed = gstCredits;
+                            row.UpdatedAtUtc = DateTime.UtcNow;
+                            await controlDb.SaveChangesAsync(ct);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -356,7 +387,7 @@ public class PublicKycSessionsController(
         var digilockerId = GetString(userDetails, "digilockerid");
 
         var files = root.TryGetProperty("files", out var f) && f.ValueKind == JsonValueKind.Array ? f : default;
-        var docs = BuildDocumentLinks(files, sessionId, requestedDocTypes, includeBase64);
+        var docs = BuildDocumentLinks(files, sessionId, requestedDocTypes);
 
         return new
         {
@@ -383,7 +414,7 @@ public class PublicKycSessionsController(
         };
     }
 
-    private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes, bool includeBase64)
+    private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes)
     {
         var list = new List<object>();
         if (files.ValueKind != JsonValueKind.Array) return list;
@@ -407,44 +438,19 @@ public class PublicKycSessionsController(
             var name = GetString(f, "name");
             var mime = GetString(f, "mime");
             var sizeBytes = GetInt(f, "sizeBytes");
-            var downloadUrl = BuildPublicDownloadUrl(sessionId, uri);
-
-            if (includeBase64)
+            var fileBase64 = GetString(f, "fileBase64");
+            list.Add(new
             {
-                var fileBase64 = GetString(f, "fileBase64");
-                list.Add(new
-                {
-                    uri,
-                    doctype,
-                    name,
-                    mime,
-                    sizeBytes,
-                    downloadUrl,
-                    fileBase64
-                });
-            }
-            else
-            {
-                list.Add(new
-                {
-                    uri,
-                    doctype,
-                    name,
-                    mime,
-                    sizeBytes,
-                    downloadUrl
-                });
-            }
+                uri,
+                doctype,
+                name,
+                mime,
+                sizeBytes,
+                fileBase64
+            });
         }
 
         return list;
-    }
-
-    private string BuildPublicDownloadUrl(Guid sessionId, string uri)
-    {
-        var baseUrl = $"{Request.Scheme}://{Request.Host}";
-        var encodedUri = Uri.EscapeDataString(uri);
-        return $"{baseUrl}/api/public/kyc/sessions/{sessionId}/file?uri={encodedUri}";
     }
 
     private static string MapRequestedToDoctype(IReadOnlyList<string> requestedDocTypes)
@@ -675,23 +681,19 @@ public class PublicKycSessionsController(
             if (!string.IsNullOrWhiteSpace(session.ResultJsonEncrypted))
             {
                 var raw = crypto.Decrypt(session.ResultJsonEncrypted);
-                try { result = JsonSerializer.Deserialize<object>(raw); } catch { result = new { raw }; }
+                try { result = BuildPublicResult(raw, session.Id, includeBase64: true); } catch { result = new { }; }
             }
-
-            List<string> requestedDocTypes;
-            try { requestedDocTypes = JsonSerializer.Deserialize<List<string>>(session.RequestedDocTypesJson) ?? []; }
-            catch { requestedDocTypes = []; }
 
             var payload = new
             {
                 sessionId = session.Id,
-                tenantId = session.TenantId,
                 provider = session.ProviderCode,
                 status = session.Status,
-                ok,
                 customerRef = session.CustomerRef,
-                requestedDocTypes,
+                docTypes = ParseStringList(session.RequestedDocTypesJson),
                 failureReason = session.FailureReason,
+                createdAtUtc = session.CreatedAtUtc,
+                updatedAtUtc = session.UpdatedAtUtc,
                 completedAtUtc = session.CompletedAtUtc,
                 result
             };

@@ -5,10 +5,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PlatformPurchaseReportPage from "./PlatformPurchaseReportPage";
 import PlatformSecurityReportPage from "./PlatformSecurityReportPage";
+import PlatformKycReportPage from "./PlatformKycReportPage";
 
 const REPORT_OPTIONS = [
   { value: "purchases", label: "Purchase Report", description: "Billing usage, credits, invoices, and recharge history." },
   { value: "security", label: "Security Report", description: "Login activity, IP policies, sessions, and audit actions." },
+  { value: "kyc", label: "KYC Report", description: "All KYC sessions with user, documents, and webhook status." },
 ];
 
 export default function PlatformReportsPage() {
@@ -51,7 +53,7 @@ export default function PlatformReportsPage() {
         </CardContent>
       </Card>
 
-      {report === "security" ? <PlatformSecurityReportPage /> : <PlatformPurchaseReportPage />}
+      {report === "security" ? <PlatformSecurityReportPage /> : report === "kyc" ? <PlatformKycReportPage /> : <PlatformPurchaseReportPage />}
     </div>
   );
 }

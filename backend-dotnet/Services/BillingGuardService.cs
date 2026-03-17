@@ -25,14 +25,18 @@ public class BillingGuardService(ControlDbContext db)
 
         var plan = await db.BillingPlans.FirstOrDefaultAsync(x => x.Id == sub.PlanId && x.IsActive, ct);
         if (plan is null) return (false, 0, nextUsed, "Subscription plan is inactive or missing.");
-        if (IsUsagePackCreditMetric(key) && string.Equals(plan.PricingModel, "usage_pack", StringComparison.OrdinalIgnoreCase))
+        var isKycMetric = string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase);
+        if (isKycMetric)
         {
             var balance = await GetCreditBalanceAsync(tenantId, key, ct);
             if (balance <= 0)
-                return (false, 0, nextUsed,
-                    string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase)
-                        ? "No DigiLocker KYC credits available. Please buy a DigiLocker KYC pack."
-                        : "No prepaid SMS credits available. Please buy a new SMS pack.");
+                return (false, 0, nextUsed, "No KYC credits available. Please buy a KYC pack.");
+        }
+        else if (IsUsagePackCreditMetric(key) && string.Equals(plan.PricingModel, "usage_pack", StringComparison.OrdinalIgnoreCase))
+        {
+            var balance = await GetCreditBalanceAsync(tenantId, key, ct);
+            if (balance <= 0)
+                return (false, 0, nextUsed, "No prepaid SMS credits available. Please buy a new SMS pack.");
         }
 
         Dictionary<string, int> limits;
@@ -75,6 +79,8 @@ public class BillingGuardService(ControlDbContext db)
         }
 
         var prepaidBalance = await GetCreditBalanceAsync(tenantId, key, ct);
+        if (string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase))
+            return prepaidBalance;
         var planRemaining = await GetPlanRemainingAsync(tenantId, key, current, ct);
         if (planRemaining == int.MaxValue) return int.MaxValue;
         return prepaidBalance + Math.Max(0, planRemaining);
@@ -87,12 +93,17 @@ public class BillingGuardService(ControlDbContext db)
         if (IsUsagePackCreditMetric(key))
         {
             var prepaidBalance = await GetCreditBalanceAsync(tenantId, key, ct);
+            if (string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase) && prepaidBalance <= 0)
+                return (false, 0, delta, "No KYC credits available. Please buy a KYC pack.");
             if (prepaidBalance > 0)
             {
                 var planRemaining = await GetPlanRemainingAsync(tenantId, key, current, ct);
                 var totalAvailable = prepaidBalance + Math.Max(0, planRemaining);
                 if (delta > totalAvailable)
-                    return (false, totalAvailable, delta, $"Available SMS credits are insufficient: need {delta}, available {totalAvailable}");
+                {
+                    var label = string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase) ? "KYC credits" : "SMS credits";
+                    return (false, totalAvailable, delta, $"Available {label} are insufficient: need {delta}, available {totalAvailable}");
+                }
 
                 var consumeFromBalance = Math.Min(prepaidBalance, delta);
                 var consumeFromPlan = Math.Max(0, delta - consumeFromBalance);

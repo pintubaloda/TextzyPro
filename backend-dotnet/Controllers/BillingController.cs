@@ -1445,6 +1445,13 @@ public class BillingController(
         sub.StartedAtUtc = start;
         sub.RenewAtUtc = ResolveRenewAtUtc(start, sub.BillingCycle);
         sub.UpdatedAtUtc = DateTime.UtcNow;
+
+        // If subscription plan includes KYC credits in limits, top up the credit balance on activation/renewal.
+        var kycUnits = ResolvePackUnitsFromLimits(plan.LimitsJson, "digilockerKyc");
+        if (kycUnits > 0)
+        {
+            await billingGuard.AddCreditUnitsAsync(attempt.TenantId, "digilockerKyc", kycUnits, ct);
+        }
     }
 
     private async Task ActivateIntegrationPurchaseAsync(BillingPaymentAttempt attempt, Dictionary<string, string> notes, CancellationToken ct)

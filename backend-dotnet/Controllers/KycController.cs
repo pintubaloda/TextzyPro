@@ -41,10 +41,38 @@ public class KycController(
             return BadRequest("gstNo is required for GST verification.");
 
         var normalizedDocTypes = NormalizeDocTypes(request.DocTypes);
-        if (normalizedDocTypes.Count == 0) return BadRequest("docType is required.");
+        if (normalizedDocTypes.Count == 0)
+        {
+            return Ok(new
+            {
+                status = "failed",
+                failureReason = "docType is required."
+            });
+        }
         var allowed = await LoadAllowedDocTypesAsync(ct);
         if (allowed.Count > 0 && normalizedDocTypes.Any(x => !allowed.Contains(x)))
-            return BadRequest($"docType not allowed. Allowed: {string.Join(", ", allowed)}");
+        {
+            return Ok(new
+            {
+                status = "failed",
+                failureReason = $"docType not allowed. Allowed: {string.Join(", ", allowed)}"
+            });
+        }
+
+        var customerRef = (request.CustomerRef ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(customerRef))
+        {
+            var exists = await db.KycSessions.AsNoTracking()
+                .AnyAsync(x => x.TenantId == tenancy.TenantId && x.CustomerRef == customerRef, ct);
+            if (exists)
+            {
+                return Ok(new
+                {
+                    status = "failed",
+                    failureReason = "customerRef already exists."
+                });
+            }
+        }
 
         // Pre-check credits/limits (non-destructive). Actual consumption happens only on verified callback.
         var pluginSlug = $"{provider}-kyc";
@@ -69,6 +97,10 @@ public class KycController(
             });
         }
 
+        var consume = await billingGuard.TryConsumeAsync(tenancy.TenantId, metricKey, creditsNeeded, ct);
+        if (!consume.Allowed)
+            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = consume.Message, key = metricKey });
+
         var row = new KycSession
         {
             Id = Guid.NewGuid(),
@@ -76,7 +108,7 @@ public class KycController(
             CreatedByUserId = auth.UserId,
             ProviderCode = provider,
             Status = "created",
-            CustomerRef = (request.CustomerRef ?? string.Empty).Trim(),
+            CustomerRef = customerRef,
             GstNumber = gstNo,
             RequestedDocTypesJson = KycSession.NormalizeDocTypes(normalizedDocTypes),
             SuccessRedirectUrl = (request.SuccessRedirectUrl ?? string.Empty).Trim(),
@@ -84,6 +116,8 @@ public class KycController(
             WebhookUrl = (request.WebhookUrl ?? string.Empty).Trim(),
             ResultJsonEncrypted = string.Empty,
             FailureReason = string.Empty,
+            BillingMetric = metricKey,
+            CreditsUsed = creditsNeeded,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };

@@ -23,6 +23,8 @@ public class KycSession
     // Provider result (encrypted-at-rest): raw response + normalized snapshot.
     public string ResultJsonEncrypted { get; set; } = string.Empty;
     public string FailureReason { get; set; } = string.Empty;
+    public string BillingMetric { get; set; } = string.Empty;
+    public int CreditsUsed { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
