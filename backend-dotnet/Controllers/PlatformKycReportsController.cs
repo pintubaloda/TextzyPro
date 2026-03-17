@@ -14,9 +14,24 @@ namespace Textzy.Api.Controllers;
 [Route("api/platform/kyc/reports")]
 public class PlatformKycReportsController(ControlDbContext db, AuthContext auth, RbacService rbac, SecretCryptoService crypto) : ControllerBase
 {
+    [HttpOptions]
+    public IActionResult OptionsRoot()
+    {
+        ApplyCorsHeaders();
+        return NoContent();
+    }
+
+    [HttpOptions("{id:guid}")]
+    public IActionResult OptionsById()
+    {
+        ApplyCorsHeaders();
+        return NoContent();
+    }
+
     [HttpGet("ping")]
     public IActionResult Ping()
     {
+        ApplyCorsHeaders();
         if (!auth.IsAuthenticated) return Unauthorized();
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
         var version = Assembly.GetExecutingAssembly()
@@ -44,6 +59,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         [FromQuery] int skip = 0,
         CancellationToken ct = default)
     {
+        ApplyCorsHeaders();
         if (!auth.IsAuthenticated) return Unauthorized();
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
 
@@ -195,6 +211,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         [FromQuery] bool includeBase64 = true,
         CancellationToken ct = default)
     {
+        ApplyCorsHeaders();
         if (!auth.IsAuthenticated) return Unauthorized();
         if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
 
@@ -316,6 +333,20 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             dlNo = drivingLicense,
             documents = docs
         };
+    }
+
+    private void ApplyCorsHeaders()
+    {
+        var origin = Request.Headers.Origin.ToString();
+        if (string.IsNullOrWhiteSpace(origin)) return;
+        if (!string.Equals(origin, "https://textzy.in", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(origin, "https://www.textzy.in", StringComparison.OrdinalIgnoreCase))
+            return;
+        Response.Headers["Access-Control-Allow-Origin"] = origin;
+        Response.Headers["Access-Control-Allow-Credentials"] = "true";
+        Response.Headers["Access-Control-Allow-Headers"] = "Authorization, X-Access-Token, X-CSRF-Token, Content-Type";
+        Response.Headers["Access-Control-Allow-Methods"] = "GET,OPTIONS";
+        Response.Headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, X-CSRF-Token, X-Textzy-Build, X-Textzy-Body-Len";
     }
 
     private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes, bool includeBase64)
