@@ -39,6 +39,7 @@ public class DigiLockerKycProvider(
     private const string SettingsScope = "digilocker";
     private const int DefaultMaxFileBytes = 2 * 1024 * 1024; // 2 MiB, keep result/webhook sizes bounded
     private const int DefaultMaxFilesPerSession = 5;
+    private const string DefaultEAadhaarXmlUrl = "https://digilocker.meripehchaan.gov.in/public/oauth2/3/xml/eaadhaar";
 
     public async Task<(string RedirectUrl, string State)> BuildRedirectAsync(KycSession session, CancellationToken ct)
     {
@@ -315,6 +316,73 @@ public class DigiLockerKycProvider(
         {
             // ignore best-effort extraction errors
         }
+
+        // Official DigiLocker endpoint for e-Aadhaar XML (oauth2/3), independent of /files/issued list.
+        // This is needed to show Aadhaar number/address/father name (masked) and to generate a proper preview.
+        // It may still fail if the AuthPartner isn't enabled for e-Aadhaar XML.
+        if (requestedDocTypes.Count == 1)
+        {
+            var req = (requestedDocTypes[0] ?? string.Empty).Trim().ToUpperInvariant();
+            if (req is "AADHAAR" or "AADHAR")
+            {
+                try
+                {
+                    var maxBytes = settings.MaxFileBytes > 0 ? settings.MaxFileBytes : DefaultMaxFileBytes;
+                    var eaadhaarUrl = CombineProviderUrl(apiBase, settings.EAadhaarXmlUrl);
+                    var xml = await TryFetchEAadhaarXmlAsync(http, eaadhaarUrl, accessToken, clientSecret, maxBytes, ct);
+                    if (xml is not null)
+                    {
+                        // Attach XML (optional) + a branded HTML report for UI preview.
+                        var parsed = TryParseAadhaarXml(xml.Bytes);
+                        if (parsed is not null)
+                        {
+                            parsedDocs.Add(new { source = "eaadhaarXml", parsed = new { hmacValid = xml.HmacValid, parsed } });
+                            MergeCollected(collected, new { type = "aadhaar", fields = parsed });
+                        }
+
+                        if (settings.IncludeFilesInResult)
+                        {
+                            downloaded.Add(new
+                            {
+                                uri = "oauth2/3/xml/eaadhaar",
+                                doctype = "ADHAR",
+                                name = "e-Aadhaar XML",
+                                mime = "application/xml",
+                                sizeBytes = xml.Bytes.Length,
+                                sha256 = Sha256Hex(xml.Bytes),
+                                hmac = xml.HmacBase64,
+                                hmacValid = xml.HmacValid,
+                                fileBase64 = Convert.ToBase64String(xml.Bytes)
+                            });
+
+                            var reportHtml = BuildAadhaarReportHtml(collected);
+                            if (!string.IsNullOrWhiteSpace(reportHtml))
+                            {
+                                var reportBytes = Encoding.UTF8.GetBytes(reportHtml);
+                                downloaded.Add(new
+                                {
+                                    uri = "textzy/aadhaar-report",
+                                    doctype = "AADHAAR_REPORT",
+                                    name = "Textzy Aadhaar Verification Report",
+                                    mime = "text/html; charset=utf-8",
+                                    sizeBytes = reportBytes.Length,
+                                    sha256 = Sha256Hex(reportBytes),
+                                    hmac = (string?)null,
+                                    hmacValid = (bool?)null,
+                                    fileBase64 = Convert.ToBase64String(reportBytes)
+                                });
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Best-effort. Do not fail KYC purely due to missing e-Aadhaar XML, but record for debugging.
+                    downloadErrors.Add(new { uri = "oauth2/3/xml/eaadhaar", doctype = "ADHAR", error = ex.Message });
+                }
+            }
+        }
+
         if (issuedOk && settings.IncludeFilesInResult && issuedItems.Count > 0)
         {
             var maxFiles = settings.MaxFilesPerSession > 0 ? settings.MaxFilesPerSession : DefaultMaxFilesPerSession;
@@ -456,6 +524,7 @@ public class DigiLockerKycProvider(
         string AuthorizeExtraParams,
         string TokenUrl,
         string ApiBaseUrl,
+        string EAadhaarXmlUrl,
         string Scope,
         string DocTypeParamName,
         string IssuedDocsPath,
@@ -486,6 +555,7 @@ public class DigiLockerKycProvider(
             AuthorizeExtraParams: Pick("authorizeExtraParams", config["Digilocker:AuthorizeExtraParams"] ?? config["DIGILOCKER_AUTHORIZE_EXTRA_PARAMS"] ?? string.Empty),
             TokenUrl: Pick("tokenUrl", config["Digilocker:TokenUrl"] ?? config["DIGILOCKER_TOKEN_URL"] ?? "https://digilocker.meripehchaan.gov.in/public/oauth2/1/token"),
             ApiBaseUrl: Pick("apiBaseUrl", config["Digilocker:ApiBaseUrl"] ?? config["DIGILOCKER_API_BASE_URL"] ?? "https://digilocker.meripehchaan.gov.in/public"),
+            EAadhaarXmlUrl: Pick("eaadhaarXmlUrl", config["Digilocker:EAadhaarXmlUrl"] ?? DefaultEAadhaarXmlUrl),
             // Default to the real DigiLocker scope tokens.
             // UI can still send "friendly" tokens (issued-documents/profile/age-verification); BuildRedirect normalizes.
             // IMPORTANT: Do NOT include "openid" unless your DigiLocker client is configured for it.
@@ -533,6 +603,159 @@ public class DigiLockerKycProvider(
             path = path["/public/oauth2/1".Length..];
 
         return baseUrl + path;
+    }
+
+    private static string CombineProviderUrl(string apiBase, string pathOrUrl)
+    {
+        var raw = (pathOrUrl ?? string.Empty).Trim();
+        if (raw.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || raw.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return raw;
+
+        // Some DigiLocker endpoints are published as absolute paths under /public/..., but our apiBaseUrl
+        // is often set to /public/oauth2/1. In that case, join to the origin instead of nesting under oauth2/1.
+        if (raw.StartsWith("/public/", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var u = new Uri(apiBase);
+                var origin = u.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+                return origin + raw;
+            }
+            catch
+            {
+                // fall back to previous behavior
+            }
+        }
+
+        return CombineApiUrl(apiBase, raw);
+    }
+
+    private sealed record EAadhaarXmlDownload(string Url, string? HmacBase64, bool? HmacValid, byte[] Bytes);
+
+    private static async Task<EAadhaarXmlDownload?> TryFetchEAadhaarXmlAsync(
+        HttpClient http,
+        string url,
+        string accessToken,
+        string clientSecret,
+        int maxBytes,
+        CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        var status = (int)res.StatusCode;
+        if (status < 200 || status > 299) return null;
+
+        // Read raw bytes so we can verify hmac.
+        var bytes = await res.Content.ReadAsByteArrayAsync(ct);
+        if (bytes.Length == 0) return null;
+        if (maxBytes > 0 && bytes.Length > maxBytes) return null;
+
+        // DigiLocker sends `hmac` header: base64(HMACSHA256(contentBytes, client_secret))
+        // Verify integrity. If header missing, keep null.
+        string? hmacHeader = null;
+        if (res.Headers.TryGetValues("hmac", out var hv) || res.Content.Headers.TryGetValues("hmac", out hv))
+        {
+            hmacHeader = hv.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(hmacHeader)) hmacHeader = hmacHeader.Trim();
+        }
+
+        bool? valid = null;
+        if (!string.IsNullOrWhiteSpace(hmacHeader))
+        {
+            try
+            {
+                using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(clientSecret ?? string.Empty));
+                var calc = hmac.ComputeHash(bytes);
+                var calcB64 = Convert.ToBase64String(calc);
+                valid = FixedTimeEquals(calcB64, hmacHeader);
+            }
+            catch
+            {
+                valid = false;
+            }
+        }
+
+        return new EAadhaarXmlDownload(url, hmacHeader, valid, bytes);
+    }
+
+    private static string Sha256Hex(byte[] bytes)
+    {
+        using var sha = SHA256.Create();
+        var h = sha.ComputeHash(bytes);
+        return Convert.ToHexString(h).ToLowerInvariant();
+    }
+
+    private static string BuildAadhaarReportHtml(Dictionary<string, object?> collected)
+    {
+        static string Esc(string? s)
+            => System.Net.WebUtility.HtmlEncode((s ?? string.Empty).Trim());
+
+        var name = collected.TryGetValue("name", out var n) ? n?.ToString() : "";
+        var dob = collected.TryGetValue("dob", out var d) ? d?.ToString() : "";
+        var gender = collected.TryGetValue("gender", out var g) ? g?.ToString() : "";
+        var aadhaar = collected.TryGetValue("aadhaarMasked", out var a) ? a?.ToString() : "";
+        var father = collected.TryGetValue("fatherName", out var f) ? f?.ToString() : "";
+        var address = collected.TryGetValue("address", out var ad) ? ad?.ToString() : "";
+        var photo = collected.TryGetValue("photoBase64", out var p) ? p?.ToString() : "";
+
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(aadhaar) && string.IsNullOrWhiteSpace(photo))
+            return string.Empty;
+
+        var photoImg = string.IsNullOrWhiteSpace(photo)
+            ? ""
+            : $"<img class='photo' alt='Photo' src='data:image/jpeg;base64,{Esc(photo)}' />";
+
+        return $@"<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <title>Textzy Aadhaar Verification</title>
+  <style>
+    :root {{ --ink:#0f172a; --muted:#64748b; --paper:#ffffff; --line:#e2e8f0; --brand:#f97316; }}
+    body {{ margin:0; padding:24px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#f8fafc; color:var(--ink); }}
+    .sheet {{ position:relative; max-width:860px; margin:0 auto; background:var(--paper); border:1px solid var(--line); border-radius:18px; overflow:hidden; }}
+    .wm {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:.06; font-size:92px; font-weight:800; letter-spacing:-2px; }}
+    .hdr {{ display:flex; gap:16px; align-items:center; padding:20px 22px; border-bottom:1px solid var(--line); }}
+    .logo {{ width:44px; height:44px; border-radius:14px; background:var(--brand); }}
+    .ttl {{ display:flex; flex-direction:column; }}
+    .ttl b {{ font-size:18px; }}
+    .ttl span {{ color:var(--muted); font-size:12px; }}
+    .grid {{ display:grid; grid-template-columns: 1fr 220px; gap:18px; padding:22px; }}
+    .card {{ border:1px solid var(--line); border-radius:14px; padding:14px; }}
+    .row {{ display:flex; gap:10px; }}
+    .k {{ width:140px; color:var(--muted); font-size:12px; }}
+    .v {{ flex:1; font-size:13px; }}
+    .photo {{ width:200px; height:auto; border-radius:14px; border:1px solid var(--line); }}
+  </style>
+</head>
+<body>
+  <div class='sheet'>
+    <div class='wm'>Textzy</div>
+    <div class='hdr'>
+      <div class='logo'></div>
+      <div class='ttl'>
+        <b>DigiLocker Verified e-Aadhaar</b>
+        <span>Generated by Textzy from DigiLocker consent session</span>
+      </div>
+    </div>
+    <div class='grid'>
+      <div class='card'>
+        <div class='row'><div class='k'>Name</div><div class='v'>{Esc(name)}</div></div>
+        <div class='row'><div class='k'>Father's Name</div><div class='v'>{Esc(father)}</div></div>
+        <div class='row'><div class='k'>Aadhaar (masked)</div><div class='v'>{Esc(aadhaar)}</div></div>
+        <div class='row'><div class='k'>Date of Birth</div><div class='v'>{Esc(dob)}</div></div>
+        <div class='row'><div class='k'>Gender</div><div class='v'>{Esc(gender)}</div></div>
+        <div class='row'><div class='k'>Address</div><div class='v'>{Esc(address)}</div></div>
+      </div>
+      <div class='card' style='display:flex; align-items:flex-start; justify-content:center;'>
+        {photoImg}
+      </div>
+    </div>
+  </div>
+</body>
+</html>";
     }
 
     private static bool TryCollectFromUserDetails(Dictionary<string, object?> collected, string userDetailsBody, out object parsed)

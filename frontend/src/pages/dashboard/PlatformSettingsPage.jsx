@@ -134,6 +134,7 @@ const PlatformSettingsPage = () => {
     authorizeExtraParams: "",
     tokenUrl: "",
     apiBaseUrl: "",
+    eaadhaarXmlUrl: "https://digilocker.meripehchaan.gov.in/public/oauth2/3/xml/eaadhaar",
     scope: "files.issueddocs",
     docTypeParamName: "",
     issuedDocsPath: "",
@@ -628,6 +629,7 @@ const PlatformSettingsPage = () => {
               authorizeExtraParams: values.authorizeExtraParams || prev.authorizeExtraParams,
               tokenUrl: values.tokenUrl || prev.tokenUrl,
               apiBaseUrl: values.apiBaseUrl || prev.apiBaseUrl,
+              eaadhaarXmlUrl: values.eaadhaarXmlUrl || prev.eaadhaarXmlUrl,
               scope: values.scope || prev.scope,
               docTypeParamName: values.docTypeParamName || prev.docTypeParamName,
               issuedDocsPath: values.issuedDocsPath || prev.issuedDocsPath,
@@ -3566,6 +3568,17 @@ const PlatformSettingsPage = () => {
                 />
                 <p className="text-xs text-slate-500">Base URL for DigiLocker API calls (for example issued docs). Leave blank to use default.</p>
               </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>e-Aadhaar XML URL</Label>
+                <Input
+                  value={digilocker.eaadhaarXmlUrl}
+                  onChange={(e) => setDigilocker((p) => ({ ...p, eaadhaarXmlUrl: e.target.value }))}
+                  placeholder="https://digilocker.meripehchaan.gov.in/public/oauth2/3/xml/eaadhaar"
+                />
+                <p className="text-xs text-slate-500">
+                  Official endpoint to fetch e-Aadhaar XML (oauth2/3). DigiLocker sends a response header <span className="font-mono">hmac</span> which Textzy verifies using the client secret.
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label>Scope</Label>
                 <Input value={digilocker.scope} onChange={(e) => setDigilocker((p) => ({ ...p, scope: e.target.value }))} placeholder="files.issueddocs" />
@@ -3678,6 +3691,7 @@ const PlatformSettingsPage = () => {
                     authorizeExtraParams: digilocker.authorizeExtraParams || "",
                     tokenUrl: digilocker.tokenUrl || "",
                     apiBaseUrl: digilocker.apiBaseUrl || "",
+                    eaadhaarXmlUrl: digilocker.eaadhaarXmlUrl || "",
                     scope: digilocker.scope || "",
                     docTypeParamName: digilocker.docTypeParamName || "",
                     issuedDocsPath: digilocker.issuedDocsPath || "",

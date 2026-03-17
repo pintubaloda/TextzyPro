@@ -150,7 +150,7 @@ export default function KycReportsPage() {
     if (!r) return "";
     if (r === "PAN") return "PANCR";
     if (r === "DL" || r === "DRIVING_LICENCE" || r === "DRIVINGLICENSE" || r === "DRIVING-LICENCE") return "DRVLC";
-    if (r === "AADHAAR" || r === "AADHAR") return "ADHAR";
+    if (r === "AADHAAR" || r === "AADHAR") return "AADHAAR_REPORT";
     return r;
   }
 
@@ -161,6 +161,11 @@ export default function KycReportsPage() {
     if (want) {
       const idx = files.findIndex((f) => String(f?.doctype || "").toUpperCase() === want);
       if (idx >= 0) return idx;
+      // Aadhaar can ship as XML too; fall back to ADHAR if no report is present.
+      if (want === "AADHAAR_REPORT") {
+        const idx2 = files.findIndex((f) => String(f?.doctype || "").toUpperCase() === "ADHAR");
+        if (idx2 >= 0) return idx2;
+      }
     }
     return 0;
   }
