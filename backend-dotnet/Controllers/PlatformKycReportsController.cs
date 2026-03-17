@@ -35,7 +35,10 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             query = query.Where(x => x.TenantId == tid);
 
         if (!string.IsNullOrWhiteSpace(status))
-            query = query.Where(x => x.Status == status);
+        {
+            var normalizedStatus = status.Trim().ToLowerInvariant();
+            query = query.Where(x => (x.Status ?? string.Empty).ToLower() == normalizedStatus);
+        }
 
         if (DateTime.TryParse(fromUtc, out var fromDt))
             query = query.Where(x => x.CreatedAtUtc >= fromDt);
@@ -44,10 +47,10 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
 
         if (!string.IsNullOrWhiteSpace(q))
         {
-            var needle = q.Trim();
+            var needle = q.Trim().ToLowerInvariant();
             query = query.Where(x =>
-                x.CustomerRef.Contains(needle) ||
-                x.Id.ToString().Contains(needle));
+                (x.CustomerRef ?? string.Empty).ToLower().Contains(needle) ||
+                x.Id.ToString().ToLower().Contains(needle));
         }
 
         var total = await query.CountAsync(ct);
