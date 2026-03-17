@@ -676,6 +676,10 @@ public class DigiLockerKycProvider(
             }
         }
 
+        // If DigiLocker provided an HMAC and it doesn't match, do not trust the payload.
+        if (valid is false)
+            throw new InvalidOperationException("e-Aadhaar XML HMAC verification failed.");
+
         return new EAadhaarXmlDownload(url, hmacHeader, valid, bytes);
     }
 
