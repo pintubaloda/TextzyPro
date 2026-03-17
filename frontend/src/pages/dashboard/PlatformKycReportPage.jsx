@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import { getPlatformCustomerUsage, getPlatformCustomers, getPlatformKycReport } from "@/lib/api";
 
@@ -50,6 +54,9 @@ export default function PlatformKycReportPage() {
     take: 100,
     skip: 0,
   });
+  const [useAllTime, setUseAllTime] = useState(true);
+  const [fromDate, setFromDate] = useState(null);
+  const [toDate, setToDate] = useState(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -67,8 +74,8 @@ export default function PlatformKycReportPage() {
           tenantId: next.tenantId,
           status: next.status === "all" ? "" : next.status,
           q: next.q,
-          fromUtc: next.fromUtc,
-          toUtc: next.toUtc,
+          fromUtc: useAllTime ? "" : next.fromUtc,
+          toUtc: useAllTime ? "" : next.toUtc,
           take: next.take,
           skip: next.skip,
         }),
@@ -167,11 +174,69 @@ export default function PlatformKycReportPage() {
           </div>
           <div className="space-y-2">
             <Label>From (UTC)</Label>
-            <Input placeholder="2026-03-01T00:00:00Z" value={filters.fromUtc} onChange={(e) => setFilters((p) => ({ ...p, fromUtc: e.target.value }))} />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-left font-normal"
+                  disabled={useAllTime}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {fromDate ? format(fromDate, "PPP") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={fromDate}
+                  onSelect={(date) => {
+                    setFromDate(date || null);
+                    setFilters((p) => ({ ...p, fromUtc: date ? date.toISOString() : "" }));
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="space-y-2">
             <Label>To (UTC)</Label>
-            <Input placeholder="2026-03-31T23:59:59Z" value={filters.toUtc} onChange={(e) => setFilters((p) => ({ ...p, toUtc: e.target.value }))} />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start text-left font-normal"
+                  disabled={useAllTime}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {toDate ? format(toDate, "PPP") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={toDate}
+                  onSelect={(date) => {
+                    setToDate(date || null);
+                    setFilters((p) => ({ ...p, toUtc: date ? date.toISOString() : "" }));
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label>Time Range</Label>
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <input
+                type="checkbox"
+                checked={useAllTime}
+                onChange={(e) => setUseAllTime(e.target.checked)}
+              />
+              <div className="text-sm text-slate-700">
+                Use all time (ignore date filters)
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">Uncheck to filter by From/To UTC values.</p>
           </div>
           <div className="space-y-2 md:col-span-3">
             <Label>Search (session id or customerRef)</Label>
@@ -179,7 +244,18 @@ export default function PlatformKycReportPage() {
           </div>
           <div className="flex items-end gap-2">
             <Button className="bg-orange-500 hover:bg-orange-600" disabled={loading} onClick={() => load()}>Apply</Button>
-            <Button variant="outline" disabled={loading} onClick={() => load({ q: "", fromUtc: "", toUtc: "", status: "all", tenantId: "" })}>Reset</Button>
+            <Button
+              variant="outline"
+              disabled={loading}
+              onClick={() => {
+                setUseAllTime(true);
+                setFromDate(null);
+                setToDate(null);
+                load({ q: "", fromUtc: "", toUtc: "", status: "all", tenantId: "" });
+              }}
+            >
+              Reset
+            </Button>
           </div>
         </CardContent>
       </Card>
