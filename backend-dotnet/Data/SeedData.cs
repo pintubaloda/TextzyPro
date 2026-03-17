@@ -340,7 +340,7 @@ public static class SeedData
                 "ErrorCode" text NOT NULL DEFAULT '',
                 "ErrorTitle" text NOT NULL DEFAULT '',
                 "ErrorDetail" text NOT NULL DEFAULT '',
-                "PayloadJson" text NOT NULL DEFAULT '{}',
+                "PayloadJson" text NOT NULL DEFAULT '{{}}',
                 "CreatedAtUtc" timestamp with time zone NOT NULL DEFAULT now()
             );
             """);

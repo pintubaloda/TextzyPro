@@ -211,6 +211,10 @@ public static class ControlSchema
                 "UpdatedAtUtc" timestamp with time zone NOT NULL
             );
             """);
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantUsages" ADD COLUMN IF NOT EXISTS "MetricKey" text NOT NULL DEFAULT '';""");
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantUsages" ADD COLUMN IF NOT EXISTS "BucketDateUtc" timestamp with time zone NOT NULL DEFAULT now();""");
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantUsages" ADD COLUMN IF NOT EXISTS "Units" integer NOT NULL DEFAULT 0;""");
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "TenantUsages" ADD COLUMN IF NOT EXISTS "UpdatedAtUtc" timestamp with time zone NOT NULL DEFAULT now();""");
         db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_TenantUsages_Tenant_Metric_Bucket" ON "TenantUsages" ("TenantId","MetricKey","BucketDateUtc");""");
 
         db.Database.ExecuteSqlRaw("""
