@@ -122,6 +122,7 @@ public class PublicKycSessionsController(
         [FromQuery] string pswd,
         [FromQuery] string apikey,
         [FromQuery] string uri,
+        [FromQuery] bool includeBase64,
         CancellationToken ct)
     {
         var auth = new PublicKycAuthRequest
@@ -162,10 +163,6 @@ public class PublicKycSessionsController(
         var fileBase64 = match.Value.TryGetProperty("fileBase64", out var fb) && fb.ValueKind == JsonValueKind.String ? fb.GetString() ?? "" : "";
         if (string.IsNullOrWhiteSpace(fileBase64)) return NotFound("File content is missing for this session.");
 
-        byte[] bytes;
-        try { bytes = Convert.FromBase64String(fileBase64); }
-        catch { return StatusCode(StatusCodes.Status500InternalServerError, "Stored file content is corrupt."); }
-
         var mime = match.Value.TryGetProperty("mime", out var mm) && mm.ValueKind == JsonValueKind.String
             ? (mm.GetString() ?? "application/octet-stream")
             : "application/octet-stream";
@@ -173,6 +170,26 @@ public class PublicKycSessionsController(
         var name = match.Value.TryGetProperty("name", out var nn) && nn.ValueKind == JsonValueKind.String
             ? (nn.GetString() ?? string.Empty).Trim()
             : string.Empty;
+
+        var sizeBytes = match.Value.TryGetProperty("sizeBytes", out var sb) && sb.ValueKind == JsonValueKind.Number && sb.TryGetInt32(out var sz)
+            ? sz
+            : 0;
+
+        if (includeBase64)
+        {
+            return Ok(new
+            {
+                uri,
+                name,
+                mime,
+                sizeBytes,
+                fileBase64
+            });
+        }
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(fileBase64); }
+        catch { return StatusCode(StatusCodes.Status500InternalServerError, "Stored file content is corrupt."); }
 
         // Safe fallback file name for browsers.
         var fileName = !string.IsNullOrWhiteSpace(name) ? name : uri;

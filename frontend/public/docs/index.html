@@ -265,12 +265,13 @@
         <h1>KYC File Download</h1>
         <div class="endpoint"><span class="method get">GET</span> https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file</div>
         <p class="desc">Download a file attached to a KYC session.</p>
+        <p class="desc">Add <strong>includeBase64=true</strong> to return JSON with base64 instead of a file.</p>
 
         <h2>Example (GET)</h2>
         <div class="codebox">
           <div class="header"><span>cURL Request</span><span>File</span></div>
           <code>curl --request GET \</code><br />
-          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&uri=in.gov.pan-PANCR-XXXX'</code>
+          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&uri=in.gov.pan-PANCR-XXXX&includeBase64=true'</code>
         </div>
       </section>
     </main>
