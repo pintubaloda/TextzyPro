@@ -96,6 +96,7 @@ public class PlatformRequestLoggingMiddleware(RequestDelegate next)
         if (SkipPaths.Contains(path)) return false;
         if (path.StartsWith("/api/auth/", StringComparison.OrdinalIgnoreCase)) return false;
         if (path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase)) return false;
+        if (path.StartsWith("/api/platform/kyc/reports", StringComparison.OrdinalIgnoreCase)) return false;
         return path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
     }
 
