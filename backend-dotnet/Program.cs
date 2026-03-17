@@ -76,6 +76,21 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var allowedOrigins = ParseAllowedOrigins(builder.Configuration, builder.Environment.IsProduction()).ToArray();
+// Permanent safe defaults for production frontends.
+if (builder.Environment.IsProduction())
+{
+    var defaults = new[]
+    {
+        "https://textzy.in",
+        "https://www.textzy.in"
+    };
+    var set = new HashSet<string>(allowedOrigins, StringComparer.OrdinalIgnoreCase);
+    foreach (var origin in defaults)
+    {
+        if (!set.Contains(origin)) set.Add(origin);
+    }
+    allowedOrigins = set.ToArray();
+}
 if (builder.Environment.IsProduction() && allowedOrigins.Length == 0)
 {
     throw new InvalidOperationException("AllowedOrigins is required in production. Set AllowedOrigins with full origin(s).");
