@@ -11,8 +11,17 @@ public class FrontendCorsMiddleware(RequestDelegate next, FrontendCorsOptions co
         {
             context.Response.Headers["Access-Control-Allow-Origin"] = origin;
             context.Response.Headers["Access-Control-Allow-Credentials"] = "true";
-            context.Response.Headers["Access-Control-Allow-Headers"] = string.Join(", ", corsOptions.AllowedHeaders);
-            context.Response.Headers["Access-Control-Allow-Methods"] = string.Join(", ", corsOptions.AllowedMethods);
+            context.Response.Headers["Vary"] = "Origin";
+            var requestedHeaders = context.Request.Headers["Access-Control-Request-Headers"].ToString();
+            context.Response.Headers["Access-Control-Allow-Headers"] =
+                string.IsNullOrWhiteSpace(requestedHeaders)
+                    ? string.Join(", ", corsOptions.AllowedHeaders)
+                    : requestedHeaders;
+            var requestedMethod = context.Request.Headers["Access-Control-Request-Method"].ToString();
+            context.Response.Headers["Access-Control-Allow-Methods"] =
+                string.IsNullOrWhiteSpace(requestedMethod)
+                    ? string.Join(", ", corsOptions.AllowedMethods)
+                    : string.Join(", ", corsOptions.AllowedMethods.Union([requestedMethod], StringComparer.OrdinalIgnoreCase));
             context.Response.Headers["Access-Control-Expose-Headers"] = string.Join(", ", corsOptions.ExposedHeaders);
             if (context.Request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
             {

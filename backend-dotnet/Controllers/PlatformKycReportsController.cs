@@ -344,7 +344,12 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             return;
         Response.Headers["Access-Control-Allow-Origin"] = origin;
         Response.Headers["Access-Control-Allow-Credentials"] = "true";
-        Response.Headers["Access-Control-Allow-Headers"] = "Authorization, X-Access-Token, X-CSRF-Token, Content-Type";
+        Response.Headers["Vary"] = "Origin";
+        var requestedHeaders = Request.Headers["Access-Control-Request-Headers"].ToString();
+        Response.Headers["Access-Control-Allow-Headers"] =
+            string.IsNullOrWhiteSpace(requestedHeaders)
+                ? "Authorization, X-Access-Token, X-CSRF-Token, X-Tenant-Slug, X-Requested-With, Idempotency-Key, Content-Type"
+                : requestedHeaders;
         Response.Headers["Access-Control-Allow-Methods"] = "GET,OPTIONS";
         Response.Headers["Access-Control-Expose-Headers"] = "Authorization, X-Access-Token, X-CSRF-Token, X-Textzy-Build, X-Textzy-Body-Len";
     }

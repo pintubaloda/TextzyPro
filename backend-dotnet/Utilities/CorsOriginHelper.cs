@@ -3,7 +3,7 @@ namespace Textzy.Api.Utilities;
 public sealed class FrontendCorsOptions
 {
     public required string[] AllowedOrigins { get; init; }
-    public string[] AllowedHeaders { get; init; } = ["Authorization", "X-Access-Token", "X-CSRF-Token", "X-Tenant-Slug", "Content-Type"];
+    public string[] AllowedHeaders { get; init; } = ["Authorization", "X-Access-Token", "X-CSRF-Token", "X-Tenant-Slug", "X-Requested-With", "Idempotency-Key", "Content-Type"];
     public string[] AllowedMethods { get; init; } = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
     public string[] ExposedHeaders { get; init; } = ["Authorization", "X-Access-Token", "X-CSRF-Token", "X-Textzy-Build", "X-Textzy-Body-Len"];
 }

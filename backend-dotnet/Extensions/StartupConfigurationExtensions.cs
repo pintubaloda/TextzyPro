@@ -101,7 +101,7 @@ public static class StartupConfigurationExtensions
                 {
                     policy
                         .WithOrigins(frontendCors.AllowedOrigins)
-                        .WithHeaders(frontendCors.AllowedHeaders)
+                        .AllowAnyHeader()
                         .WithMethods(frontendCors.AllowedMethods)
                         .AllowCredentials()
                         .WithExposedHeaders(frontendCors.ExposedHeaders);
