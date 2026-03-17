@@ -591,6 +591,27 @@ public class DigiLockerKycProvider(
 
         var path = raw.StartsWith("/") ? raw : "/" + raw;
 
+        static bool TrySplitOauth2Suffix(string url, out string withoutSuffix, out string version)
+        {
+            // Match ".../oauth2/{n}" at the end (n is a single digit, as used by DigiLocker paths we support).
+            withoutSuffix = url;
+            version = string.Empty;
+            if (string.IsNullOrWhiteSpace(url)) return false;
+
+            var idx = url.LastIndexOf("/oauth2/", StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return false;
+
+            var tail = url[idx..];
+            // tail should be "/oauth2/{digit}"
+            if (tail.Length != "/oauth2/".Length + 1) return false;
+            var v = tail[^1];
+            if (v < '0' || v > '9') return false;
+
+            withoutSuffix = url[..idx].TrimEnd('/');
+            version = v.ToString();
+            return true;
+        }
+
         // Support both configurations:
         // A) apiBaseUrl = https://.../public and paths include /oauth2/1/...
         // B) apiBaseUrl = https://.../public/oauth2/1 and paths are /files, /user, /files/{uri}
@@ -601,6 +622,21 @@ public class DigiLockerKycProvider(
             path = path["/public".Length..];
         if (baseUrl.EndsWith("/public/oauth2/1", StringComparison.OrdinalIgnoreCase) && path.StartsWith("/public/oauth2/1/", StringComparison.OrdinalIgnoreCase))
             path = path["/public/oauth2/1".Length..];
+
+        // If apiBaseUrl includes a specific oauth2 version (e.g. ".../public/oauth2/1") but the requested path
+        // targets a different version (e.g. "/oauth2/2/..."), join at the "/public" level instead of nesting.
+        // This prevents generating invalid URLs like ".../public/oauth2/1/oauth2/2/...".
+        if (TrySplitOauth2Suffix(baseUrl, out var baseWithoutOauthSuffix, out var baseOauthV)
+            && path.StartsWith("/oauth2/", StringComparison.OrdinalIgnoreCase)
+            && path.Length >= "/oauth2/".Length + 2)
+        {
+            var pathOauthV = path["/oauth2/".Length].ToString();
+            if (!string.IsNullOrWhiteSpace(baseOauthV) && !string.IsNullOrWhiteSpace(pathOauthV)
+                && !string.Equals(baseOauthV, pathOauthV, StringComparison.OrdinalIgnoreCase))
+            {
+                baseUrl = baseWithoutOauthSuffix;
+            }
+        }
 
         return baseUrl + path;
     }
@@ -771,8 +807,61 @@ public class DigiLockerKycProvider(
         if (doc.RootElement.ValueKind != JsonValueKind.Object) return false;
 
         var root = doc.RootElement;
+        static string? FormatAddress(JsonElement v)
+        {
+            try
+            {
+                if (v.ValueKind == JsonValueKind.String)
+                    return (v.GetString() ?? string.Empty).Trim();
+
+                if (v.ValueKind != JsonValueKind.Object)
+                    return v.ToString()?.Trim();
+
+                // Common shape in some DigiLocker environments: address is an object.
+                // Join known parts when present (fallback to raw JSON if nothing matches).
+                string Part(string key)
+                {
+                    if (!v.TryGetProperty(key, out var p)) return string.Empty;
+                    if (p.ValueKind == JsonValueKind.String) return (p.GetString() ?? string.Empty).Trim();
+                    if (p.ValueKind == JsonValueKind.Number) return p.ToString().Trim();
+                    return string.Empty;
+                }
+
+                var parts = new List<string>
+                {
+                    Part("co"),
+                    Part("house"),
+                    Part("street"),
+                    Part("lm"),
+                    Part("loc"),
+                    Part("vtc"),
+                    Part("po"),
+                    Part("dist"),
+                    Part("subdist"),
+                    Part("state"),
+                    Part("pc"),
+                    Part("pincode"),
+                    Part("pin"),
+                };
+
+                var compact = string.Join(", ", parts.Where(x => !string.IsNullOrWhiteSpace(x)));
+                if (!string.IsNullOrWhiteSpace(compact)) return compact;
+
+                return v.ToString()?.Trim();
+            }
+            catch
+            {
+                return v.ToString()?.Trim();
+            }
+        }
+
         string? GetStr(string key)
-            => root.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        {
+            if (!root.TryGetProperty(key, out var v)) return null;
+            if (v.ValueKind == JsonValueKind.String) return v.GetString();
+            // Some DigiLocker responses return non-string primitives/objects; keep best-effort string.
+            return v.ToString();
+        }
 
         var name = (GetStr("name") ?? string.Empty).Trim();
         var dobRaw = (GetStr("dob") ?? string.Empty).Trim();
@@ -783,7 +872,12 @@ public class DigiLockerKycProvider(
         var eaadhaar = (GetStr("eaadhaar") ?? string.Empty).Trim();
         var referenceKey = (GetStr("reference_key") ?? string.Empty).Trim();
         var address =
-            (GetStr("address") ?? GetStr("full_address") ?? GetStr("current_address") ?? GetStr("permanent_address") ?? string.Empty).Trim();
+            (root.TryGetProperty("address", out var addr) ? (FormatAddress(addr) ?? string.Empty) : string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            address =
+                (GetStr("full_address") ?? GetStr("current_address") ?? GetStr("permanent_address") ?? string.Empty).Trim();
+        }
 
         // Some environments may return masked Aadhaar in /user (rare). If present, mask it again.
         var aadhaarRaw =
