@@ -17,7 +17,8 @@ public class PlatformCustomersController(
     AuthContext auth,
     RbacService rbac,
     AuditLogService audit,
-    SecretCryptoService crypto) : ControllerBase
+    SecretCryptoService crypto,
+    BillingGuardService billingGuard) : ControllerBase
 {
     private const string TenantSmsGatewayReportFeatureKey = "tenant.smsGatewayReport.enabled";
     private static readonly TimeSpan StepUpFreshWindow = TimeSpan.FromMinutes(10);
@@ -654,7 +655,8 @@ public class PlatformCustomersController(
             .Where(x => x.TenantId == tenantId && x.MonthKey == monthKey)
             .OrderByDescending(x => x.UpdatedAtUtc)
             .FirstOrDefaultAsync(ct);
-        if (usage is null) return Ok(new { tenantId, monthKey, values = new Dictionary<string, int>() });
+        var creditBalances = await GetCreditBalancesAsync(tenantId, ct);
+        if (usage is null) return Ok(new { tenantId, monthKey, values = new Dictionary<string, int>(), creditBalances });
 
         return Ok(new
         {
@@ -669,8 +671,10 @@ public class PlatformCustomersController(
                 ["teamMembers"] = usage.TeamMembersUsed,
                 ["chatbots"] = usage.ChatbotsUsed,
                 ["flows"] = usage.FlowsUsed,
-                ["apiCalls"] = usage.ApiCallsUsed
-            }
+                ["apiCalls"] = usage.ApiCallsUsed,
+                ["digilockerKyc"] = usage.DigilockerKycUsed
+            },
+            creditBalances
         });
     }
 
@@ -1021,6 +1025,8 @@ public class PlatformCustomersController(
             || request.ResetStartDate
             || sub.PlanId != plan.Id
             || !string.Equals(sub.BillingCycle, cycle, StringComparison.OrdinalIgnoreCase);
+        var shouldTopUpCredits = status is "active" or "trial" or "trialing"
+            && (shouldCreateNewSubscription || request.ResetStartDate || sub?.PlanId != plan.Id);
 
         if (shouldCreateNewSubscription)
         {
@@ -1063,6 +1069,20 @@ public class PlatformCustomersController(
 
         await db.SaveChangesAsync(ct);
         await audit.WriteAsync("platform.customer.assign_plan", $"tenant={tenantId}; plan={plan.Code}; cycle={cycle}; status={status}; trialDays={trialDays}", ct);
+
+        if (shouldTopUpCredits)
+        {
+            if (string.Equals(plan.PricingModel, "usage_pack", StringComparison.OrdinalIgnoreCase))
+            {
+                var units = plan.IncludedQuantity > 0 ? plan.IncludedQuantity : ResolvePackUnitsFromLimits(plan.LimitsJson, plan.UsageUnitName);
+                var metricKey = string.IsNullOrWhiteSpace(plan.UsageUnitName) ? "smsCredits" : plan.UsageUnitName.Trim();
+                await billingGuard.AddCreditUnitsAsync(tenantId, metricKey, units, ct);
+            }
+
+            var kycUnits = ResolvePackUnitsFromLimits(plan.LimitsJson, "digilockerKyc");
+            if (kycUnits > 0)
+                await billingGuard.AddCreditUnitsAsync(tenantId, "digilockerKyc", kycUnits, ct);
+        }
 
         return Ok(new
         {
@@ -1286,6 +1306,33 @@ public class PlatformCustomersController(
             "usage_based" => DateTime.MaxValue,
             _ => DateTime.MaxValue
         };
+    }
+
+    private async Task<Dictionary<string, int>> GetCreditBalancesAsync(Guid tenantId, CancellationToken ct)
+    {
+        var rows = await db.TenantUsageCreditBalances
+            .AsNoTracking()
+            .Where(x => x.TenantId == tenantId)
+            .ToListAsync(ct);
+
+        var dict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+            dict[row.MetricKey] = Math.Max(0, row.UnitsRemaining);
+        return dict;
+    }
+
+    private static int ResolvePackUnitsFromLimits(string json, string? usageUnitName)
+    {
+        try
+        {
+            var limits = JsonSerializer.Deserialize<Dictionary<string, int>>(json) ?? new Dictionary<string, int>();
+            var key = string.IsNullOrWhiteSpace(usageUnitName) ? "smsCredits" : usageUnitName.Trim();
+            return Math.Max(0, limits.TryGetValue(key, out var value) ? value : 0);
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     public sealed class TenantFeaturesRequest

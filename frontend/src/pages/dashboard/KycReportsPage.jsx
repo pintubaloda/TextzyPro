@@ -256,8 +256,10 @@ export default function KycReportsPage() {
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
+                  <th className="px-4 py-3">S.No</th>
                   <th className="px-4 py-3">Doc</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Session ID</th>
                   <th className="px-4 py-3">Mobile</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Created</th>
@@ -267,21 +269,23 @@ export default function KycReportsPage() {
               <tbody>
                 {sorted.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
                       No KYC records yet.
                     </td>
                   </tr>
                 ) : (
-                  sorted.map((r) => {
+                  sorted.map((r, idx) => {
                     const c = r.collected || {};
                     const status = normalizeStatus(r.status);
                     const doc = (Array.isArray(r.docTypes) && r.docTypes[0]) ? r.docTypes[0] : "-";
                     return (
                       <tr key={r.sessionId} className="border-t border-slate-200">
+                        <td className="px-4 py-3">{idx + 1}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{String(doc || "").toUpperCase()}</td>
                         <td className="px-4 py-3">
                           <Badge variant={status.variant}>{status.label}</Badge>
                         </td>
+                        <td className="px-4 py-3 text-xs text-slate-700">{r.sessionId}</td>
                         <td className="px-4 py-3">{safeGet(c, "mobile", "-")}</td>
                         <td className="px-4 py-3">{safeGet(c, "email", "-")}</td>
                         <td className="px-4 py-3 text-slate-500">{String(r.createdAtUtc || "").replace("T", " ").replace("Z", "")}</td>

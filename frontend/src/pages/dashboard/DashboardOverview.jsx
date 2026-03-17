@@ -15,11 +15,12 @@ import {
   PhoneCall,
   Bot,
   Plug,
+  ShieldCheck,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiGet, authProjects, getSession, getTenantWebhookAnalytics, wabaExchangeCode, wabaGetEmbeddedConfig, wabaGetOnboardingStatus, wabaMapExisting, wabaStartOnboarding } from "@/lib/api";
+import { apiGet, authProjects, getBillingUsage, getSession, getTenantWebhookAnalytics, wabaExchangeCode, wabaGetEmbeddedConfig, wabaGetOnboardingStatus, wabaMapExisting, wabaStartOnboarding } from "@/lib/api";
 import { loadFacebookSdk } from "@/lib/facebookSdk";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
@@ -37,8 +38,8 @@ const DashboardOverview = () => {
   const navigate = useNavigate();
   const session = getSession();
   const [messages, setMessages] = useState([]);
-  const [contacts, setContacts] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+  const [billingUsage, setBillingUsage] = useState({});
   const [recentInboxRows, setRecentInboxRows] = useState([]);
   const [wabaStatus, setWabaStatus] = useState({ state: "requested", isConnected: false, businessName: "", phone: "" });
   const [connectingWaba, setConnectingWaba] = useState(false);
@@ -118,15 +119,15 @@ const DashboardOverview = () => {
   useEffect(() => {
     Promise.all([
       apiGet("/api/messages"),
-      apiGet("/api/contacts"),
       apiGet("/api/campaigns"),
       apiGet("/api/inbox/conversations?take=5").catch(() => []),
+      getBillingUsage().catch(() => ({ values: {} })),
     ])
-      .then(([m, c, cp, conv]) => {
+      .then(([m, cp, conv, usage]) => {
         setMessages(m || []);
-        setContacts(c || []);
         setCampaigns(cp || []);
         setRecentInboxRows(Array.isArray(conv) ? conv : []);
+        setBillingUsage(usage?.values || {});
       })
       .catch(() => {});
     loadWabaStatus(true);
@@ -233,8 +234,9 @@ const DashboardOverview = () => {
     const sent = messages.filter((x) => x.status === "Accepted").length;
     const wa = messages.filter((x) => x.channel === 2).length;
     const sms = messages.filter((x) => x.channel === 1).length;
-    return { total, sent, wa, sms, contacts: contacts.length };
-  }, [messages, contacts]);
+    const kyc = Number(billingUsage?.digilockerKyc || 0);
+    return { total, sent, wa, sms, kyc };
+  }, [messages, billingUsage]);
 
   const stats = [
     {
@@ -256,9 +258,9 @@ const DashboardOverview = () => {
       color: "blue",
     },
     {
-      title: "Active Contacts",
-      value: computedStats.contacts.toLocaleString(),
-      icon: Users,
+      title: "KYC Used",
+      value: computedStats.kyc.toLocaleString(),
+      icon: ShieldCheck,
       color: "purple",
     },
   ];

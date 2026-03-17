@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { getPlatformCustomers, getPlatformKycReport } from "@/lib/api";
+import { getPlatformCustomerUsage, getPlatformCustomers, getPlatformKycReport } from "@/lib/api";
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -54,6 +54,7 @@ export default function PlatformKycReportPage() {
   const [active, setActive] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [usageSnapshot, setUsageSnapshot] = useState(null);
 
   const load = async (patch = {}) => {
     const next = { ...filters, ...patch };
@@ -74,6 +75,12 @@ export default function PlatformKycReportPage() {
       ]);
       setTenants(Array.isArray(customerRows) ? customerRows : []);
       setRows(Array.isArray(report?.items) ? report.items : []);
+      if (next.tenantId) {
+        const usage = await getPlatformCustomerUsage(next.tenantId).catch(() => null);
+        setUsageSnapshot(usage || null);
+      } else {
+        setUsageSnapshot(null);
+      }
     } catch (e) {
       toast.error(e?.message || "Failed to load KYC report");
     } finally {
@@ -98,6 +105,16 @@ export default function PlatformKycReportPage() {
   }, [active]);
 
   const activeFile = files[activeFileIndex] || null;
+
+  const summary = useMemo(() => {
+    const total = rows.length;
+    const verified = rows.filter((row) => String(row?.status || "").toLowerCase() === "verified").length;
+    const creditsUsed = rows.reduce((sum, row) => sum + Number(row?.creditsUsed || 0), 0);
+    return { total, verified, creditsUsed };
+  }, [rows]);
+
+  const tenantKycUsed = Number(usageSnapshot?.values?.digilockerKyc || 0);
+  const tenantKycCredits = Number(usageSnapshot?.creditBalances?.digilockerKyc || 0);
 
   useEffect(() => {
     if (!activeFile?.fileBase64) {
@@ -167,6 +184,37 @@ export default function PlatformKycReportPage() {
         </CardContent>
       </Card>
 
+      <div className="grid gap-3 md:grid-cols-4">
+        <Card className="border-slate-200">
+          <CardContent className="pt-4">
+            <div className="text-xs uppercase text-slate-500">Sessions</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">{summary.total.toLocaleString()}</div>
+            <div className="text-xs text-slate-500">Filtered sessions</div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200">
+          <CardContent className="pt-4">
+            <div className="text-xs uppercase text-slate-500">Verified</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">{summary.verified.toLocaleString()}</div>
+            <div className="text-xs text-slate-500">Verified KYC</div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200">
+          <CardContent className="pt-4">
+            <div className="text-xs uppercase text-slate-500">Credits Used</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">{summary.creditsUsed.toLocaleString()}</div>
+            <div className="text-xs text-slate-500">Sum of credits used</div>
+          </CardContent>
+        </Card>
+        <Card className="border-slate-200">
+          <CardContent className="pt-4">
+            <div className="text-xs uppercase text-slate-500">Tenant Credits</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">{filters.tenantId ? tenantKycCredits.toLocaleString() : "-"}</div>
+            <div className="text-xs text-slate-500">{filters.tenantId ? `Used ${tenantKycUsed} this month` : "Select tenant to view"}</div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="border-slate-200">
         <CardHeader className="border-b border-slate-100 bg-slate-50/70">
           <CardTitle>Sessions</CardTitle>
@@ -184,6 +232,7 @@ export default function PlatformKycReportPage() {
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Customer Ref</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Doc Type</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-600">Credits</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">Webhook</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-600">View</th>
                 </tr>
@@ -203,6 +252,7 @@ export default function PlatformKycReportPage() {
                     <td className="px-4 py-3">
                       <Badge className={statusBadge(row.status)}>{row.status || "-"}</Badge>
                     </td>
+                    <td className="px-4 py-3 text-slate-600">{Number(row.creditsUsed || 0)}</td>
                     <td className="px-4 py-3 text-slate-600">
                       {row.webhook
                         ? `${row.webhook.statusCode} (${row.webhook.ok ? "ok" : "failed"})`
@@ -219,7 +269,7 @@ export default function PlatformKycReportPage() {
                 ))}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-10 text-center text-slate-500">No KYC sessions found.</td>
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500">No KYC sessions found.</td>
                   </tr>
                 ) : null}
               </tbody>

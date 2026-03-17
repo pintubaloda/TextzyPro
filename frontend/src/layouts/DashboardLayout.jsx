@@ -116,6 +116,7 @@ const DashboardLayout = () => {
   const canViewIntegrations = isPlatformOwner || hasPermission("api.write", session);
   const canViewSettings = isPlatformOwner || hasPermission("api.read", session);
   const canViewBilling = isPlatformOwner || hasPermission("billing.read", session);
+  const canViewReports = isPlatformOwner || hasPermission("api.read", session) || hasPermission("billing.read", session);
   const canManageTeam = ["owner", "admin", "super_admin"].includes(role);
   const tenantHomePath = "/dashboard";
   const isSettingsPage = location.pathname.startsWith("/dashboard/settings");
@@ -449,7 +450,7 @@ const DashboardLayout = () => {
     canViewAutomations ? { name: "Automations", href: "/dashboard/automations", icon: Zap } : null,
     canViewAnalytics ? { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 } : null,
     canViewIntegrations ? { name: "Integrations", href: "/dashboard/integrations", icon: Plug } : null,
-    canViewIntegrations ? { name: "KYC Reports", href: "/dashboard/kyc-reports", icon: FileText } : null,
+    canViewReports ? { name: "Reports", href: "/dashboard/reports", icon: ReceiptText } : null,
     canManageTeam ? { name: "Team", href: "/dashboard/team", icon: UsersRound } : null,
     canViewBilling ? { name: "Billing", href: "/dashboard/billing", icon: CreditCard } : null,
     { name: "Support", href: "/dashboard/support", icon: LifeBuoy },

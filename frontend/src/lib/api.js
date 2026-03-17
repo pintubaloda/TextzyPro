@@ -1031,6 +1031,10 @@ export async function listSmsBillingLedger(take = 200) {
   return apiGet(`/api/sms/compliance/billing-ledger?take=${encodeURIComponent(String(take))}`)
 }
 
+export async function listWhatsappMessageReport(take = 200) {
+  return apiGet(`/api/reports/whatsapp?take=${encodeURIComponent(String(take))}`)
+}
+
 export async function getTenantSmsGatewayReportStatus() {
   return apiGet('/api/sms/gateway-report/status')
 }
