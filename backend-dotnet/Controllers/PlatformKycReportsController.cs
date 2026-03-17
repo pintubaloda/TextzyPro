@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Reflection;
 using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,23 @@ namespace Textzy.Api.Controllers;
 [Route("api/platform/kyc/reports")]
 public class PlatformKycReportsController(ControlDbContext db, AuthContext auth, RbacService rbac, SecretCryptoService crypto) : ControllerBase
 {
+    [HttpGet("ping")]
+    public IActionResult Ping()
+    {
+        if (!auth.IsAuthenticated) return Unauthorized();
+        if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
+        var version = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+            ?? "unknown";
+        return Content(JsonSerializer.Serialize(new
+        {
+            ok = true,
+            serverTimeUtc = DateTime.UtcNow,
+            build = version
+        }), "application/json; charset=utf-8");
+    }
+
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] string tenantId = "",
@@ -155,6 +173,11 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         };
 
         // Defensive: avoid rare IIS/proxy cases returning 200 with empty body.
+        var build = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+            ?? "unknown";
+        Response.Headers["X-Textzy-Build"] = build;
         return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
     }
 
