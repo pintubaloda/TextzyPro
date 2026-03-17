@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { listKycSessions, getKycSession } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +41,57 @@ function decodeBase64ToBlobUrl(base64, mime = "application/pdf") {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const blob = new Blob([bytes], { type: mime || "application/octet-stream" });
   return URL.createObjectURL(blob);
+}
+
+function maskEmail(email) {
+  const s = String(email || "").trim();
+  if (!s || !s.includes("@")) return s || "-";
+  const [user, domain] = s.split("@");
+  if (!domain) return s;
+  const u = user.length <= 2 ? user[0] + "*" : user[0] + "*".repeat(Math.min(6, Math.max(1, user.length - 2))) + user[user.length - 1];
+  return `${u}@${domain}`;
+}
+
+function maskPhone(mobile) {
+  const s = String(mobile || "").trim();
+  const digits = s.replace(/\D+/g, "");
+  if (digits.length < 4) return s || "-";
+  return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+}
+
+function maskPan(pan) {
+  const s = String(pan || "").trim();
+  if (s.length !== 10) return s || "-";
+  return `${s.slice(0, 3)}*****${s.slice(-2)}`;
+}
+
+function maskIdTail(id, keep = 4) {
+  const s = String(id || "").trim();
+  if (!s) return "-";
+  if (s.length <= keep) return s;
+  return `${"*".repeat(Math.min(12, s.length - keep))}${s.slice(-keep)}`;
+}
+
+function redactBase64(base64) {
+  const s = String(base64 || "");
+  if (!s) return s;
+  const len = s.length;
+  return `<redacted base64 len=${len}>`;
+}
+
+function debugRedactingReplacer(key, value) {
+  const k = String(key || "").toLowerCase();
+  if (k.endsWith("base64") || k === "filebase64" || k === "photobase64") {
+    if (typeof value === "string" && value.length > 40) return redactBase64(value);
+  }
+  if (k === "email") return maskEmail(value);
+  if (k === "mobile" || k === "phone" || k === "phonenumber") return maskPhone(value);
+  if (k === "pan") return maskPan(value);
+  if (k === "drivinglicense" || k === "driving_licence" || k === "driving_licence_number") return maskIdTail(value, 4);
+  if (k === "aadhaarreferencekey") return maskIdTail(value, 6);
+  if (k === "access_token" || k === "refresh_token") return "<redacted>";
+  if (k === "token" && typeof value === "string") return "<redacted>";
+  return value;
 }
 
 function KycPreviewCard({ brand, collected, active }) {
@@ -137,6 +189,7 @@ function KycPreviewCard({ brand, collected, active }) {
 
 export default function KycReportsPage() {
   const { brand } = useBranding();
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -350,6 +403,51 @@ export default function KycReportsPage() {
               <div className="mb-2 text-xs font-medium text-slate-500">Extracted fields</div>
 
               {(() => {
+                const errs = safeGet(activeDetail?.result, "fileDownloadErrors", []);
+                if (!Array.isArray(errs) || errs.length === 0) return null;
+                const hasInsufficientScope = errs.some((e) => {
+                  const code = String(e?.errorCode || "").toUpperCase();
+                  const msg = String(e?.error || e?.message || e?.error_description || "").toLowerCase();
+                  return code === "DIGILOCKER_INSUFFICIENT_SCOPE" || msg.includes("insufficient_scope");
+                });
+                return (
+                  <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-amber-900">Some DigiLocker downloads were blocked</div>
+                        <div className="mt-1 text-xs text-amber-900/80">
+                          {hasInsufficientScope
+                            ? "e-Aadhaar XML needs higher privileges/scopes for this DigiLocker partner. This record is generated from available profile + issued-doc metadata."
+                            : "This record is generated from available profile + issued-doc metadata."}
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        className="h-8 rounded-xl border-amber-300 bg-white px-3 text-amber-900 hover:bg-amber-100"
+                        onClick={() => navigate("/dashboard/platform-settings?tab=digilocker")}
+                      >
+                        Open DigiLocker settings
+                      </Button>
+                    </div>
+                    <div className="mt-2 space-y-1 text-xs text-amber-900/80">
+                      {errs.slice(0, 3).map((e, idx) => {
+                        const uri = String(e?.uri || "-");
+                        const dt = String(e?.doctype || "-");
+                        const status = e?.status ? ` status=${e.status}` : "";
+                        const msg = String(e?.error || e?.message || "Download failed.");
+                        return (
+                          <div key={`${uri}-${idx}`} className="rounded-xl bg-white/60 px-2 py-1">
+                            <span className="font-medium">{dt}</span> <span className="text-amber-900/70">{uri}{status}</span>: {msg}
+                          </div>
+                        );
+                      })}
+                      {errs.length > 3 ? <div className="text-amber-900/70">+{errs.length - 3} more</div> : null}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {(() => {
                 const collected = activeDetail?.result?.collected || active?.collected || {};
                 const photo = toDataUrl(collected.photoBase64);
                 return (
@@ -416,7 +514,7 @@ export default function KycReportsPage() {
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
                 <div className="text-xs font-medium text-slate-500">Raw (debug)</div>
                 <pre className="mt-2 max-h-56 overflow-auto rounded-xl bg-white p-3 text-xs text-slate-800">
-                  {JSON.stringify(activeDetail || active, null, 2)}
+                  {JSON.stringify(activeDetail || active, debugRedactingReplacer, 2)}
                 </pre>
               </div>
             </div>

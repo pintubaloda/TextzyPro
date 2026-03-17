@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using System.IO.Compression;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
@@ -40,6 +41,87 @@ public class DigiLockerKycProvider(
     private const int DefaultMaxFileBytes = 2 * 1024 * 1024; // 2 MiB, keep result/webhook sizes bounded
     private const int DefaultMaxFilesPerSession = 5;
     private const string DefaultEAadhaarXmlUrl = "https://digilocker.meripehchaan.gov.in/public/oauth2/3/xml/eaadhaar";
+
+    private sealed record ProviderOauthError(string? Error, string? ErrorDescription);
+
+    private sealed class DigilockerHttpException : Exception
+    {
+        public DigilockerHttpException(string operation, int statusCode, string url, string? body, Exception? inner = null)
+            : base($"DigiLocker request failed. op={operation} status={statusCode}", inner)
+        {
+            Operation = operation;
+            StatusCode = statusCode;
+            Url = url;
+            Body = body;
+        }
+
+        public string Operation { get; }
+        public int StatusCode { get; }
+        public string Url { get; }
+        public string? Body { get; }
+    }
+
+    private static ProviderOauthError? TryParseOauthError(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            var err = doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() : null;
+            var desc = doc.RootElement.TryGetProperty("error_description", out var d) ? d.GetString() : null;
+            if (string.IsNullOrWhiteSpace(err) && string.IsNullOrWhiteSpace(desc)) return null;
+            return new ProviderOauthError(err?.Trim(), desc?.Trim());
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static object BuildFileDownloadError(string uri, string? doctype, Exception ex)
+    {
+        if (ex is DigilockerHttpException hx)
+        {
+            var parsed = TryParseOauthError(hx.Body);
+            var providerErr = (parsed?.Error ?? string.Empty).Trim();
+            var providerDesc = (parsed?.ErrorDescription ?? string.Empty).Trim();
+
+            var insufficientScope =
+                hx.StatusCode == StatusCodes.Status403Forbidden &&
+                providerErr.Equals("insufficient_scope", StringComparison.OrdinalIgnoreCase);
+
+            var errorCode = insufficientScope ? "DIGILOCKER_INSUFFICIENT_SCOPE" : "DIGILOCKER_HTTP_ERROR";
+            var message = insufficientScope
+                ? "DigiLocker blocked this download (insufficient scope)."
+                : $"DigiLocker download failed. status={hx.StatusCode}.";
+
+            return new
+            {
+                uri,
+                doctype,
+                status = hx.StatusCode,
+                errorCode,
+                error = message, // keep legacy key for frontend/backward-compat
+                providerError = string.IsNullOrWhiteSpace(providerErr) ? null : providerErr,
+                providerErrorDescription = string.IsNullOrWhiteSpace(providerDesc) ? null : providerDesc
+            };
+        }
+
+        // Default: avoid returning raw exception messages that may contain URLs/bodies.
+        var safe = "Download failed.";
+        if (ex is InvalidOperationException or ArgumentException)
+            safe = ex.Message;
+
+        return new
+        {
+            uri,
+            doctype,
+            status = (int?)null,
+            errorCode = "DOWNLOAD_FAILED",
+            error = safe
+        };
+    }
 
     public async Task<(string RedirectUrl, string State)> BuildRedirectAsync(KycSession session, CancellationToken ct)
     {
@@ -378,7 +460,7 @@ public class DigiLockerKycProvider(
                 catch (Exception ex)
                 {
                     // Best-effort. Do not fail KYC purely due to missing e-Aadhaar XML, but record for debugging.
-                    downloadErrors.Add(new { uri = "oauth2/3/xml/eaadhaar", doctype = "ADHAR", error = ex.Message });
+                    downloadErrors.Add(BuildFileDownloadError("oauth2/3/xml/eaadhaar", "ADHAR", ex));
                 }
             }
         }
@@ -453,12 +535,7 @@ public class DigiLockerKycProvider(
                 catch (Exception ex)
                 {
                     // Best-effort: do not fail the KYC if only the file download fails.
-                    downloadErrors.Add(new
-                    {
-                        uri = it.Uri,
-                        doctype = it.DocType,
-                        error = ex.Message
-                    });
+                    downloadErrors.Add(BuildFileDownloadError(it.Uri!, it.DocType, ex));
                 }
             }
         }
@@ -690,7 +767,7 @@ public class DigiLockerKycProvider(
             }
             catch { }
 
-            throw new InvalidOperationException($"e-Aadhaar XML download failed. status={status} url={url} body={body}");
+            throw new DigilockerHttpException("eaadhaarXml", status, url, string.IsNullOrWhiteSpace(body) ? null : body);
         }
 
         // Read raw bytes so we can verify hmac.
@@ -1904,7 +1981,11 @@ public class DigiLockerKycProvider(
                     }
                     catch { }
 
-                    lastEx = new InvalidOperationException($"File download failed. status={(int)res.StatusCode} url={url} body={body}");
+                    lastEx = new DigilockerHttpException(
+                        "fileDownload",
+                        (int)res.StatusCode,
+                        url,
+                        string.IsNullOrWhiteSpace(body) ? null : body);
                     continue;
                 }
 
@@ -1931,8 +2012,7 @@ public class DigiLockerKycProvider(
                 // Only treat as downloadable file if it looks like a real PDF/XML/ZIP payload.
                 if (!LooksLikeSupportedFile(bytes))
                 {
-                    var snippet = SafeUtf8Snippet(bytes, 2000);
-                    lastEx = new InvalidOperationException($"File download returned non-file payload. url={url} mime={mime} body={snippet}");
+                    lastEx = new InvalidOperationException("File download returned non-file payload.");
                     continue;
                 }
                 var sha256 = SHA256.HashData(bytes);
