@@ -97,8 +97,12 @@ public class BillingGuardService(ControlDbContext db)
                 return (false, 0, delta, "No KYC credits available. Please buy a KYC pack.");
             if (prepaidBalance > 0)
             {
-                var planRemaining = await GetPlanRemainingAsync(tenantId, key, current, ct);
-                var totalAvailable = prepaidBalance + Math.Max(0, planRemaining);
+                var isKycMetric = string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase);
+                var planRemaining = isKycMetric ? 0 : await GetPlanRemainingAsync(tenantId, key, current, ct);
+                long totalAvailableLong = isKycMetric
+                    ? prepaidBalance
+                    : (long)prepaidBalance + Math.Max(0, (long)planRemaining);
+                var totalAvailable = totalAvailableLong >= int.MaxValue ? int.MaxValue : (int)Math.Max(0, totalAvailableLong);
                 if (delta > totalAvailable)
                 {
                     var label = string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase) ? "KYC credits" : "SMS credits";
@@ -106,7 +110,7 @@ public class BillingGuardService(ControlDbContext db)
                 }
 
                 var consumeFromBalance = Math.Min(prepaidBalance, delta);
-                var consumeFromPlan = Math.Max(0, delta - consumeFromBalance);
+                var consumeFromPlan = isKycMetric ? 0 : Math.Max(0, delta - consumeFromBalance);
                 if (consumeFromBalance > 0)
                     await ConsumeCreditBalanceAsync(tenantId, key, consumeFromBalance, ct);
 
