@@ -3,95 +3,294 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Textzy Documentation Center</title>
+  <title>Textzy API Reference</title>
   <style>
     :root {
-      --bg: #f8fafc;
+      --bg: #f3f6fb;
       --card: #ffffff;
       --text: #0f172a;
-      --muted: #475569;
-      --border: #e2e8f0;
-      --brand: #ea580c;
+      --muted: #51607a;
+      --border: #dfe7f3;
+      --brand: #2a62c9;
+      --brand-dark: #1f4f9e;
+      --code-bg: #0b1220;
+      --code-border: #1f2a44;
+      --code-text: #e2e8f0;
+      --accent: #16a34a;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: linear-gradient(180deg,#fff7ed 0%, #f8fafc 320px); color: var(--text); }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 30px 18px 42px; }
-    .hero { border-radius: 24px; background: linear-gradient(135deg,#f97316,#ea580c); color: #fff; padding: 28px; box-shadow: 0 16px 40px rgba(234,88,12,.18); }
-    .hero h1 { margin: 0 0 10px; font-size: 34px; }
-    .hero p { margin: 0; line-height: 1.6; max-width: 760px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 22px; box-shadow: 0 8px 24px rgba(15,23,42,.04); }
-    h2 { margin: 0 0 10px; font-size: 22px; }
-    p, li { color: var(--muted); line-height: 1.65; }
-    ul { margin: 10px 0 0 18px; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-    a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; padding: 11px 16px; font-weight: 700; }
-    .btn-primary { background: var(--brand); color: #fff; }
-    .btn-secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
+    body { margin: 0; font-family: "Inter", "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); }
+    .topbar { position: sticky; top: 0; z-index: 10; background: linear-gradient(90deg,#1d4ed8,#2563eb); color: #fff; height: 56px; display: flex; align-items: center; padding: 0 24px; box-shadow: 0 6px 20px rgba(15,23,42,.12); }
+    .topbar .pill { background: rgba(255,255,255,.16); padding: 6px 12px; border-radius: 999px; font-weight: 600; margin-right: 12px; }
+    .topbar .title { font-weight: 700; letter-spacing: .2px; }
+    .search { margin-left: auto; background: rgba(255,255,255,.16); border-radius: 10px; padding: 6px 10px; font-size: 12px; }
+    .layout { display: grid; grid-template-columns: 260px 1fr 360px; gap: 0; min-height: calc(100vh - 56px); }
+    .sidebar { background: #fff; border-right: 1px solid var(--border); padding: 20px 16px; overflow-y: auto; }
+    .nav-section { font-size: 12px; font-weight: 700; color: var(--muted); margin: 14px 8px 6px; text-transform: uppercase; }
+    .nav a { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 10px; text-decoration: none; color: var(--text); font-size: 14px; }
+    .nav a:hover { background: #f3f6fd; }
+    .nav .tag { font-size: 11px; background: #e2ecff; color: #1f4f9e; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+    .content { padding: 26px 32px; }
+    .endpoint { display: flex; align-items: center; gap: 10px; margin: 8px 0 14px; font-size: 14px; color: var(--muted); }
+    .method { background: #1f4f9e; color: #fff; font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 700; }
+    .method.get { background: #16a34a; }
+    .method.post { background: #2563eb; }
+    .desc { color: var(--muted); margin: 0 0 20px; }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    h2 { margin: 28px 0 10px; font-size: 18px; }
+    .table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .table th, .table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; text-align: left; }
+    .table th { background: #f6f8fc; font-weight: 700; }
+    .table tr:last-child td { border-bottom: none; }
+    .right { background: #f7f9ff; border-left: 1px solid var(--border); padding: 18px; }
+    .codebox { background: var(--code-bg); color: var(--code-text); border: 1px solid var(--code-border); border-radius: 14px; padding: 14px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; line-height: 1.6; }
+    .codebox .header { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 700; color: #cbd5f5; }
+    .resp { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 12px; font-size: 12px; color: var(--muted); }
+    .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #e2f7ec; color: #15803d; font-weight: 700; }
+    .try { margin-top: 10px; display: inline-flex; background: var(--brand); color: #fff; border: none; border-radius: 10px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+    @media (max-width: 1100px) { .layout { grid-template-columns: 230px 1fr; } .right { display: none; } }
+    @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } .sidebar { position: relative; } }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <section class="hero">
-      <h1>Textzy Documentation Center</h1>
-      <p>Professional integration references for SMS, WhatsApp, and KYC APIs, plus markdown source and Postman import assets for implementation teams.</p>
-    </section>
+  <div class="topbar">
+    <span class="pill">v1.0</span>
+    <span class="title">API Reference</span>
+    <div class="search">Search&nbsp;&nbsp;CTRL+K</div>
+  </div>
 
-    <div class="grid">
-      <article class="card">
-        <h2>Unified API Reference</h2>
-        <p>Single, simple reference for SMS, WhatsApp, and KYC with SMS-style authentication and examples.</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="/docs/COMMON_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown</a>
-        </div>
-      </article>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="nav-section">Messaging</div>
+      <nav class="nav">
+        <a href="#sms-send">SMS Send <span class="tag">POST</span></a>
+        <a href="#whatsapp-send">WhatsApp Send <span class="tag">POST</span></a>
+      </nav>
 
-      <article class="card">
-        <h2>SMS API Reference</h2>
-        <p>Covers simple URL-based SMS integration, authenticated SMS send, DLT mapping, Tata gateway behavior, template registry, sender registry, webhook callbacks, and rollout checklist.</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="/docs/sms-api-reference.html" target="_blank" rel="noopener noreferrer">Open HTML Reference</a>
-          <a class="btn btn-secondary" href="/docs/SMS_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown</a>
-        </div>
-      </article>
+      <div class="nav-section">KYC</div>
+      <nav class="nav">
+        <a href="#kyc-digilocker">DigiLocker KYC <span class="tag">GET</span></a>
+        <a href="#kyc-gst">GST Verification <span class="tag">GET</span></a>
+        <a href="#kyc-status">KYC Status <span class="tag">GET</span></a>
+        <a href="#kyc-file">KYC File Download <span class="tag">GET</span></a>
+      </nav>
+    </aside>
 
-      <article class="card">
-        <h2>WhatsApp API Reference</h2>
-        <p>Covers authenticated WhatsApp send, template APIs, media upload, webhook flow, automation and flow builder endpoints, Meta flow management, smoke testing, diagnostics, and analytics.</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="/docs/whatsapp-api-reference.html" target="_blank" rel="noopener noreferrer">Open HTML Reference</a>
-          <a class="btn btn-secondary" href="/docs/WHATSAPP_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown</a>
-        </div>
-      </article>
+    <main class="content">
+      <section id="sms-send">
+        <h1>SMS Send</h1>
+        <div class="endpoint"><span class="method post">POST</span> https://api.textzy.in/api/public/messages/send</div>
+        <p class="desc">Send a DLT-compliant SMS using tenant credentials (SMS-style auth).</p>
 
-      <article class="card">
-        <h2>KYC API Reference (DigiLocker)</h2>
-        <p>Covers KYC session APIs, DigiLocker redirect and callback flow, webhook payload, document types, and credit-based billing behavior.</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="/docs/kyc-api-reference.html" target="_blank" rel="noopener noreferrer">Open HTML Reference</a>
-          <a class="btn btn-secondary" href="/docs/KYC_API_REFERENCE.md" target="_blank" rel="noopener noreferrer">Open Markdown</a>
-        </div>
-      </article>
+        <h2>Request Header Parameters</h2>
+        <table class="table">
+          <thead><tr><th>Name</th><th>Description</th><th>Mandatory</th></tr></thead>
+          <tbody>
+            <tr><td>Content-Type</td><td>application/json</td><td>Y</td></tr>
+          </tbody>
+        </table>
 
-      <article class="card">
-        <h2>Postman Assets</h2>
-        <p>Use these import files to accelerate development, smoke testing, and onboarding.</p>
-        <div class="actions">
-          <a class="btn btn-secondary" href="/docs/Textzy_API_Integration_Postman_Collection.json" target="_blank" rel="noopener noreferrer">Collection</a>
-          <a class="btn btn-secondary" href="/docs/Textzy_API_Integration_Postman_Environment.json" target="_blank" rel="noopener noreferrer">Environment</a>
-        </div>
-      </article>
+        <h2>Request Body Parameters</h2>
+        <table class="table">
+          <thead><tr><th>Key</th><th>Type</th><th>Description</th><th>Mandatory</th></tr></thead>
+          <tbody>
+            <tr><td>tenantSlug</td><td>string</td><td>Tenant slug</td><td>Y</td></tr>
+            <tr><td>user</td><td>string</td><td>Public API user</td><td>Y</td></tr>
+            <tr><td>pswd</td><td>string</td><td>Public API password</td><td>Y</td></tr>
+            <tr><td>apikey</td><td>string</td><td>Public API key</td><td>Y</td></tr>
+            <tr><td>recipient</td><td>string</td><td>Mobile number with country code</td><td>Y</td></tr>
+            <tr><td>message</td><td>string</td><td>Approved DLT message</td><td>Y</td></tr>
+            <tr><td>sender</td><td>string</td><td>DLT sender ID</td><td>Y</td></tr>
+            <tr><td>peId</td><td>string</td><td>DLT PE ID</td><td>Y</td></tr>
+            <tr><td>templateId</td><td>string</td><td>DLT Template ID</td><td>Y</td></tr>
+            <tr><td>idempotencyKey</td><td>string</td><td>Optional de-dup key</td><td>N</td></tr>
+          </tbody>
+        </table>
 
-      <article class="card">
-        <h2>Reference Index</h2>
-        <p>The legacy simple guide now acts as the documentation index and points to the dedicated SMS and WhatsApp references.</p>
-        <div class="actions">
-          <a class="btn btn-secondary" href="/docs/API_INTEGRATION_SIMPLE_GUIDE.md" target="_blank" rel="noopener noreferrer">Open Index Markdown</a>
-          <a class="btn btn-secondary" href="/docs/api-integration.html" target="_blank" rel="noopener noreferrer">Open Legacy Landing</a>
+        <h2>Example (POST)</h2>
+        <div class="codebox">
+          <div class="header"><span>cURL Request</span><span>SMS</span></div>
+          <code>curl --request POST \</code><br />
+          <code>  --url https://api.textzy.in/api/public/messages/send \</code><br />
+          <code>  --header 'accept: application/json' \</code><br />
+          <code>  --header 'content-type: application/json' \</code><br />
+          <code>  --data '{</code><br />
+          <code>    "tenantSlug":"moneyart",</code><br />
+          <code>    "user":"MONEYART",</code><br />
+          <code>    "password":"YOUR_PASSWORD",</code><br />
+          <code>    "apiKey":"YOUR_API_KEY",</code><br />
+          <code>    "channel":"sms",</code><br />
+          <code>    "recipient":"919999999999",</code><br />
+          <code>    "message":"Your approved DLT message",</code><br />
+          <code>    "sender":"MNYART",</code><br />
+          <code>    "peId":"1601100000000006533",</code><br />
+          <code>    "templateId":"1207171593687982329"</code><br />
+          <code>  }'</code>
         </div>
-      </article>
-    </div>
+
+        <h2>Response</h2>
+        <div class="resp">
+          <div style="font-weight:700; margin-bottom:6px;">200 - Result</div>
+          <pre style="margin:0; white-space:pre-wrap;">{"jobId":"GUID","message":"Accepted"}</pre>
+        </div>
+      </section>
+
+      <section id="whatsapp-send">
+        <h1>WhatsApp Send</h1>
+        <div class="endpoint"><span class="method post">POST</span> https://api.textzy.in/api/public/messages/send</div>
+        <p class="desc">Send a simple WhatsApp text message using tenant credentials.</p>
+
+        <h2>Request Body Parameters</h2>
+        <table class="table">
+          <thead><tr><th>Key</th><th>Type</th><th>Description</th><th>Mandatory</th></tr></thead>
+          <tbody>
+            <tr><td>tenantSlug</td><td>string</td><td>Tenant slug</td><td>Y</td></tr>
+            <tr><td>user</td><td>string</td><td>Public API user</td><td>Y</td></tr>
+            <tr><td>pswd</td><td>string</td><td>Public API password</td><td>Y</td></tr>
+            <tr><td>apikey</td><td>string</td><td>Public API key</td><td>Y</td></tr>
+            <tr><td>recipient</td><td>string</td><td>WhatsApp number with country code</td><td>Y</td></tr>
+            <tr><td>message</td><td>string</td><td>Plain text message</td><td>Y</td></tr>
+            <tr><td>channel</td><td>string</td><td>Must be `whatsapp`</td><td>Y</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Example (POST)</h2>
+        <div class="codebox">
+          <div class="header"><span>cURL Request</span><span>WhatsApp</span></div>
+          <code>curl --request POST \</code><br />
+          <code>  --url https://api.textzy.in/api/public/messages/send \</code><br />
+          <code>  --header 'accept: application/json' \</code><br />
+          <code>  --header 'content-type: application/json' \</code><br />
+          <code>  --data '{</code><br />
+          <code>    "tenantSlug":"moneyart",</code><br />
+          <code>    "user":"MONEYART",</code><br />
+          <code>    "password":"YOUR_PASSWORD",</code><br />
+          <code>    "apiKey":"YOUR_API_KEY",</code><br />
+          <code>    "channel":"whatsapp",</code><br />
+          <code>    "recipient":"919999999999",</code><br />
+          <code>    "message":"Hello from Textzy"</code><br />
+          <code>  }'</code>
+        </div>
+
+        <h2>Response</h2>
+        <div class="resp">
+          <div style="font-weight:700; margin-bottom:6px;">200 - Result</div>
+          <pre style="margin:0; white-space:pre-wrap;">{"jobId":"GUID","message":"Accepted"}</pre>
+        </div>
+      </section>
+
+      <section id="kyc-digilocker">
+        <h1>DigiLocker KYC</h1>
+        <div class="endpoint"><span class="method get">GET</span> https://api.textzy.in/api/public/kyc/sessions/start</div>
+        <p class="desc">Create a KYC session and redirect the user to DigiLocker for consent.</p>
+
+        <h2>Query Parameters</h2>
+        <table class="table">
+          <thead><tr><th>Key</th><th>Type</th><th>Description</th><th>Mandatory</th></tr></thead>
+          <tbody>
+            <tr><td>tenantSlug</td><td>string</td><td>Tenant slug</td><td>Y</td></tr>
+            <tr><td>user</td><td>string</td><td>Public API user</td><td>Y</td></tr>
+            <tr><td>pswd</td><td>string</td><td>Public API password</td><td>Y</td></tr>
+            <tr><td>apikey</td><td>string</td><td>Public API key</td><td>Y</td></tr>
+            <tr><td>provider</td><td>string</td><td>Must be `digilocker`</td><td>Y</td></tr>
+            <tr><td>docType</td><td>string</td><td>`AADHAAR`, `PAN`, `DL`</td><td>Y</td></tr>
+            <tr><td>customerRef</td><td>string</td><td>Your reference</td><td>N</td></tr>
+            <tr><td>successRedirectUrl</td><td>string</td><td>Redirect after success</td><td>N</td></tr>
+            <tr><td>failureRedirectUrl</td><td>string</td><td>Redirect after failure</td><td>N</td></tr>
+            <tr><td>webhookUrl</td><td>string</td><td>Webhook for result</td><td>N</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Example (GET)</h2>
+        <div class="codebox">
+          <div class="header"><span>cURL Request</span><span>DigiLocker</span></div>
+          <code>curl --request GET \</code><br />
+          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/start?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=digilocker&docType=AADHAAR&customerRef=test-001'</code>
+        </div>
+
+        <h2>Response</h2>
+        <div class="resp">
+          <div style="font-weight:700; margin-bottom:6px;">200 - Result</div>
+          <pre style="margin:0; white-space:pre-wrap;">{"sessionId":"GUID","provider":"digilocker","status":"created","docType":"AADHAAR","redirectUrl":"https://digilocker...","state":"..."}</pre>
+        </div>
+      </section>
+
+      <section id="kyc-gst">
+        <h1>GST Verification</h1>
+        <div class="endpoint"><span class="method get">GET</span> https://api.textzy.in/api/public/kyc/sessions/start</div>
+        <p class="desc">Instant GST verification (no redirect).</p>
+
+        <h2>Query Parameters</h2>
+        <table class="table">
+          <thead><tr><th>Key</th><th>Type</th><th>Description</th><th>Mandatory</th></tr></thead>
+          <tbody>
+            <tr><td>tenantSlug</td><td>string</td><td>Tenant slug</td><td>Y</td></tr>
+            <tr><td>user</td><td>string</td><td>Public API user</td><td>Y</td></tr>
+            <tr><td>pswd</td><td>string</td><td>Public API password</td><td>Y</td></tr>
+            <tr><td>apikey</td><td>string</td><td>Public API key</td><td>Y</td></tr>
+            <tr><td>provider</td><td>string</td><td>Must be `gst`</td><td>Y</td></tr>
+            <tr><td>gstNo</td><td>string</td><td>GST Number</td><td>Y</td></tr>
+            <tr><td>customerRef</td><td>string</td><td>Your reference</td><td>N</td></tr>
+          </tbody>
+        </table>
+
+        <h2>Example (GET)</h2>
+        <div class="codebox">
+          <div class="header"><span>cURL Request</span><span>GST</span></div>
+          <code>curl --request GET \</code><br />
+          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/start?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=gst&gstNo=03DOXPM4071K1ZE&customerRef=test-001'</code>
+        </div>
+
+        <h2>Response</h2>
+        <div class="resp">
+          <div style="font-weight:700; margin-bottom:6px;">200 - Result</div>
+          <pre style="margin:0; white-space:pre-wrap;">{"sessionId":"GUID","provider":"gst","status":"verified","docTypes":["gst"],"result":{"gstNo":"03DOXPM4071K1ZE","error":false}}</pre>
+        </div>
+      </section>
+
+      <section id="kyc-status">
+        <h1>KYC Status</h1>
+        <div class="endpoint"><span class="method get">GET</span> https://api.textzy.in/api/public/kyc/sessions/{sessionId}</div>
+        <p class="desc">Fetch verified/failed status and result.</p>
+
+        <h2>Example (GET)</h2>
+        <div class="codebox">
+          <div class="header"><span>cURL Request</span><span>Status</span></div>
+          <code>curl --request GET \</code><br />
+          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/{sessionId}?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY'</code>
+        </div>
+      </section>
+
+      <section id="kyc-file">
+        <h1>KYC File Download</h1>
+        <div class="endpoint"><span class="method get">GET</span> https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file</div>
+        <p class="desc">Download a file attached to a KYC session.</p>
+
+        <h2>Example (GET)</h2>
+        <div class="codebox">
+          <div class="header"><span>cURL Request</span><span>File</span></div>
+          <code>curl --request GET \</code><br />
+          <code>  --url 'https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&uri=in.gov.pan-PANCR-XXXX'</code>
+        </div>
+      </section>
+    </main>
+
+    <aside class="right">
+      <div class="codebox">
+        <div class="header"><span>cURL Request</span><span>Examples</span></div>
+        <code>curl --request POST \</code><br />
+        <code>  --url https://api.textzy.in/api/public/messages/send \</code><br />
+        <code>  --header 'accept: application/json' \</code><br />
+        <code>  --header 'content-type: application/json' \</code><br />
+        <code>  --data '{ "tenantSlug":"moneyart","user":"MONEYART","pswd":"YOUR_PASSWORD","apikey":"YOUR_API_KEY","channel":"sms","recipient":"919999999999","message":"Hello" }'</code>
+      </div>
+      <button class="try">Try It</button>
+      <div class="resp" style="margin-top: 14px;">
+        <div style="font-weight:700; margin-bottom:6px;">Response</div>
+        <span class="badge">200 - Result</span>
+        <p style="margin:10px 0 0;">Click Try It to start a request and see the response here.</p>
+      </div>
+    </aside>
   </div>
 </body>
 </html>
