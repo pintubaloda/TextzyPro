@@ -182,7 +182,11 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         var json = JsonSerializer.Serialize(payload);
         var bytes = Encoding.UTF8.GetBytes(json);
         Response.Headers["X-Textzy-Body-Len"] = bytes.Length.ToString();
-        return File(bytes, "application/json; charset=utf-8");
+        Response.ContentType = "application/json; charset=utf-8";
+        Response.ContentLength = bytes.Length;
+        await Response.Body.WriteAsync(bytes, ct);
+        await Response.Body.FlushAsync(ct);
+        return new EmptyResult();
     }
 
     [HttpGet("{id:guid}")]
