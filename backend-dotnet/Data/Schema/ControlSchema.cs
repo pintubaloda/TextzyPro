@@ -173,7 +173,7 @@ public static class ControlSchema
                 "TaxMode" text NOT NULL DEFAULT 'exclusive',
                 "Description" text NOT NULL DEFAULT '',
                 "FeaturesJson" text NOT NULL DEFAULT '[]',
-                "LimitsJson" text NOT NULL DEFAULT '{}',
+                "LimitsJson" text NOT NULL DEFAULT '{{}}',
                 "SortOrder" integer NOT NULL DEFAULT 0,
                 "IsActive" boolean NOT NULL DEFAULT true,
                 "IsPublic" boolean NOT NULL DEFAULT false,
