@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Reflection;
+using System.Text;
 using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -178,7 +179,10 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
             ?? "unknown";
         Response.Headers["X-Textzy-Build"] = build;
-        return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
+        var json = JsonSerializer.Serialize(payload);
+        var bytes = Encoding.UTF8.GetBytes(json);
+        Response.Headers["X-Textzy-Body-Len"] = bytes.Length.ToString();
+        return File(bytes, "application/json; charset=utf-8");
     }
 
     [HttpGet("{id:guid}")]
