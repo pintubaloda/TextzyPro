@@ -146,6 +146,10 @@ const PlatformSettingsPage = () => {
     includeUserDetailsInResult: true,
     creditsPerSuccess: "3",
   });
+  const [gst, setGst] = useState({
+    keySecret: "",
+    verifyUrl: "https://appyflow.in/api/verifyGST",
+  });
   const [digilockerCatalogRows, setDigilockerCatalogRows] = useState([]);
   const [digilockerCatalogCreditsPerSuccess, setDigilockerCatalogCreditsPerSuccess] = useState(3);
   const [digilockerCatalogOpCreditsText, setDigilockerCatalogOpCreditsText] = useState("PAN=2\nAADHAAR=2\nDL=2");
@@ -614,11 +618,13 @@ const PlatformSettingsPage = () => {
             if (!active) return;
             setIntegrationCatalog(rows || []);
           } else if (tab === "digilocker") {
-            const [res, catalog] = await Promise.all([
+            const [res, catalog, gstRes] = await Promise.all([
               getPlatformSettings("digilocker").catch(() => ({ values: {} })),
               getPlatformIntegrationCatalog().catch(() => []),
+              getPlatformSettings("gst").catch(() => ({ values: {} })),
             ]);
             const values = res?.values || {};
+            const gstValues = gstRes?.values || {};
             if (!active) return;
             setDigilocker((prev) => ({
               ...prev,
@@ -640,6 +646,11 @@ const PlatformSettingsPage = () => {
               includeFilesInResult: String(values.includeFilesInResult || "") === "" ? prev.includeFilesInResult : String(values.includeFilesInResult).toLowerCase() === "true",
               includeUserDetailsInResult: String(values.includeUserDetailsInResult || "") === "" ? prev.includeUserDetailsInResult : String(values.includeUserDetailsInResult).toLowerCase() === "true",
               creditsPerSuccess: values.creditsPerSuccess || prev.creditsPerSuccess,
+            }));
+            setGst((prev) => ({
+              ...prev,
+              keySecret: gstValues.keySecret || prev.keySecret,
+              verifyUrl: gstValues.verifyUrl || prev.verifyUrl,
             }));
 
             const rows = Array.isArray(catalog) ? catalog : [];
@@ -3496,14 +3507,15 @@ const PlatformSettingsPage = () => {
       )}
 
       {tab === "digilocker" && (
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle>DigiLocker Master Config</CardTitle>
-            <CardDescription>
-              Platform DigiLocker requester credentials and endpoints. Tenants call Textzy KYC APIs; Textzy calls DigiLocker using these platform settings.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="space-y-6">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>DigiLocker Master Config</CardTitle>
+              <CardDescription>
+                Platform DigiLocker requester credentials and endpoints. Tenants call Textzy KYC APIs; Textzy calls DigiLocker using these platform settings.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
             <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-4 text-sm text-slate-800">
               <p className="font-semibold text-slate-900">Important</p>
               <p className="mt-1">
@@ -3728,8 +3740,48 @@ const PlatformSettingsPage = () => {
                 Save DigiLocker Config
               </Button>
             </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle>GST Verification (Appyflow)</CardTitle>
+              <CardDescription>
+                Platform API key used to call Appyflow GST verification on behalf of tenants.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Key Secret</Label>
+                  <Input type="password" value={gst.keySecret} onChange={(e) => setGst((p) => ({ ...p, keySecret: e.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Verify URL</Label>
+                  <Input value={gst.verifyUrl} onChange={(e) => setGst((p) => ({ ...p, verifyUrl: e.target.value }))} placeholder="https://appyflow.in/api/verifyGST" />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button className="bg-orange-500 hover:bg-orange-600" onClick={async () => {
+                  try {
+                    setLoading(true);
+                    await savePlatformSettings("gst", {
+                      keySecret: gst.keySecret,
+                      verifyUrl: gst.verifyUrl,
+                    });
+                    toast.success("GST settings saved");
+                  } catch (e) {
+                    toast.error(e?.message || "Failed to save GST settings");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}>
+                  Save GST Settings
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {tab === "billing-plans" && (

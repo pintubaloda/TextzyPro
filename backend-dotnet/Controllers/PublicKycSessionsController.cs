@@ -18,7 +18,9 @@ public class PublicKycSessionsController(
     SecretCryptoService crypto,
     BillingGuardService billingGuard,
     IntegrationCatalogBillingService integrationBilling,
-    KycProviderRouter router) : ControllerBase
+    KycProviderRouter router,
+    IHttpClientFactory httpClientFactory,
+    ILogger<PublicKycSessionsController> logger) : ControllerBase
 {
     // NOTE: On some IIS setups, requestFiltering denyStrings may block paths containing "create"
     // (common SQL-injection blocklists). Keep /create for backward compatibility, but provide
@@ -37,6 +39,7 @@ public class PublicKycSessionsController(
             Provider = q["provider"].FirstOrDefault() ?? "digilocker",
             CustomerRef = q["customerRef"].FirstOrDefault() ?? q["ref"].FirstOrDefault() ?? string.Empty,
             DocType = q["docType"].FirstOrDefault() ?? q["doctype"].FirstOrDefault() ?? string.Empty,
+            GstNo = q["gstNo"].FirstOrDefault() ?? q["gst"].FirstOrDefault() ?? string.Empty,
             SuccessRedirectUrl = q["successRedirectUrl"].FirstOrDefault() ?? string.Empty,
             FailureRedirectUrl = q["failureRedirectUrl"].FirstOrDefault() ?? string.Empty,
             WebhookUrl = q["webhookUrl"].FirstOrDefault() ?? string.Empty,
@@ -190,8 +193,13 @@ public class PublicKycSessionsController(
         if (provider.Length > 40) return BadRequest("provider is too long.");
 
         var docType = (request.DocType ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(docType) && string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
+            docType = "GST";
         if (string.IsNullOrWhiteSpace(docType)) return BadRequest("docType is required.");
         if (docType.Length > 64) return BadRequest("docType is too long.");
+        var gstNo = (request.GstNo ?? string.Empty).Trim();
+        if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(gstNo))
+            return BadRequest("gstNo is required for GST verification.");
 
         // Credit pre-check.
         var pluginSlug = $"{provider}-kyc";
@@ -230,6 +238,7 @@ public class PublicKycSessionsController(
             ProviderCode = provider,
             Status = "created",
             CustomerRef = (request.CustomerRef ?? string.Empty).Trim(),
+            GstNumber = gstNo,
             RequestedDocTypesJson = JsonSerializer.Serialize(new[] { docType.ToLowerInvariant() }),
             SuccessRedirectUrl = (request.SuccessRedirectUrl ?? string.Empty).Trim(),
             FailureRedirectUrl = (request.FailureRedirectUrl ?? string.Empty).Trim(),
@@ -244,6 +253,32 @@ public class PublicKycSessionsController(
 
         var providerImpl = router.Resolve(provider);
         var (redirectUrl, state) = await providerImpl.BuildRedirectAsync(row, ct);
+
+        if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
+        {
+            var latest = await controlDb.KycSessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == row.Id, ct);
+            if (latest is not null)
+            {
+                row = latest;
+                if (string.Equals(row.Status, "verified", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var gstPluginSlug = $"{provider}-kyc";
+                        var gstBillingCfg = await integrationBilling.ResolveAsync(gstPluginSlug, ct);
+                        var gstMetricKey = string.IsNullOrWhiteSpace(gstBillingCfg.MetricKey) ? "digilockerKyc" : gstBillingCfg.MetricKey.Trim();
+                        var gstBaseCredits = gstBillingCfg.CreditsPerSuccess > 0 ? gstBillingCfg.CreditsPerSuccess : 1;
+                        var gstCredits = gstBillingCfg.ResolveCredits(docType, gstBaseCredits);
+                        await billingGuard.TryConsumeAsync(row.TenantId, gstMetricKey, gstCredits, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Failed to consume gst KYC credits for tenant {TenantId} session {SessionId}", row.TenantId, row.Id);
+                    }
+                }
+                await TryWebhookAsync(row, ok: string.Equals(row.Status, "verified", StringComparison.OrdinalIgnoreCase), ct);
+            }
+        }
         var payload = new
         {
             sessionId = row.Id,
@@ -263,6 +298,22 @@ public class PublicKycSessionsController(
     {
         using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawResultJson) ? "{}" : rawResultJson);
         var root = doc.RootElement;
+
+        var provider = GetString(root, "provider");
+        if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
+        {
+            return new
+            {
+                provider,
+                fetchedAtUtc = GetString(root, "fetchedAtUtc"),
+                gstNo = GetString(root, "gstNo"),
+                error = GetBool(root, "error"),
+                message = GetString(root, "message"),
+                taxpayerInfo = root.TryGetProperty("taxpayerInfo", out var tp) ? JsonSerializer.Deserialize<object>(tp.GetRawText()) : null,
+                filing = root.TryGetProperty("filing", out var fl) ? JsonSerializer.Deserialize<object>(fl.GetRawText()) : null,
+                compliance = root.TryGetProperty("compliance", out var cp) ? JsonSerializer.Deserialize<object>(cp.GetRawText()) : null
+            };
+        }
 
         var fetchedAtUtc = GetString(root, "fetchedAtUtc");
         var requestedDocTypes = GetStringArray(root, "requestedDocTypes");
@@ -288,7 +339,7 @@ public class PublicKycSessionsController(
 
         return new
         {
-            provider = GetString(root, "provider"),
+            provider = provider,
             fetchedAtUtc,
             requestedDocTypes,
             documentTypes,
@@ -537,8 +588,98 @@ public class PublicKycSessionsController(
         public string Provider { get; set; } = "digilocker";
         public string CustomerRef { get; set; } = string.Empty;
         public string DocType { get; set; } = string.Empty;
+        public string GstNo { get; set; } = string.Empty;
         public string SuccessRedirectUrl { get; set; } = string.Empty;
         public string FailureRedirectUrl { get; set; } = string.Empty;
         public string WebhookUrl { get; set; } = string.Empty;
+    }
+
+    private async Task TryWebhookAsync(Textzy.Api.Models.KycSession session, bool ok, CancellationToken ct)
+    {
+        var url = (session.WebhookUrl ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        try
+        {
+            object? result = null;
+            if (!string.IsNullOrWhiteSpace(session.ResultJsonEncrypted))
+            {
+                var raw = crypto.Decrypt(session.ResultJsonEncrypted);
+                try { result = JsonSerializer.Deserialize<object>(raw); } catch { result = new { raw }; }
+            }
+
+            List<string> requestedDocTypes;
+            try { requestedDocTypes = JsonSerializer.Deserialize<List<string>>(session.RequestedDocTypesJson) ?? []; }
+            catch { requestedDocTypes = []; }
+
+            var payload = new
+            {
+                sessionId = session.Id,
+                tenantId = session.TenantId,
+                provider = session.ProviderCode,
+                status = session.Status,
+                ok,
+                customerRef = session.CustomerRef,
+                requestedDocTypes,
+                failureReason = session.FailureReason,
+                completedAtUtc = session.CompletedAtUtc,
+                result
+            };
+            var payloadJson = JsonSerializer.Serialize(payload);
+
+            var http = httpClientFactory.CreateClient();
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.UserAgent.Add(new System.Net.Http.Headers.ProductInfoHeaderValue("Textzy", "1.0"));
+            req.Content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var res = await http.SendAsync(req, ct);
+            var responseBody = await res.Content.ReadAsStringAsync(ct);
+            sw.Stop();
+
+            controlDb.KycWebhookDeliveries.Add(new KycWebhookDelivery
+            {
+                Id = Guid.NewGuid(),
+                CreatedAtUtc = DateTime.UtcNow,
+                TenantId = session.TenantId,
+                SessionId = session.Id,
+                Provider = (session.ProviderCode ?? string.Empty).Trim().ToLowerInvariant(),
+                Url = url,
+                Ok = res.IsSuccessStatusCode,
+                StatusCode = (int)res.StatusCode,
+                DurationMs = (int)Math.Clamp(sw.ElapsedMilliseconds, 0, int.MaxValue),
+                RequestJson = payloadJson.Length > 20000 ? payloadJson[..20000] : payloadJson,
+                ResponseBody = string.IsNullOrWhiteSpace(responseBody) ? string.Empty : (responseBody.Length > 4000 ? responseBody[..4000] : responseBody),
+                Error = string.Empty
+            });
+            await controlDb.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "KYC webhook failed for session {SessionId}", session.Id);
+            try
+            {
+                controlDb.KycWebhookDeliveries.Add(new KycWebhookDelivery
+                {
+                    Id = Guid.NewGuid(),
+                    CreatedAtUtc = DateTime.UtcNow,
+                    TenantId = session.TenantId,
+                    SessionId = session.Id,
+                    Provider = (session.ProviderCode ?? string.Empty).Trim().ToLowerInvariant(),
+                    Url = url,
+                    Ok = false,
+                    StatusCode = 0,
+                    DurationMs = 0,
+                    RequestJson = string.Empty,
+                    ResponseBody = string.Empty,
+                    Error = ex.Message.Length > 1500 ? ex.Message[..1500] : ex.Message
+                });
+                await controlDb.SaveChangesAsync(ct);
+            }
+            catch
+            {
+                // ignore logging failures
+            }
+        }
     }
 }

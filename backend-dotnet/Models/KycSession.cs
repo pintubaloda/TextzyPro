@@ -10,6 +10,7 @@ public class KycSession
     public string ProviderCode { get; set; } = "digilocker";
     public string Status { get; set; } = "created"; // created|redirected|verified|failed|expired
     public string CustomerRef { get; set; } = string.Empty;
+    public string GstNumber { get; set; } = string.Empty;
     public string RequestedDocTypesJson { get; set; } = "[]";
     public string SuccessRedirectUrl { get; set; } = string.Empty;
     public string FailureRedirectUrl { get; set; } = string.Empty;
@@ -39,4 +40,3 @@ public class KycSession
         return JsonSerializer.Serialize(list);
     }
 }
-

@@ -191,6 +191,7 @@ builder.Services.AddHttpClient();
 
 // KYC providers (plugin-style routing)
 builder.Services.AddScoped<Textzy.Api.Services.Kyc.IKycProvider, Textzy.Api.Services.Kyc.DigiLockerKycProvider>();
+builder.Services.AddScoped<Textzy.Api.Services.Kyc.IKycProvider, Textzy.Api.Services.Kyc.GstKycProvider>();
 builder.Services.AddScoped<Textzy.Api.Services.Kyc.KycProviderRouter>();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<WhatsAppCloudService>();
@@ -901,6 +902,7 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
             "ProviderCode" text NOT NULL DEFAULT 'digilocker',
             "Status" text NOT NULL DEFAULT 'created',
             "CustomerRef" text NOT NULL DEFAULT '',
+            "GstNumber" text NOT NULL DEFAULT '',
             "RequestedDocTypesJson" text NOT NULL DEFAULT '[]',
             "SuccessRedirectUrl" text NOT NULL DEFAULT '',
             "FailureRedirectUrl" text NOT NULL DEFAULT '',
@@ -914,6 +916,7 @@ CREATE TABLE IF NOT EXISTS "TenantSecurityControls" (
             "CompletedAtUtc" timestamp with time zone NULL
         );
         """);
+    db.Database.ExecuteSqlRaw("""ALTER TABLE "KycSessions" ADD COLUMN IF NOT EXISTS "GstNumber" text NOT NULL DEFAULT '';""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycSessions_Tenant_CreatedAt" ON "KycSessions" ("TenantId","CreatedAtUtc" DESC);""");
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_KycSessions_Status" ON "KycSessions" ("Status");""");
 

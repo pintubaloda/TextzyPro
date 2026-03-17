@@ -1,6 +1,6 @@
 # KYC API (Simple)
 
-This is the **simple, SMS‑style** DigiLocker KYC API for testing.
+This is the **simple, SMS-style** DigiLocker KYC API for testing.
 
 Base URL: `https://api.textzy.in`
 
@@ -29,6 +29,14 @@ Response:
 ```
 
 Your app must redirect the user to `redirectUrl`.
+
+### GST Verification (no redirect)
+
+```http
+GET https://api.textzy.in/api/public/kyc/sessions/start?tenantSlug=moneyart&user=MONEYART&pswd=YOUR_PASSWORD&apikey=YOUR_API_KEY&provider=gst&docType=GST&gstNo=03DOXPM4071K1ZE&customerRef=test-001
+```
+
+GST verification completes immediately. You can read the result using the session status API.
 
 ## 2) Get Session Status + Result (GET)
 
@@ -75,6 +83,29 @@ Response (simple fields only):
         "downloadUrl": "https://api.textzy.in/api/public/kyc/sessions/{sessionId}/file?uri=textzy%2Faadhaar-report"
       }
     ]
+  }
+}
+```
+
+GST response example:
+```json
+{
+  "sessionId": "GUID",
+  "provider": "gst",
+  "status": "verified",
+  "customerRef": "test-001",
+  "docTypes": ["gst"],
+  "failureReason": "",
+  "createdAtUtc": "2026-03-17T07:25:49Z",
+  "updatedAtUtc": "2026-03-17T07:26:29Z",
+  "completedAtUtc": "2026-03-17T07:26:29Z",
+  "result": {
+    "provider": "gst",
+    "fetchedAtUtc": "2026-03-17T07:26:29Z",
+    "gstNo": "03DOXPM4071K1ZE",
+    "error": false,
+    "message": "",
+    "taxpayerInfo": { }
   }
 }
 ```

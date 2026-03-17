@@ -36,6 +36,9 @@ public class KycController(
         if (request.DocTypes.Count > 25) return BadRequest("Too many docTypes.");
         // Billing is per docType/scope; keep sessions predictable.
         if (request.DocTypes.Count > 1) return BadRequest("Only one docType is supported per KYC session.");
+        var gstNo = (request.GstNo ?? string.Empty).Trim();
+        if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(gstNo))
+            return BadRequest("gstNo is required for GST verification.");
 
         // Pre-check credits/limits (non-destructive). Actual consumption happens only on verified callback.
         var pluginSlug = $"{provider}-kyc";
@@ -68,6 +71,7 @@ public class KycController(
             ProviderCode = provider,
             Status = "created",
             CustomerRef = (request.CustomerRef ?? string.Empty).Trim(),
+            GstNumber = gstNo,
             RequestedDocTypesJson = KycSession.NormalizeDocTypes(request.DocTypes),
             SuccessRedirectUrl = (request.SuccessRedirectUrl ?? string.Empty).Trim(),
             FailureRedirectUrl = (request.FailureRedirectUrl ?? string.Empty).Trim(),
@@ -201,6 +205,7 @@ public class KycController(
         public string Provider { get; set; } = "digilocker";
         public string CustomerRef { get; set; } = string.Empty;
         public List<string> DocTypes { get; set; } = [];
+        public string GstNo { get; set; } = string.Empty;
         public string SuccessRedirectUrl { get; set; } = string.Empty;
         public string FailureRedirectUrl { get; set; } = string.Empty;
         public string WebhookUrl { get; set; } = string.Empty;
