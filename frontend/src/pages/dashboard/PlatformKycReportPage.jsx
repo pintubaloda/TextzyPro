@@ -47,6 +47,7 @@ export default function PlatformKycReportPage() {
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
     tenantId: "",
+    tenantSlug: "",
     status: "all",
     q: "",
     fromUtc: "",
@@ -72,6 +73,7 @@ export default function PlatformKycReportPage() {
         getPlatformCustomers("").catch(() => []),
         getPlatformKycReport({
           tenantId: next.tenantId,
+          tenantSlug: next.tenantSlug,
           status: next.status === "all" ? "" : next.status,
           q: next.q,
           fromUtc: useAllTime ? "" : next.fromUtc,
@@ -148,7 +150,17 @@ export default function PlatformKycReportPage() {
         <CardContent className="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
             <Label>Tenant</Label>
-            <Select value={filters.tenantId || "all"} onValueChange={(value) => load({ tenantId: value === "all" ? "" : value })}>
+            <Select
+              value={filters.tenantId || "all"}
+              onValueChange={(value) => {
+                if (value === "all") {
+                  load({ tenantId: "", tenantSlug: "" });
+                  return;
+                }
+                const t = tenants.find((row) => row.tenantId === value);
+                load({ tenantId: value, tenantSlug: t?.tenantSlug || "" });
+              }}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All tenants</SelectItem>
@@ -251,7 +263,7 @@ export default function PlatformKycReportPage() {
                 setUseAllTime(true);
                 setFromDate(null);
                 setToDate(null);
-                load({ q: "", fromUtc: "", toUtc: "", status: "all", tenantId: "" });
+                load({ q: "", fromUtc: "", toUtc: "", status: "all", tenantId: "", tenantSlug: "" });
               }}
             >
               Reset

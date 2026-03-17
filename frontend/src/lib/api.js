@@ -1363,6 +1363,7 @@ export async function updatePlatformBillingPlan(id, payload) {
 export async function getPlatformKycReport(filters = {}) {
   const qs = new URLSearchParams()
   if (filters.tenantId) qs.set('tenantId', filters.tenantId)
+  if (filters.tenantSlug) qs.set('tenantSlug', filters.tenantSlug)
   if (filters.status) qs.set('status', filters.status)
   if (filters.q) qs.set('q', filters.q)
   if (filters.fromUtc) qs.set('fromUtc', filters.fromUtc)

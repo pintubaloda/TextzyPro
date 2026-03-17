@@ -15,6 +15,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] string tenantId = "",
+        [FromQuery] string tenantSlug = "",
         [FromQuery] string status = "",
         [FromQuery] string q = "",
         [FromQuery] string fromUtc = "",
@@ -32,7 +33,17 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         var query = db.KycSessions.AsNoTracking().AsQueryable();
 
         if (Guid.TryParse(tenantId, out var tid) && tid != Guid.Empty)
+        {
             query = query.Where(x => x.TenantId == tid);
+        }
+        else if (!string.IsNullOrWhiteSpace(tenantSlug))
+        {
+            var slug = tenantSlug.Trim().ToLowerInvariant();
+            var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Slug == slug, ct);
+            if (tenant is null)
+                return Ok(new { totalCount = 0, items = Array.Empty<object>() });
+            query = query.Where(x => x.TenantId == tenant.Id);
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
         {
