@@ -76,32 +76,27 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-var allowedOrigins = CorsOriginHelper.ParseAllowedOrigins(builder.Configuration, builder.Environment.IsProduction()).ToArray();
-// Permanent safe defaults for production frontends.
-if (builder.Environment.IsProduction())
-{
-    var defaults = new[]
-    {
-        "https://textzy.in",
-        "https://www.textzy.in"
-    };
-    var set = new HashSet<string>(allowedOrigins, StringComparer.OrdinalIgnoreCase);
-    foreach (var origin in defaults)
-    {
-        if (!set.Contains(origin)) set.Add(origin);
-    }
-    allowedOrigins = set.ToArray();
-}
-if (builder.Environment.IsProduction() && allowedOrigins.Length == 0)
+var frontendCors = CorsOriginHelper.BuildFrontendCorsOptions(builder.Configuration, builder.Environment.IsProduction());
+if (builder.Environment.IsProduction() && frontendCors.AllowedOrigins.Length == 0)
 {
     throw new InvalidOperationException("AllowedOrigins is required in production. Set AllowedOrigins with full origin(s).");
 }
+
+builder.Services.AddSingleton(frontendCors);
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>
     {
-        if (allowedOrigins.Length > 0) policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials().WithExposedHeaders("Authorization", "X-Access-Token", "X-CSRF-Token");
+        if (frontendCors.AllowedOrigins.Length > 0)
+        {
+            policy
+                .WithOrigins(frontendCors.AllowedOrigins)
+                .WithHeaders(frontendCors.AllowedHeaders)
+                .WithMethods(frontendCors.AllowedMethods)
+                .AllowCredentials()
+                .WithExposedHeaders(frontendCors.ExposedHeaders);
+        }
         else policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
     });
 });
