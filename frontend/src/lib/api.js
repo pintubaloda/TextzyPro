@@ -261,15 +261,15 @@ async function baseFetch(path, options = {}, useAuth = true) {
     ...(options.headers || {})
   }
   const method = (options.method || 'GET').toUpperCase()
-  const tenantOptionalPrefixes = [
+  const tenantNotRequiredPrefixes = [
     '/api/auth/',
     '/api/public/',
-    '/api/platform/',
     '/api/payment/webhooks',
     '/api/payments/webhook/'
   ]
-  const requiresTenant = useAuth && !tenantOptionalPrefixes.some((p) => path.startsWith(p))
-  if (requiresTenant && s.tenantSlug) headers['X-Tenant-Slug'] = s.tenantSlug
+  const shouldAttachTenant = useAuth && !tenantNotRequiredPrefixes.some((p) => path.startsWith(p))
+  const requiresTenant = shouldAttachTenant && !path.startsWith('/api/platform/')
+  if (shouldAttachTenant && s.tenantSlug) headers['X-Tenant-Slug'] = s.tenantSlug
   if (requiresTenant && !headers['X-Tenant-Slug']) {
     if (typeof window !== 'undefined' && window.location.pathname !== '/projects') {
       window.location.assign('/projects')
