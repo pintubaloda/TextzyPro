@@ -148,11 +148,14 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             };
         }).ToList();
 
-        return Ok(new
+        var payload = new
         {
             totalCount = total,
             items
-        });
+        };
+
+        // Defensive: avoid rare IIS/proxy cases returning 200 with empty body.
+        return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
     }
 
     [HttpGet("{id:guid}")]
