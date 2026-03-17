@@ -680,12 +680,25 @@ public class DigiLockerKycProvider(
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         var status = (int)res.StatusCode;
-        if (status < 200 || status > 299) return null;
+        if (status < 200 || status > 299)
+        {
+            var body = string.Empty;
+            try
+            {
+                body = await res.Content.ReadAsStringAsync(ct);
+                if (body.Length > 2000) body = body[..2000];
+            }
+            catch { }
+
+            throw new InvalidOperationException($"e-Aadhaar XML download failed. status={status} url={url} body={body}");
+        }
 
         // Read raw bytes so we can verify hmac.
         var bytes = await res.Content.ReadAsByteArrayAsync(ct);
-        if (bytes.Length == 0) return null;
-        if (maxBytes > 0 && bytes.Length > maxBytes) return null;
+        if (bytes.Length == 0)
+            throw new InvalidOperationException($"e-Aadhaar XML download returned empty body. status={status} url={url}");
+        if (maxBytes > 0 && bytes.Length > maxBytes)
+            throw new InvalidOperationException($"e-Aadhaar XML is too large ({bytes.Length} bytes). Max allowed is {maxBytes} bytes.");
 
         // DigiLocker sends `hmac` header: base64(HMACSHA256(contentBytes, client_secret))
         // Verify integrity. If header missing, keep null.
