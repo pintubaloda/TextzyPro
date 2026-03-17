@@ -20,6 +20,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         [FromQuery] string q = "",
         [FromQuery] string fromUtc = "",
         [FromQuery] string toUtc = "",
+        [FromQuery] bool includeBase64 = false,
         [FromQuery] int take = 100,
         [FromQuery] int skip = 0,
         CancellationToken ct = default)
@@ -106,7 +107,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             if (!string.IsNullOrWhiteSpace(row.ResultJsonEncrypted))
             {
                 rawResult = crypto.Decrypt(row.ResultJsonEncrypted);
-                try { result = BuildPublicResult(rawResult, row.Id); } catch { result = new { }; }
+                try { result = BuildPublicResult(rawResult, row.Id, includeBase64); } catch { result = new { }; }
             }
 
             tenants.TryGetValue(row.TenantId, out var tenant);
@@ -132,7 +133,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
                 billingMetric = row.BillingMetric,
                 creditsUsed = row.CreditsUsed,
                 result,
-                rawResultJson = rawResult,
+                rawResultJson = includeBase64 ? rawResult : string.Empty,
                 webhook = delivery is null
                     ? null
                     : new
@@ -154,7 +155,68 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         });
     }
 
-    private object BuildPublicResult(string rawResultJson, Guid sessionId)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(
+        Guid id,
+        [FromQuery] bool includeBase64 = true,
+        CancellationToken ct = default)
+    {
+        if (!auth.IsAuthenticated) return Unauthorized();
+        if (!rbac.HasPermission(PlatformSettingsRead)) return Forbid();
+
+        var row = await db.KycSessions.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (row is null) return NotFound();
+
+        var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(x => x.Id == row.TenantId, ct);
+        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == row.CreatedByUserId, ct);
+        var delivery = await db.KycWebhookDeliveries.AsNoTracking()
+            .Where(x => x.SessionId == row.Id)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        object? result = null;
+        string rawResult = string.Empty;
+        if (!string.IsNullOrWhiteSpace(row.ResultJsonEncrypted))
+        {
+            rawResult = crypto.Decrypt(row.ResultJsonEncrypted);
+            try { result = BuildPublicResult(rawResult, row.Id, includeBase64); } catch { result = new { }; }
+        }
+
+        return Ok(new
+        {
+            sessionId = row.Id,
+            tenantId = row.TenantId,
+            tenantSlug = tenant?.Slug ?? string.Empty,
+            tenantName = tenant?.Name ?? tenant?.Slug ?? string.Empty,
+            userId = row.CreatedByUserId,
+            userEmail = user?.Email ?? string.Empty,
+            provider = row.ProviderCode,
+            status = row.Status,
+            customerRef = row.CustomerRef,
+            docTypes = ParseStringList(row.RequestedDocTypesJson),
+            failureReason = row.FailureReason,
+            createdAtUtc = row.CreatedAtUtc,
+            updatedAtUtc = row.UpdatedAtUtc,
+            completedAtUtc = row.CompletedAtUtc,
+            billingMetric = row.BillingMetric,
+            creditsUsed = row.CreditsUsed,
+            result,
+            rawResultJson = includeBase64 ? rawResult : string.Empty,
+            webhook = delivery is null
+                ? null
+                : new
+                {
+                    delivery.Id,
+                    delivery.Url,
+                    delivery.Ok,
+                    delivery.StatusCode,
+                    delivery.DurationMs,
+                    delivery.CreatedAtUtc
+                }
+        });
+    }
+
+    private object BuildPublicResult(string rawResultJson, Guid sessionId, bool includeBase64)
     {
         using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawResultJson) ? "{}" : rawResultJson);
         var root = doc.RootElement;
@@ -195,7 +257,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         var digilockerId = GetString(userDetails, "digilockerid");
 
         var files = root.TryGetProperty("files", out var f) && f.ValueKind == JsonValueKind.Array ? f : default;
-        var docs = BuildDocumentLinks(files, sessionId, requestedDocTypes);
+        var docs = BuildDocumentLinks(files, sessionId, requestedDocTypes, includeBase64);
 
         return new
         {
@@ -222,7 +284,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         };
     }
 
-    private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes)
+    private List<object> BuildDocumentLinks(JsonElement files, Guid sessionId, IReadOnlyList<string> requestedDocTypes, bool includeBase64)
     {
         var list = new List<object>();
         if (files.ValueKind != JsonValueKind.Array) return list;
@@ -246,7 +308,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             var name = GetString(f, "name");
             var mime = GetString(f, "mime");
             var sizeBytes = GetInt(f, "sizeBytes");
-            var fileBase64 = GetString(f, "fileBase64");
+            var fileBase64 = includeBase64 ? GetString(f, "fileBase64") : string.Empty;
 
             list.Add(new
             {

@@ -1368,9 +1368,16 @@ export async function getPlatformKycReport(filters = {}) {
   if (filters.q) qs.set('q', filters.q)
   if (filters.fromUtc) qs.set('fromUtc', filters.fromUtc)
   if (filters.toUtc) qs.set('toUtc', filters.toUtc)
+  if (filters.includeBase64) qs.set('includeBase64', 'true')
   if (filters.take) qs.set('take', String(filters.take))
   if (filters.skip) qs.set('skip', String(filters.skip))
   return apiGet(`/api/platform/kyc/reports${qs.toString() ? `?${qs.toString()}` : ''}`)
+}
+
+export async function getPlatformKycReportSession(id, includeBase64 = true) {
+  const qs = new URLSearchParams()
+  if (includeBase64) qs.set('includeBase64', 'true')
+  return apiGet(`/api/platform/kyc/reports/${encodeURIComponent(id)}${qs.toString() ? `?${qs.toString()}` : ''}`)
 }
 
 export async function getPlatformCustomers(q = '', ownerUserId = '') {

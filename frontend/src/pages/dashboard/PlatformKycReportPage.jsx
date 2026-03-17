@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { getPlatformCustomerUsage, getPlatformCustomers, getPlatformKycReport } from "@/lib/api";
+import { getPlatformCustomerUsage, getPlatformCustomers, getPlatformKycReport, getPlatformKycReportSession } from "@/lib/api";
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -60,6 +60,7 @@ export default function PlatformKycReportPage() {
   const [toDate, setToDate] = useState(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
+  const [activeDetail, setActiveDetail] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [usageSnapshot, setUsageSnapshot] = useState(null);
@@ -109,9 +110,10 @@ export default function PlatformKycReportPage() {
   }, [previewUrl]);
 
   const files = useMemo(() => {
-    if (!active?.result?.documents) return [];
-    return Array.isArray(active.result.documents) ? active.result.documents : [];
-  }, [active]);
+    const docs = activeDetail?.result?.documents || active?.result?.documents;
+    if (!docs) return [];
+    return Array.isArray(docs) ? docs : [];
+  }, [active, activeDetail]);
 
   const activeFile = files[activeFileIndex] || null;
 
@@ -347,11 +349,24 @@ export default function PlatformKycReportPage() {
                         : "-"}
                     </td>
                     <td className="px-4 py-3">
-                      <Button variant="outline" size="sm" onClick={() => {
-                        setActive(row);
-                        setActiveFileIndex(0);
-                        setOpen(true);
-                      }}>View</Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          setActive(row);
+                          setActiveDetail(null);
+                          setActiveFileIndex(0);
+                          setOpen(true);
+                          try {
+                            const detail = await getPlatformKycReportSession(row.sessionId, true);
+                            setActiveDetail(detail);
+                          } catch (e) {
+                            toast.error(e?.message || "Failed to load session detail");
+                          }
+                        }}
+                      >
+                        View
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -376,12 +391,12 @@ export default function PlatformKycReportPage() {
               <div className="space-y-4">
                 <div className="rounded-xl border border-slate-200 p-4 text-sm">
                   <div className="grid gap-2 md:grid-cols-2">
-                    <div><span className="text-slate-500">Session</span><div className="font-medium">{active.sessionId}</div></div>
-                    <div><span className="text-slate-500">Customer Ref</span><div className="font-medium">{active.customerRef || "-"}</div></div>
-                    <div><span className="text-slate-500">User</span><div className="font-medium">{active.userEmail || "public"}</div></div>
-                    <div><span className="text-slate-500">Tenant</span><div className="font-medium">{active.tenantName || active.tenantSlug}</div></div>
-                    <div><span className="text-slate-500">Status</span><div className="font-medium">{active.status}</div></div>
-                    <div><span className="text-slate-500">Doc Types</span><div className="font-medium">{Array.isArray(active.docTypes) ? active.docTypes.join(", ") : "-"}</div></div>
+                    <div><span className="text-slate-500">Session</span><div className="font-medium">{activeDetail?.sessionId || active.sessionId}</div></div>
+                    <div><span className="text-slate-500">Customer Ref</span><div className="font-medium">{activeDetail?.customerRef || active.customerRef || "-"}</div></div>
+                    <div><span className="text-slate-500">User</span><div className="font-medium">{activeDetail?.userEmail || active.userEmail || "public"}</div></div>
+                    <div><span className="text-slate-500">Tenant</span><div className="font-medium">{activeDetail?.tenantName || active.tenantName || active.tenantSlug}</div></div>
+                    <div><span className="text-slate-500">Status</span><div className="font-medium">{activeDetail?.status || active.status}</div></div>
+                    <div><span className="text-slate-500">Doc Types</span><div className="font-medium">{Array.isArray(activeDetail?.docTypes || active.docTypes) ? (activeDetail?.docTypes || active.docTypes).join(", ") : "-"}</div></div>
                   </div>
                 </div>
 
@@ -392,12 +407,12 @@ export default function PlatformKycReportPage() {
                   </TabsList>
                   <TabsContent value="public">
                     <pre className="max-h-[320px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
-                      {JSON.stringify(active.result || {}, null, 2)}
+                      {JSON.stringify(activeDetail?.result || active.result || {}, null, 2)}
                     </pre>
                   </TabsContent>
                   <TabsContent value="raw">
                     <pre className="max-h-[320px] overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
-                      {active.rawResultJson || "{}"}
+                      {activeDetail?.rawResultJson || active.rawResultJson || "{}"}
                     </pre>
                   </TabsContent>
                 </Tabs>
