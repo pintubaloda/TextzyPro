@@ -10,8 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { downloadBillingInvoice, getBillingInvoices, listSmsBillingLedger, listWhatsappMessageReport } from "@/lib/api";
 import KycReportsPage from "./KycReportsPage";
+import TenantLedgerReportPage from "./TenantLedgerReportPage";
 
 const REPORT_OPTIONS = [
+  { value: "ledger", label: "Unified Ledger", description: "One timeline for SMS, WhatsApp, KYC, and billing purchases." },
   { value: "sms", label: "SMS Usage Report", description: "Per-message SMS billing and delivery ledger." },
   { value: "whatsapp", label: "WhatsApp Usage Report", description: "Outbound WhatsApp messages with status and delivery timing." },
   { value: "kyc", label: "KYC Usage Report", description: "KYC sessions with document previews, status, and extracted data." },
@@ -462,6 +464,7 @@ export default function TenantReportsPage() {
         </CardContent>
       </Card>
 
+      {report === "ledger" && <TenantLedgerReportPage />}
       {report === "sms" && <SmsUsageReportPanel />}
       {report === "whatsapp" && <WhatsAppUsageReportPanel />}
       {report === "kyc" && <KycReportsPage />}

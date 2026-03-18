@@ -3,11 +3,13 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import PlatformLedgerReportPage from "./PlatformLedgerReportPage";
 import PlatformPurchaseReportPage from "./PlatformPurchaseReportPage";
 import PlatformSecurityReportPage from "./PlatformSecurityReportPage";
 import PlatformKycReportPage from "./PlatformKycReportPage";
 
 const REPORT_OPTIONS = [
+  { value: "ledger", label: "Ledger Report", description: "Unified owner-side ledger for invoices, KYC credits, and live balances." },
   { value: "purchases", label: "Purchase Report", description: "Billing usage, credits, invoices, and recharge history." },
   { value: "security", label: "Security Report", description: "Login activity, IP policies, sessions, and audit actions." },
   { value: "kyc", label: "KYC Report", description: "All KYC sessions with user, documents, and webhook status." },
@@ -53,7 +55,7 @@ export default function PlatformReportsPage() {
         </CardContent>
       </Card>
 
-      {report === "security" ? <PlatformSecurityReportPage /> : report === "kyc" ? <PlatformKycReportPage /> : <PlatformPurchaseReportPage />}
+      {report === "ledger" ? <PlatformLedgerReportPage /> : report === "security" ? <PlatformSecurityReportPage /> : report === "kyc" ? <PlatformKycReportPage /> : <PlatformPurchaseReportPage />}
     </div>
   );
 }

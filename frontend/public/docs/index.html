@@ -97,9 +97,9 @@
     th,td{padding:12px 14px;border-bottom:1px solid var(--border);text-align:left;font-size:13px;vertical-align:top}
     th{background:#f7faff;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}
     tr:last-child td{border-bottom:none}
-    .code{border:1px solid var(--code-border);background:var(--code);color:var(--code-text);border-radius:22px;padding:16px;overflow:auto}
+    .code{border:1px solid var(--code-border);background:var(--code);color:var(--code-text);border-radius:22px;padding:16px;overflow:auto;max-width:100%}
     .code-header{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;font-size:12px;font-weight:800;color:#bfdbfe}
-    pre{margin:0;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.7}
+    pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.7}
     .response{border:1px solid var(--border);border-radius:20px;background:#fbfdff;padding:16px}
     .response-title{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;font-weight:800}
     .ok{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;background:#dcfce7;color:#15803d;font-size:12px;font-weight:800}
@@ -155,8 +155,7 @@
               <span class="badge badge-green">Single Source of Truth</span>
               <span class="badge badge-orange">Tenant Scoped + Public APIs</span>
             </div>
-            <h1>One professional API document for every Textzy integration flow</h1>
-            <p>Use this final documentation page for SMS delivery, WhatsApp messaging, DigiLocker KYC, GST verification, session status, and file download flows. It keeps your request format intact, but presents everything in one polished, easy-to-navigate developer experience.</p>
+            <h1>Textzy integration flow</h1>
             <div class="hero-actions">
               <a class="btn btn-primary" href="#sms-send">Start with SMS</a>
               <a class="btn btn-secondary" href="#kyc-digilocker">Jump to KYC</a>
@@ -214,6 +213,24 @@
                   <tr><td>peId</td><td>string</td><td>DLT PE ID</td><td>Y</td></tr>
                   <tr><td>templateId</td><td>string</td><td>DLT template ID</td><td>Y</td></tr>
                   <tr><td>idempotencyKey</td><td>string</td><td>Optional de-duplication key</td><td>N</td></tr>
+                </tbody>
+              </table>
+              <div class="note">
+                <strong>SMS validation requirements</strong><br />
+                <code>tenantSlug</code>, <code>user</code>, <code>pswd</code>, and <code>apikey</code> must belong to the same tenant.<br />
+                <code>recipient</code> must include country code without spaces, for example <code>919999999999</code>.<br />
+                <code>sender</code>, <code>peId</code>, and <code>templateId</code> must match your approved DLT configuration.<br />
+                <code>message</code> must exactly match the registered DLT template content except allowed variables.
+              </div>
+              <h3 style="margin-top:18px">Common SMS Error Codes</h3>
+              <table>
+                <thead><tr><th>HTTP</th><th>Code</th><th>Meaning</th><th>What to check</th></tr></thead>
+                <tbody>
+                  <tr><td>400</td><td>validation_error</td><td>Required field is missing or malformed</td><td>Check `recipient`, `sender`, `peId`, `templateId`, and payload field names</td></tr>
+                  <tr><td>401</td><td>invalid_public_credentials</td><td>Tenant public API auth failed</td><td>Verify `tenantSlug`, `user`, `pswd`, and `apikey`</td></tr>
+                  <tr><td>403</td><td>public_api_disabled</td><td>Tenant public API is disabled</td><td>Enable public API for the tenant in platform settings</td></tr>
+                  <tr><td>409</td><td>duplicate_request</td><td>Same idempotency key already processed</td><td>Retry with a new `idempotencyKey` only when needed</td></tr>
+                  <tr><td>422</td><td>dlt_rejected</td><td>DLT registration data did not match</td><td>Recheck sender ID, PE ID, template ID, and final message body</td></tr>
                 </tbody>
               </table>
             </div>
@@ -321,6 +338,27 @@
                   <tr><td>webhookUrl</td><td>string</td><td>Webhook for result delivery</td><td>N</td></tr>
                 </tbody>
               </table>
+              <div class="mini-grid" style="margin-top:18px">
+                <div class="mini"><div class="k">Accepted docType</div><div class="v">AADHAAR</div></div>
+                <div class="mini"><div class="k">Accepted docType</div><div class="v">PAN</div></div>
+                <div class="mini"><div class="k">Accepted docType</div><div class="v">DL</div></div>
+              </div>
+              <div class="note">
+                <strong>DigiLocker accepted doc types</strong><br />
+                <code>AADHAAR</code> for Aadhaar-based KYC, <code>PAN</code> for PAN verification, and <code>DL</code> for driving licence verification.<br />
+                Send only one <code>docType</code> per session request.
+              </div>
+              <h3 style="margin-top:18px">Common DigiLocker Error Codes</h3>
+              <table>
+                <thead><tr><th>HTTP</th><th>Code</th><th>Meaning</th><th>What to check</th></tr></thead>
+                <tbody>
+                  <tr><td>400</td><td>invalid_doc_type</td><td>`docType` is not supported</td><td>Use only `AADHAAR`, `PAN`, or `DL`</td></tr>
+                  <tr><td>401</td><td>invalid_public_credentials</td><td>Tenant public API auth failed</td><td>Verify `tenantSlug`, `user`, `pswd`, and `apikey`</td></tr>
+                  <tr><td>403</td><td>provider_not_enabled</td><td>DigiLocker is not enabled for the tenant</td><td>Enable DigiLocker in tenant/platform settings</td></tr>
+                  <tr><td>409</td><td>session_already_exists</td><td>Session conflicts with an existing active request</td><td>Use a fresh `customerRef` or wait for prior session completion</td></tr>
+                  <tr><td>502</td><td>digilocker_upstream_error</td><td>DigiLocker partner API returned an upstream failure</td><td>Retry later and inspect provider response in platform report</td></tr>
+                </tbody>
+              </table>
             </div>
             <div class="card">
               <div class="code">
@@ -359,6 +397,17 @@
                   <tr><td>customerRef</td><td>string</td><td>Your reference for tracking</td><td>N</td></tr>
                 </tbody>
               </table>
+              <h3 style="margin-top:18px">Common GST / AppyFlow Error Codes</h3>
+              <table>
+                <thead><tr><th>HTTP</th><th>Code</th><th>Meaning</th><th>What to check</th></tr></thead>
+                <tbody>
+                  <tr><td>400</td><td>invalid_gst_number</td><td>GST number format is invalid</td><td>Use a valid 15-character GSTIN</td></tr>
+                  <tr><td>401</td><td>invalid_public_credentials</td><td>Tenant public API auth failed</td><td>Verify `tenantSlug`, `user`, `pswd`, and `apikey`</td></tr>
+                  <tr><td>403</td><td>provider_not_enabled</td><td>GST verification is not enabled for the tenant</td><td>Enable AppyFlow GST access in tenant/platform settings</td></tr>
+                  <tr><td>404</td><td>gst_not_found</td><td>GSTIN was not found in provider records</td><td>Check the GST number before retrying</td></tr>
+                  <tr><td>502</td><td>appyflow_upstream_error</td><td>AppyFlow API returned an upstream failure</td><td>Retry later and inspect raw provider response in platform report</td></tr>
+                </tbody>
+              </table>
             </div>
             <div class="card">
               <div class="code">
@@ -382,6 +431,30 @@
             </div>
           </div>
           <div class="endpoint"><span class="tag get">GET</span><span class="path">https://api.textzy.in/api/public/kyc/sessions/{sessionId}</span></div>
+          <div class="grid" style="margin-bottom:18px">
+            <div class="card">
+              <h3>Query Parameters</h3>
+              <table>
+                <thead><tr><th>Key</th><th>Type</th><th>Description</th><th>Mandatory</th></tr></thead>
+                <tbody>
+                  <tr><td>tenantSlug</td><td>string</td><td>Tenant slug</td><td>Y</td></tr>
+                  <tr><td>user</td><td>string</td><td>Public API user</td><td>Y</td></tr>
+                  <tr><td>pswd</td><td>string</td><td>Public API password</td><td>Y</td></tr>
+                  <tr><td>apikey</td><td>string</td><td>Public API key</td><td>Y</td></tr>
+                  <tr><td>includeBase64</td><td>boolean</td><td>Include base64 file payloads in result when available</td><td>N</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card">
+              <h3>Path Parameter</h3>
+              <table>
+                <thead><tr><th>Key</th><th>Type</th><th>Description</th><th>Mandatory</th></tr></thead>
+                <tbody>
+                  <tr><td>sessionId</td><td>string</td><td>KYC session identifier returned during session creation</td><td>Y</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
           <div class="mini-grid">
             <div class="mini"><div class="k">Use Case</div><div class="v">Polling session progress</div></div>
             <div class="mini"><div class="k">Optional Flag</div><div class="v">includeBase64=true</div></div>
@@ -402,6 +475,13 @@
               </div>
             </div>
           </div>
+          <div class="note">
+            <strong>Status endpoint error codes</strong><br />
+            <code>401 invalid_public_credentials</code> when tenant public auth fails.<br />
+            <code>404 session_not_found</code> when the session ID does not exist for that tenant.<br />
+            <code>410 session_expired</code> when the KYC session is no longer valid.<br />
+            <code>500 internal_error</code> when the provider result cannot be read or transformed.
+          </div>
         </section>
 
         <section class="section" id="kyc-file">
@@ -413,6 +493,13 @@
           </div>
           <div class="endpoint"><span class="tag get">GET</span><span class="path">https://api.textzy.in/api/public/kyc/sessions/{sessionId}/files/{fileId}</span></div>
           <div class="note">Use the status endpoint first to discover available file identifiers and file metadata before downloading.</div>
+          <div class="note">
+            <strong>File download error codes</strong><br />
+            <code>401 invalid_public_credentials</code> when tenant public auth fails.<br />
+            <code>404 file_not_found</code> when the file id is not present for that session.<br />
+            <code>422 file_payload_missing</code> when provider metadata exists but file content is unavailable.<br />
+            <code>502 provider_file_fetch_failed</code> when the upstream document fetch fails.
+          </div>
         </section>
       </div>
     </main>

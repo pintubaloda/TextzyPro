@@ -101,6 +101,185 @@ public class BillingController(
         });
     }
 
+    [HttpGet("ledger")]
+    public async Task<IActionResult> Ledger(
+        [FromQuery] string service = "",
+        [FromQuery] string status = "",
+        [FromQuery] string q = "",
+        [FromQuery] int take = 250,
+        CancellationToken ct = default)
+    {
+        if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
+        if (!rbac.HasPermission(BillingRead)) return Forbid();
+
+        take = Math.Clamp(take, 25, 1000);
+        var normalizedService = (service ?? string.Empty).Trim().ToLowerInvariant();
+        var normalizedStatus = (status ?? string.Empty).Trim().ToLowerInvariant();
+        var normalizedQuery = (q ?? string.Empty).Trim().ToLowerInvariant();
+        var sourceTake = Math.Min(take * 3, 2000);
+
+        var smsRowsTask = tenantDb.SmsBillingLedgers.AsNoTracking()
+            .Where(x => x.TenantId == tenancy.TenantId)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(sourceTake)
+            .ToListAsync(ct);
+
+        var whatsappRowsTask = tenantDb.Messages.AsNoTracking()
+            .Where(x => x.TenantId == tenancy.TenantId && x.Channel == ChannelType.WhatsApp)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(sourceTake)
+            .ToListAsync(ct);
+
+        var kycRowsTask = db.KycSessions.AsNoTracking()
+            .Where(x => x.TenantId == tenancy.TenantId)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(sourceTake)
+            .ToListAsync(ct);
+
+        var invoiceRowsTask = db.BillingInvoices.AsNoTracking()
+            .Where(x => x.TenantId == tenancy.TenantId)
+            .OrderByDescending(x => x.PaidAtUtc ?? x.IssuedAtUtc)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .Take(sourceTake)
+            .ToListAsync(ct);
+
+        await Task.WhenAll(smsRowsTask, whatsappRowsTask, kycRowsTask, invoiceRowsTask);
+
+        var items = new List<TenantLedgerItem>();
+
+        items.AddRange(smsRowsTask.Result.Select(x => new TenantLedgerItem
+        {
+            Id = x.Id,
+            OccurredAtUtc = x.CreatedAtUtc,
+            Service = "sms",
+            ApiName = "SMS",
+            EntryType = "usage",
+            Direction = "debit",
+            Status = string.IsNullOrWhiteSpace(x.DeliveryState) ? x.BillingState : x.DeliveryState,
+            ReferenceId = x.MessageId.ToString(),
+            ExternalReference = x.ProviderMessageId,
+            CustomerRef = string.Empty,
+            Units = x.Segments,
+            UnitLabel = "segments",
+            CreditsUsed = x.Segments,
+            Amount = x.TotalAmount,
+            Currency = x.Currency,
+            Description = string.IsNullOrWhiteSpace(x.Notes) ? "SMS billing ledger entry" : x.Notes,
+            Recipient = x.Recipient
+        }));
+
+        items.AddRange(whatsappRowsTask.Result.Select(x => new TenantLedgerItem
+        {
+            Id = x.Id,
+            OccurredAtUtc = x.CreatedAtUtc,
+            Service = "whatsapp",
+            ApiName = "WhatsApp",
+            EntryType = "usage",
+            Direction = "debit",
+            Status = x.Status,
+            ReferenceId = x.Id.ToString(),
+            ExternalReference = x.ProviderMessageId,
+            CustomerRef = string.Empty,
+            Units = 1,
+            UnitLabel = "messages",
+            CreditsUsed = 0,
+            Amount = null,
+            Currency = "INR",
+            Description = string.IsNullOrWhiteSpace(x.Body) ? $"WhatsApp {x.MessageType}" : x.Body,
+            Recipient = x.Recipient
+        }));
+
+        items.AddRange(kycRowsTask.Result.Select(x => new TenantLedgerItem
+        {
+            Id = x.Id,
+            OccurredAtUtc = x.CompletedAtUtc ?? x.UpdatedAtUtc,
+            Service = "kyc",
+            ApiName = ResolveKycApiName(x.ProviderCode),
+            EntryType = "verification",
+            Direction = "debit",
+            Status = x.Status,
+            ReferenceId = x.Id.ToString(),
+            ExternalReference = x.GstNumber,
+            CustomerRef = x.CustomerRef,
+            Units = x.CreditsUsed,
+            UnitLabel = "credits",
+            CreditsUsed = x.CreditsUsed,
+            Amount = null,
+            Currency = "INR",
+            Description = ResolveKycDescription(x),
+            Recipient = string.Empty
+        }));
+
+        items.AddRange(invoiceRowsTask.Result.Select(x => new TenantLedgerItem
+        {
+            Id = x.Id,
+            OccurredAtUtc = x.PaidAtUtc ?? x.IssuedAtUtc,
+            Service = "billing",
+            ApiName = "Billing",
+            EntryType = "purchase",
+            Direction = "credit",
+            Status = x.Status,
+            ReferenceId = x.InvoiceNo,
+            ExternalReference = x.ReferenceNo,
+            CustomerRef = string.Empty,
+            Units = null,
+            UnitLabel = string.Empty,
+            CreditsUsed = 0,
+            Amount = x.Total,
+            Currency = "INR",
+            Description = string.IsNullOrWhiteSpace(x.Description) ? "Invoice purchase" : x.Description,
+            Recipient = string.Empty
+        }));
+
+        var filtered = items
+            .Where(x => string.IsNullOrWhiteSpace(normalizedService) || x.Service == normalizedService)
+            .Where(x => string.IsNullOrWhiteSpace(normalizedStatus) || (x.Status ?? string.Empty).Contains(normalizedStatus, StringComparison.OrdinalIgnoreCase))
+            .Where(x =>
+                string.IsNullOrWhiteSpace(normalizedQuery) ||
+                string.Join(" ", new[]
+                {
+                    x.ApiName,
+                    x.EntryType,
+                    x.Status,
+                    x.ReferenceId,
+                    x.ExternalReference,
+                    x.CustomerRef,
+                    x.Description,
+                    x.Recipient
+                }).ToLowerInvariant().Contains(normalizedQuery))
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(take)
+            .ToList();
+
+        var creditBalances = await GetCreditBalancesAsync(tenancy.TenantId, ct);
+
+        return Ok(new
+        {
+            summary = new
+            {
+                totalEntries = filtered.Count,
+                totalAmount = filtered.Where(x => x.Amount.HasValue).Sum(x => x.Amount ?? 0m),
+                totalCreditsUsed = filtered.Sum(x => x.CreditsUsed),
+                totalUnits = filtered.Sum(x => x.Units ?? 0),
+                currentBalances = creditBalances,
+                services = filtered
+                    .GroupBy(x => x.Service)
+                    .Select(g => new
+                    {
+                        service = g.Key,
+                        apiName = g.First().ApiName,
+                        count = g.Count(),
+                        creditsUsed = g.Sum(x => x.CreditsUsed),
+                        amount = g.Where(x => x.Amount.HasValue).Sum(x => x.Amount ?? 0m)
+                    })
+                    .OrderByDescending(x => x.count)
+                    .ToList()
+            },
+            items = filtered
+        });
+    }
+
     [HttpGet("dunning-status")]
     public async Task<IActionResult> DunningStatus(CancellationToken ct)
     {
@@ -1049,6 +1228,43 @@ public class BillingController(
             .Where(x => x.TenantId == tenantId)
             .ToListAsync(ct);
         return rows.ToDictionary(x => x.MetricKey, x => x.UnitsRemaining, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveKycApiName(string? providerCode)
+        => string.Equals(providerCode, "gst", StringComparison.OrdinalIgnoreCase)
+            ? "AppyFlow GST"
+            : "DigiLocker KYC";
+
+    private static string ResolveKycDescription(KycSession session)
+    {
+        if (string.Equals(session.ProviderCode, "gst", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(session.GstNumber)
+                ? "GST verification session"
+                : $"GST verification for {session.GstNumber}";
+        return string.IsNullOrWhiteSpace(session.CustomerRef)
+            ? "DigiLocker verification session"
+            : $"DigiLocker verification for {session.CustomerRef}";
+    }
+
+    private sealed class TenantLedgerItem
+    {
+        public Guid Id { get; init; }
+        public DateTime OccurredAtUtc { get; init; }
+        public string Service { get; init; } = string.Empty;
+        public string ApiName { get; init; } = string.Empty;
+        public string EntryType { get; init; } = string.Empty;
+        public string Direction { get; init; } = string.Empty;
+        public string Status { get; init; } = string.Empty;
+        public string ReferenceId { get; init; } = string.Empty;
+        public string ExternalReference { get; init; } = string.Empty;
+        public string CustomerRef { get; init; } = string.Empty;
+        public int? Units { get; init; }
+        public string UnitLabel { get; init; } = string.Empty;
+        public int CreditsUsed { get; init; }
+        public decimal? Amount { get; init; }
+        public string Currency { get; init; } = "INR";
+        public string Description { get; init; } = string.Empty;
+        public string Recipient { get; init; } = string.Empty;
     }
 
     private async Task CreateOrUpdateProformaInvoiceAsync(

@@ -269,17 +269,7 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
         var provider = GetString(root, "provider");
         if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
         {
-            return new
-            {
-                provider,
-                fetchedAtUtc = GetString(root, "fetchedAtUtc"),
-                gstNo = GetString(root, "gstNo"),
-                error = GetBool(root, "error"),
-                message = GetString(root, "message"),
-                taxpayerInfo = root.TryGetProperty("taxpayerInfo", out var tp) ? JsonSerializer.Deserialize<object>(tp.GetRawText()) : null,
-                filing = root.TryGetProperty("filing", out var fl) ? JsonSerializer.Deserialize<object>(fl.GetRawText()) : null,
-                compliance = root.TryGetProperty("compliance", out var cp) ? JsonSerializer.Deserialize<object>(cp.GetRawText()) : null
-            };
+            return JsonSerializer.Deserialize<object>(rawResultJson) ?? new { provider = "gst" };
         }
 
         var fetchedAtUtc = GetString(root, "fetchedAtUtc");

@@ -1495,6 +1495,16 @@ export async function sendPlatformPurchaseInvoice(invoiceId) {
   return apiPost(`/api/platform/purchases/${encodeURIComponent(invoiceId)}/send`, {})
 }
 
+export async function getPlatformLedgerReport({ service = '', status = '', tenantId = '', q = '', take = 300 } = {}) {
+  const qs = new URLSearchParams()
+  if (service) qs.set('service', service)
+  if (status) qs.set('status', status)
+  if (tenantId) qs.set('tenantId', tenantId)
+  if (q) qs.set('q', q)
+  qs.set('take', String(take))
+  return apiGet(`/api/platform/ledger${qs.toString() ? `?${qs.toString()}` : ''}`)
+}
+
 export async function getPlatformSupportTickets(filters = {}) {
   const q = new URLSearchParams()
   if (filters.status) q.set('status', filters.status)
@@ -1532,6 +1542,15 @@ export async function getCurrentBillingPlan() {
 
 export async function getBillingUsage() {
   return apiGet('/api/billing/usage')
+}
+
+export async function getBillingLedgerReport({ service = '', status = '', q = '', take = 250 } = {}) {
+  const qs = new URLSearchParams()
+  if (service) qs.set('service', service)
+  if (status) qs.set('status', status)
+  if (q) qs.set('q', q)
+  qs.set('take', String(take))
+  return apiGet(`/api/billing/ledger${qs.toString() ? `?${qs.toString()}` : ''}`)
 }
 
 export async function getBillingDunningStatus() {
