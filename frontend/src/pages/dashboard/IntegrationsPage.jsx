@@ -11,6 +11,8 @@ import ApiDocsViewer from "@/components/docs/ApiDocsViewer";
 import {
   BookOpenText,
   CreditCard,
+  Eye,
+  EyeOff,
   ExternalLink,
   FileText,
   LockKeyhole,
@@ -35,6 +37,11 @@ import {
   createKycSession,
   getKycSession,
 } from "@/lib/api";
+
+const maskSecret = (value) => {
+  const raw = String(value || "");
+  return raw ? "XXXXXXXXXXXXXX" : "";
+};
 
 const CATEGORY_META = {
   all: { title: "All Integrations", hint: "Everything available to this tenant right now." },
@@ -139,6 +146,11 @@ const IntegrationsPage = () => {
     status: "",
     error: "",
     lastResult: null,
+  });
+  const [publicApiVisible, setPublicApiVisible] = useState({
+    username: false,
+    password: false,
+    apiKey: false,
   });
 
   const categories = useMemo(() => {
@@ -682,33 +694,63 @@ const IntegrationsPage = () => {
                   <div className="flex items-center justify-between gap-3">
                     <Label>API Username</Label>
                     <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        disabled={!tenantApiSettings.apiUsername}
+                        onClick={() => setPublicApiVisible((prev) => ({ ...prev, username: !prev.username }))}
+                      >
+                        {publicApiVisible.username ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
                       <Button type="button" size="sm" variant="outline" disabled={!tenantApiSettings.publicApiEnabled} onClick={() => setTenantApiSettings((prev) => ({ ...prev, apiUsername: generateToken("tx_user_", 10) }))}>Generate</Button>
                       <Button type="button" size="sm" variant="outline" disabled={!tenantApiSettings.apiUsername} onClick={() => copyValue("API username", tenantApiSettings.apiUsername)}>Copy</Button>
                     </div>
                   </div>
-                  <Input value={tenantApiSettings.apiUsername} readOnly placeholder="Generated tenant API username" />
+                  <Input value={publicApiVisible.username ? tenantApiSettings.apiUsername : maskSecret(tenantApiSettings.apiUsername)} readOnly placeholder="Generated tenant API username" />
                 </div>
 
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label>API Password</Label>
                     <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        disabled={!tenantApiSettings.apiPassword}
+                        onClick={() => setPublicApiVisible((prev) => ({ ...prev, password: !prev.password }))}
+                      >
+                        {publicApiVisible.password ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
                       <Button type="button" size="sm" variant="outline" disabled={!tenantApiSettings.publicApiEnabled} onClick={() => setTenantApiSettings((prev) => ({ ...prev, apiPassword: generateToken("tx_pw_", 28) }))}>Generate</Button>
                       <Button type="button" size="sm" variant="outline" disabled={!tenantApiSettings.apiPassword} onClick={() => copyValue("API password", tenantApiSettings.apiPassword)}>Copy</Button>
                     </div>
                   </div>
-                  <Input value={tenantApiSettings.apiPassword} readOnly placeholder="Generated tenant API password" />
+                  <Input value={publicApiVisible.password ? tenantApiSettings.apiPassword : maskSecret(tenantApiSettings.apiPassword)} readOnly placeholder="Generated tenant API password" />
                 </div>
 
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-3">
                     <Label>API Key</Label>
                     <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-8 w-8"
+                        disabled={!tenantApiSettings.apiKey}
+                        onClick={() => setPublicApiVisible((prev) => ({ ...prev, apiKey: !prev.apiKey }))}
+                      >
+                        {publicApiVisible.apiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
                       <Button type="button" size="sm" variant="outline" disabled={!tenantApiSettings.publicApiEnabled} onClick={() => setTenantApiSettings((prev) => ({ ...prev, apiKey: generateToken("tx_live_sk_", 30) }))}>Generate</Button>
                       <Button type="button" size="sm" variant="outline" disabled={!tenantApiSettings.apiKey} onClick={() => copyValue("API key", tenantApiSettings.apiKey)}>Copy</Button>
                     </div>
                   </div>
-                  <Input value={tenantApiSettings.apiKey} readOnly placeholder="Generated tenant API key" />
+                  <Input value={publicApiVisible.apiKey ? tenantApiSettings.apiKey : maskSecret(tenantApiSettings.apiKey)} readOnly placeholder="Generated tenant API key" />
                 </div>
 
                 <div className="grid gap-2">

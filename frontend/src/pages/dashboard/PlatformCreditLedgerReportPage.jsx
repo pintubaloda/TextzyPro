@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getPlatformCreditLedgerReport } from "@/lib/api";
+import { getPlatformCreditLedgerReport, getPlatformCustomers } from "@/lib/api";
 import { toast } from "sonner";
 
 const formatUtc = (value) => {
@@ -70,17 +70,23 @@ function SummaryCard({ title, value, hint }) {
 export default function PlatformCreditLedgerReportPage() {
   const [busy, setBusy] = useState(false);
   const [data, setData] = useState({ summary: {}, items: [] });
-  const [filters, setFilters] = useState({ service: "all", status: "all", q: "", take: 300, page: 1, pageSize: 12 });
+  const [tenants, setTenants] = useState([]);
+  const [filters, setFilters] = useState({ tenantId: "all", service: "all", status: "all", q: "", take: 300, page: 1, pageSize: 12 });
 
   const load = async (next = filters) => {
     setBusy(true);
     try {
-      const res = await getPlatformCreditLedgerReport({
-        service: next.service === "all" ? "" : next.service,
-        status: next.status === "all" ? "" : next.status,
-        q: next.q,
-        take: next.take,
-      });
+      const [customerRows, res] = await Promise.all([
+        getPlatformCustomers("").catch(() => []),
+        getPlatformCreditLedgerReport({
+          tenantId: next.tenantId === "all" ? "" : next.tenantId,
+          service: next.service === "all" ? "" : next.service,
+          status: next.status === "all" ? "" : next.status,
+          q: next.q,
+          take: next.take,
+        }),
+      ]);
+      setTenants(Array.isArray(customerRows) ? customerRows : []);
       setData({
         summary: res?.summary || {},
         items: Array.isArray(res?.items) ? res.items : [],
@@ -158,6 +164,20 @@ export default function PlatformCreditLedgerReportPage() {
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-4">
                 <div className="space-y-2">
+                  <Label>Tenant slug</Label>
+                  <Select value={filters.tenantId} onValueChange={(value) => setFilters((prev) => ({ ...prev, tenantId: value, page: 1 }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All tenants</SelectItem>
+                      {tenants.map((tenant) => (
+                        <SelectItem key={tenant.tenantId} value={tenant.tenantId}>
+                          {tenant.tenantSlug || tenant.companyName || tenant.tenantName || tenant.tenantId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
                   <Label>Service</Label>
                   <Select value={filters.service} onValueChange={(value) => setFilters((prev) => ({ ...prev, service: value, page: 1 }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -190,13 +210,13 @@ export default function PlatformCreditLedgerReportPage() {
                     onKeyDown={(event) => {
                       if (event.key === "Enter") load(filters);
                     }}
-                    placeholder="tenant, slug, metric key, source, ref id"
+                    placeholder="metric key, source, service, ref id"
                   />
                 </div>
                 <div className="md:col-span-4 flex flex-wrap gap-2">
                   <Button className="bg-slate-900 hover:bg-slate-800" onClick={() => load(filters)} disabled={busy}>Apply Filters</Button>
                   <Button variant="outline" onClick={() => {
-                    const reset = { service: "all", status: "all", q: "", take: 300, page: 1, pageSize: 12 };
+                    const reset = { tenantId: "all", service: "all", status: "all", q: "", take: 300, page: 1, pageSize: 12 };
                     setFilters(reset);
                     load(reset);
                   }}>Reset</Button>
