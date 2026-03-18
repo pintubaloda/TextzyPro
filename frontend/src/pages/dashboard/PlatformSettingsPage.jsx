@@ -1043,47 +1043,23 @@ const PlatformSettingsPage = () => {
       {activeTab === "integration-catalog" && (
         <Card className="border-slate-200 shadow-sm">
           <CardHeader>
-            <CardTitle>Documentation Center</CardTitle>
-            <CardDescription>Use the same professional references your tenants use, with direct access to SMS, WhatsApp, and KYC integration documentation.</CardDescription>
+            <CardTitle>API Documentation</CardTitle>
+            <CardDescription>Use the same single professional API document your tenants use, with SMS, WhatsApp, and KYC sections in one place.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start justify-between gap-3">
+          <CardContent>
+            <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-orange-50 via-white to-emerald-50 p-5">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="font-medium text-slate-950">SMS API Reference</p>
-                  <p className="mt-1 text-sm text-slate-500">Public SMS API, DLT mapping, Tata delivery flow, sender registry, callbacks, and rollout checklist.</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Unified Developer Docs</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">Textzy API Documentation</p>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-600">A single polished document covering SMS, WhatsApp, DigiLocker KYC, GST verification, sample requests, response models, webhooks, and rollout guidance.</p>
                 </div>
                 <FileText className="h-5 w-5 text-orange-500" />
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "sms" })}>Read in App</Button>
-                <Button variant="outline" onClick={() => window.open("/docs/sms-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-slate-950">WhatsApp API Reference</p>
-                  <p className="mt-1 text-sm text-slate-500">Messaging, templates, flows, automation, webhooks, diagnostics, and production operations.</p>
-                </div>
-                <FileText className="h-5 w-5 text-sky-500" />
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "whatsapp" })}>Read in App</Button>
-                <Button variant="outline" onClick={() => window.open("/docs/whatsapp-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-slate-950">KYC API Reference (DigiLocker)</p>
-                  <p className="mt-1 text-sm text-slate-500">KYC session APIs, redirect + callback flow, webhook payload, document types, and credit-based billing.</p>
-                </div>
-                <ShieldCheck className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "kyc" })}>Read in App</Button>
-                <Button variant="outline" onClick={() => window.open("/docs/kyc-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
+                <Button variant="outline" onClick={() => window.open("/docs/index.html", "_blank", "noopener,noreferrer")}>Open Full Document</Button>
+                <Button variant="outline" onClick={() => window.open("/docs/index.html#whatsapp-send", "_blank", "noopener,noreferrer")}>Jump to WhatsApp</Button>
               </div>
             </div>
           </CardContent>

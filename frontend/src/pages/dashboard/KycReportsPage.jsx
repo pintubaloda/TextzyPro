@@ -21,10 +21,11 @@ function safeGet(obj, key, fallback = "") {
 
 function normalizeStatus(status) {
   const s = String(status || "").toLowerCase();
-  if (s === "verified") return { label: "Verified", variant: "default" };
-  if (s === "failed") return { label: "Failed", variant: "destructive" };
-  if (s) return { label: s, variant: "secondary" };
-  return { label: "-", variant: "secondary" };
+  if (s === "verified" || s === "success") return { label: "Success", className: "border border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100" };
+  if (s === "failed" || s === "error") return { label: "Fail", className: "border border-rose-200 bg-rose-100 text-rose-700 hover:bg-rose-100" };
+  if (s === "created" || s === "redirected" || s === "pending" || s === "expired") return { label: "Pending", className: "border border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100" };
+  if (s) return { label: s, className: "border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" };
+  return { label: "-", className: "border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" };
 }
 
 function toDataUrl(base64) {
@@ -41,6 +42,31 @@ function decodeBase64ToBlobUrl(base64, mime = "application/pdf") {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const blob = new Blob([bytes], { type: mime || "application/octet-stream" });
   return URL.createObjectURL(blob);
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
+function formatResponse(value) {
+  if (!value) return "{}";
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function KycPreviewCard({ brand, collected, active }) {
@@ -199,6 +225,14 @@ export default function KycReportsPage() {
     return [...rows].sort((a, b) => String(b?.createdAtUtc || "").localeCompare(String(a?.createdAtUtc || "")));
   }, [rows]);
 
+  const summary = useMemo(() => {
+    const total = sorted.length;
+    const verified = sorted.filter((row) => String(row?.status || "").toLowerCase() === "verified").length;
+    const failed = sorted.filter((row) => String(row?.status || "").toLowerCase() === "failed").length;
+    const creditsUsed = sorted.reduce((sum, row) => sum + Number(row?.creditsUsed || 0), 0);
+    return { total, verified, failed, creditsUsed };
+  }, [sorted]);
+
   async function openRow(r) {
     setActive(r);
     setActiveDetail(null);
@@ -241,11 +275,18 @@ export default function KycReportsPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <Card className="rounded-3xl border-slate-200"><CardContent className="pt-5"><div className="text-xs uppercase text-slate-500">Sessions</div><div className="mt-2 text-2xl font-semibold text-slate-900">{summary.total}</div><div className="text-xs text-slate-500">Saved KYC records</div></CardContent></Card>
+        <Card className="rounded-3xl border-slate-200"><CardContent className="pt-5"><div className="text-xs uppercase text-slate-500">Verified</div><div className="mt-2 text-2xl font-semibold text-emerald-700">{summary.verified}</div><div className="text-xs text-slate-500">Completed successfully</div></CardContent></Card>
+        <Card className="rounded-3xl border-slate-200"><CardContent className="pt-5"><div className="text-xs uppercase text-slate-500">Failed</div><div className="mt-2 text-2xl font-semibold text-rose-700">{summary.failed}</div><div className="text-xs text-slate-500">Need review</div></CardContent></Card>
+        <Card className="rounded-3xl border-slate-200"><CardContent className="pt-5"><div className="text-xs uppercase text-slate-500">Credits Used</div><div className="mt-2 text-2xl font-semibold text-slate-900">{summary.creditsUsed}</div><div className="text-xs text-slate-500">Total KYC credits used</div></CardContent></Card>
+      </div>
+
       <Card className="rounded-3xl border-slate-200">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>
             <CardTitle>KYC Reports</CardTitle>
-            <CardDescription>Saved KYC sessions with extracted fields (PAN/Aadhaar) and document previews.</CardDescription>
+            <CardDescription>Saved KYC sessions with customer reference, credit usage, extracted fields, and document previews.</CardDescription>
           </div>
           <Button className="bg-orange-500 hover:bg-orange-600" disabled={busy} onClick={refresh}>
             {busy ? "Loading..." : "Refresh"}
@@ -259,6 +300,8 @@ export default function KycReportsPage() {
                   <th className="px-4 py-3">S.No</th>
                   <th className="px-4 py-3">Doc</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Customer Ref</th>
+                  <th className="px-4 py-3">Credits</th>
                   <th className="px-4 py-3">Session ID</th>
                   <th className="px-4 py-3">Mobile</th>
                   <th className="px-4 py-3">Email</th>
@@ -269,7 +312,7 @@ export default function KycReportsPage() {
               <tbody>
                 {sorted.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
                       No KYC records yet.
                     </td>
                   </tr>
@@ -283,12 +326,14 @@ export default function KycReportsPage() {
                         <td className="px-4 py-3">{idx + 1}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{String(doc || "").toUpperCase()}</td>
                         <td className="px-4 py-3">
-                          <Badge variant={status.variant}>{status.label}</Badge>
+                          <Badge className={status.className}>{status.label}</Badge>
                         </td>
+                        <td className="px-4 py-3 text-slate-700">{r.customerRef || "-"}</td>
+                        <td className="px-4 py-3 text-slate-700">{Number(r.creditsUsed || 0)}</td>
                         <td className="px-4 py-3 text-xs text-slate-700">{r.sessionId}</td>
                         <td className="px-4 py-3">{safeGet(c, "mobile", "-")}</td>
                         <td className="px-4 py-3">{safeGet(c, "email", "-")}</td>
-                        <td className="px-4 py-3 text-slate-500">{String(r.createdAtUtc || "").replace("T", " ").replace("Z", "")}</td>
+                        <td className="px-4 py-3 text-slate-500">{formatDate(r.createdAtUtc)}</td>
                         <td className="px-4 py-3 text-right">
                           <Button variant="outline" className="rounded-xl" onClick={() => openRow(r)}>
                             View more
@@ -309,6 +354,15 @@ export default function KycReportsPage() {
           <DialogHeader>
             <DialogTitle>KYC Record</DialogTitle>
           </DialogHeader>
+
+          {!active ? null : (
+            <div className="mb-4 grid gap-3 md:grid-cols-4">
+              <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Customer Ref</div><div className="mt-2 text-sm font-semibold text-slate-900">{activeDetail?.customerRef || active.customerRef || "-"}</div></CardContent></Card>
+              <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Credits Used</div><div className="mt-2 text-sm font-semibold text-slate-900">{Number(activeDetail?.creditsUsed || active?.creditsUsed || 0)}</div></CardContent></Card>
+              <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Created</div><div className="mt-2 text-sm font-semibold text-slate-900">{formatDate(activeDetail?.createdAtUtc || active.createdAtUtc)}</div></CardContent></Card>
+              <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Status</div><div className="mt-2 text-sm font-semibold text-slate-900"><Badge className={normalizeStatus(activeDetail?.status || active.status || "").className}>{normalizeStatus(activeDetail?.status || active.status || "").label}</Badge></div></CardContent></Card>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -453,6 +507,12 @@ export default function KycReportsPage() {
                 );
               })()}
 
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 text-xs font-medium text-slate-500">Received response</div>
+                <pre className="max-h-[220px] overflow-auto rounded-xl bg-white p-3 text-xs text-slate-700">
+                  {formatResponse(activeDetail?.result || active?.result || {})}
+                </pre>
+              </div>
             </div>
           </div>
         </DialogContent>

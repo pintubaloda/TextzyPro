@@ -1070,35 +1070,22 @@ export default function AdminPage() {
 
           <Card className="border-slate-200 shadow-sm">
             <CardHeader>
-              <CardTitle className="text-xl">Documentation Center</CardTitle>
-              <CardDescription>Platform-grade SMS and WhatsApp API references for admin operations, onboarding, and partner support.</CardDescription>
+              <CardTitle className="text-xl">API Documentation</CardTitle>
+              <CardDescription>One polished API document for admin operations, onboarding, tenant support, and partner integration work.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
+              <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-orange-50 via-white to-sky-50 p-5">
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-medium text-slate-950">SMS API Reference</p>
-                    <p className="mt-1 text-sm text-slate-500">Public SMS send, DLT mapping, Tata request model, delivery reporting, and rollout checklist.</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Single Documentation Experience</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">Textzy API Documentation</p>
+                    <p className="mt-2 max-w-3xl text-sm text-slate-600">A single final documentation page for SMS, WhatsApp, DigiLocker KYC, GST verification, request schemas, response examples, and operational guidance.</p>
                   </div>
                   <FileText className="h-5 w-5 text-orange-500" />
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "sms" })}>Read in App</Button>
-                  <Button variant="outline" onClick={() => window.open("/docs/sms-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-slate-950">WhatsApp API Reference</p>
-                    <p className="mt-1 text-sm text-slate-500">Messaging, templates, automation, flows, webhooks, diagnostics, and production operations.</p>
-                  </div>
-                  <FileText className="h-5 w-5 text-sky-500" />
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "whatsapp" })}>Read in App</Button>
-                  <Button variant="outline" onClick={() => window.open("/docs/whatsapp-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
+                  <Button variant="outline" onClick={() => window.open("/docs/index.html", "_blank", "noopener,noreferrer")}>Open Full Document</Button>
                 </div>
               </div>
             </CardContent>

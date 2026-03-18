@@ -639,64 +639,23 @@ const IntegrationsPage = () => {
 
           <Card className="border-slate-200 shadow-sm">
             <CardHeader>
-              <CardTitle>Documentation Center</CardTitle>
-              <CardDescription>Professional API references for SMS, WhatsApp, and KYC integrations, available directly inside the platform.</CardDescription>
+              <CardTitle>API Documentation</CardTitle>
+              <CardDescription>One final documentation page for SMS, WhatsApp, and KYC APIs. Old standalone pages are removed from the experience.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-slate-950">SMS API Reference</p>
-                      <p className="mt-1 text-sm text-slate-500">Simple URL mode, DLT mapping, Tata flow, sender registry, template registry, webhook model, and production checklist.</p>
-                    </div>
-                    <FileText className="h-5 w-5 text-orange-500" />
+              <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-orange-50 via-white to-sky-50 p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Single Documentation Experience</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">Textzy API Documentation</p>
+                    <p className="mt-2 max-w-3xl text-sm text-slate-600">Includes SMS, WhatsApp, DigiLocker KYC, GST verification, status APIs, examples, request fields, response formats, and implementation guidance in one professional document.</p>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "sms" })}>Read in App</Button>
-                    <Button variant="outline" onClick={() => window.open("/docs/sms-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
-                  </div>
+                  <FileText className="h-5 w-5 text-orange-500" />
                 </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-slate-950">WhatsApp API Reference</p>
-                      <p className="mt-1 text-sm text-slate-500">Messaging, templates, media, webhook, flow builder, automation, smoke testing, diagnostics, and production operations.</p>
-                    </div>
-                    <FileText className="h-5 w-5 text-sky-500" />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "whatsapp" })}>Read in App</Button>
-                    <Button variant="outline" onClick={() => window.open("/docs/whatsapp-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-slate-950">KYC API Reference (DigiLocker)</p>
-                      <p className="mt-1 text-sm text-slate-500">KYC session creation, DigiLocker redirect + callback flow, webhook payload, document types, and credit-based billing behavior.</p>
-                    </div>
-                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "kyc" })}>Read in App</Button>
-                    <Button variant="outline" onClick={() => window.open("/docs/kyc-api-reference.html", "_blank", "noopener,noreferrer")}>Open Full Page</Button>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-slate-900">Documentation Index</p>
-                      <p className="mt-1 text-slate-500">Use the documentation landing page for quick access to HTML references, markdown source, and Postman import files.</p>
-                    </div>
-                    <Button variant="outline" onClick={() => window.open("/docs/index.html", "_blank", "noopener,noreferrer")}>
-                      <ExternalLink className="mr-2 h-4 w-4" />
-                      Open Index
-                    </Button>
-                  </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => setDocViewer({ open: true, type: "sms" })}>Read in App</Button>
+                  <Button variant="outline" onClick={() => window.open("/docs/index.html", "_blank", "noopener,noreferrer")}>Open Full Document</Button>
+                  <Button variant="outline" onClick={() => window.open("/docs/index.html#kyc-digilocker", "_blank", "noopener,noreferrer")}>Jump to KYC</Button>
                 </div>
               </div>
             </CardContent>
