@@ -52,6 +52,21 @@ function persistCsrfFromResponse(res) {
   }
 }
 
+function persistAccessTokenFromResponse(res) {
+  const authorization = (res.headers.get('authorization') || '').trim()
+  const accessTokenHeader = (res.headers.get('x-access-token') || '').trim()
+  const bearerToken = authorization.toLowerCase().startsWith('bearer ')
+    ? authorization.slice('Bearer '.length).trim()
+    : ''
+  const accessToken = accessTokenHeader || bearerToken
+  if (!accessToken) return
+  try {
+    setSession({ accessToken })
+  } catch {
+    // ignore storage failures
+  }
+}
+
 export function getSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -292,6 +307,7 @@ async function baseFetch(path, options = {}, useAuth = true) {
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include', cache: 'no-store' })
   persistCsrfFromResponse(res)
+  persistAccessTokenFromResponse(res)
   return res
 }
 
@@ -534,6 +550,7 @@ export async function authLogin({ email, password, tenantSlug, emailVerification
     body: JSON.stringify({ email, password, tenantSlug: tenantSlug || '', emailVerificationId: emailVerificationId || '' })
   })
   persistCsrfFromResponse(res)
+  persistAccessTokenFromResponse(res)
   if (!res.ok) {
     const msg = await readErrorMessage(res, 'Login failed')
     throw new Error(msg)
@@ -600,6 +617,7 @@ export async function verifyLoginTwoFactor({ challengeToken, code, tenantSlug })
     body: JSON.stringify({ challengeToken, code })
   })
   persistCsrfFromResponse(res)
+  persistAccessTokenFromResponse(res)
   if (!res.ok) {
     throw await buildApiError(res, 'Two-factor verification failed')
   }
