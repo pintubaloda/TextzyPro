@@ -291,6 +291,8 @@ public class DigiLockerKycProvider(
         }
 
         using var tokenJson = JsonDocument.Parse(string.IsNullOrWhiteSpace(tokenBody) ? "{}" : tokenBody);
+        if (TryGetTokenExchangeError(tokenJson.RootElement, out var tokenError))
+            return new KycProviderCallbackResult(false, "failed", tokenError, tokenBody, Array.Empty<string>());
         var accessToken = tokenJson.RootElement.TryGetProperty("access_token", out var at) ? at.GetString() ?? "" : "";
         if (string.IsNullOrWhiteSpace(accessToken))
             return new KycProviderCallbackResult(false, "failed", "Missing access_token from provider.", tokenBody, Array.Empty<string>());
@@ -611,6 +613,54 @@ public class DigiLockerKycProvider(
         int MaxFilesPerSession,
         bool IncludeUserDetailsInResult,
         bool IncludeFilesInResult);
+
+    private static bool TryGetTokenExchangeError(JsonElement root, out string error)
+    {
+        error = string.Empty;
+
+        if (TryReadErrorObject(root, out error))
+            return true;
+
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("token", out var tokenElement) &&
+            tokenElement.ValueKind == JsonValueKind.String)
+        {
+            var tokenText = tokenElement.GetString();
+            if (!string.IsNullOrWhiteSpace(tokenText))
+            {
+                try
+                {
+                    using var nested = JsonDocument.Parse(tokenText);
+                    if (TryReadErrorObject(nested.RootElement, out error))
+                        return true;
+                }
+                catch
+                {
+                    // Ignore invalid nested JSON and continue.
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadErrorObject(JsonElement root, out string error)
+    {
+        error = string.Empty;
+        if (root.ValueKind != JsonValueKind.Object) return false;
+
+        var errorCode = root.TryGetProperty("error", out var ev) ? (ev.GetString() ?? string.Empty).Trim() : string.Empty;
+        var description = root.TryGetProperty("error_description", out var dv) ? (dv.GetString() ?? string.Empty).Trim() : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(errorCode) && string.IsNullOrWhiteSpace(description))
+            return false;
+
+        error = string.IsNullOrWhiteSpace(description)
+            ? $"Token exchange failed. error={errorCode}"
+            : $"Token exchange failed. error={errorCode} description={description}";
+
+        return true;
+    }
 
     private async Task<DigilockerSettings> LoadSettingsAsync(CancellationToken ct)
     {
