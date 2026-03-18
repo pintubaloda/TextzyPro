@@ -81,6 +81,19 @@ function isWithinDateRange(value, fromDate, toDate) {
   return true;
 }
 
+function prettifyFailureReason(reason) {
+  const text = String(reason || "").trim();
+  if (!text) return "";
+  const normalized = text.toLowerCase();
+  if (normalized.includes("invalid_grant_type") || normalized.includes("disable openid")) {
+    return "DigiLocker token exchange failed because the client is still using openid in its allowed scopes. Disable openid in the DigiLocker client configuration and try again.";
+  }
+  if (normalized.startsWith("provider_error:")) {
+    return text.slice("provider_error:".length).trim() || "Provider returned an error.";
+  }
+  return text;
+}
+
 function downloadCsv(filename, rows) {
   const csv = rows.map((cols) => cols.map((value) => {
     const normalized = String(value ?? "");
@@ -566,6 +579,13 @@ export default function KycReportsPage() {
               <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Status</div><div className="mt-2 text-sm font-semibold text-slate-900"><Badge className={normalizeStatus(activeDetail?.status || active.status || "").className}>{normalizeStatus(activeDetail?.status || active.status || "").label}</Badge></div></CardContent></Card>
             </div>
           )}
+
+          {prettifyFailureReason(activeDetail?.failureReason || active?.failureReason) ? (
+            <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">Failure Reason</div>
+              <div className="mt-1">{prettifyFailureReason(activeDetail?.failureReason || active?.failureReason)}</div>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">

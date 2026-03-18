@@ -115,6 +115,19 @@ function formatResponse(value) {
   }
 }
 
+function prettifyFailureReason(reason) {
+  const text = String(reason || "").trim();
+  if (!text) return "";
+  const normalized = text.toLowerCase();
+  if (normalized.includes("invalid_grant_type") || normalized.includes("disable openid")) {
+    return "DigiLocker token exchange failed because openid is still enabled in the DigiLocker client scopes. Disable openid in the DigiLocker client configuration and retry the session.";
+  }
+  if (normalized.startsWith("provider_error:")) {
+    return text.slice("provider_error:".length).trim() || "Provider returned an error.";
+  }
+  return text;
+}
+
 function KycPreviewCard({ collected, active }) {
   const name = safeGet(collected, "name", "-");
   const dob = safeGet(collected, "dob", "-");
@@ -511,6 +524,13 @@ export default function PlatformKycReportPage() {
                 <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Created</div><div className="mt-2 text-sm font-semibold text-slate-900">{formatDate(activeDetail?.createdAtUtc || active.createdAtUtc)}</div></CardContent></Card>
                 <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Status</div><div className="mt-2 text-sm font-semibold text-slate-900">{(() => { const status = statusBadge(activeDetail?.status || active.status || ""); const StatusIcon = status.icon; return <Badge className={status.className}><StatusIcon className="mr-1.5 h-3.5 w-3.5" />{status.label}</Badge>; })()}</div></CardContent></Card>
               </div>
+
+              {prettifyFailureReason(activeDetail?.failureReason || active?.failureReason) ? (
+                <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">Failure Reason</div>
+                  <div className="mt-1">{prettifyFailureReason(activeDetail?.failureReason || active?.failureReason)}</div>
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
