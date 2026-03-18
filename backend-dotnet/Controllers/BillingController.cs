@@ -280,6 +280,82 @@ public class BillingController(
         });
     }
 
+    [HttpGet("credit-ledger")]
+    public async Task<IActionResult> CreditLedger(
+        [FromQuery] string service = "",
+        [FromQuery] string status = "",
+        [FromQuery] string q = "",
+        [FromQuery] int take = 250,
+        CancellationToken ct = default)
+    {
+        if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
+        if (!rbac.HasPermission(BillingRead)) return Forbid();
+
+        take = Math.Clamp(take, 25, 1000);
+        var normalizedService = (service ?? string.Empty).Trim().ToLowerInvariant();
+        var normalizedStatus = (status ?? string.Empty).Trim().ToLowerInvariant();
+        var normalizedQuery = (q ?? string.Empty).Trim().ToLowerInvariant();
+
+        var rows = await db.TenantCreditTransactions.AsNoTracking()
+            .Where(x => x.TenantId == tenancy.TenantId)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(Math.Min(take * 3, 3000))
+            .ToListAsync(ct);
+
+        var filtered = rows
+            .Where(x => string.IsNullOrWhiteSpace(normalizedService) || (x.Service ?? string.Empty).Contains(normalizedService, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.IsNullOrWhiteSpace(normalizedStatus) || string.Equals((x.Status ?? string.Empty).Trim(), normalizedStatus, StringComparison.OrdinalIgnoreCase))
+            .Where(x =>
+                string.IsNullOrWhiteSpace(normalizedQuery) ||
+                string.Join(" ", new[]
+                {
+                    x.MetricKey,
+                    x.TransactionType,
+                    x.Source,
+                    x.Service,
+                    x.ReferenceId,
+                    x.Status
+                }).ToLowerInvariant().Contains(normalizedQuery))
+            .Take(take)
+            .ToList();
+
+        var balances = await GetCreditBalancesAsync(tenancy.TenantId, ct);
+
+        return Ok(new
+        {
+            summary = new
+            {
+                totalEntries = filtered.Count,
+                debitUnits = filtered.Where(x => string.Equals(x.TransactionType, "debit", StringComparison.OrdinalIgnoreCase)).Sum(x => x.Units),
+                refundUnits = filtered.Where(x => string.Equals(x.TransactionType, "refund", StringComparison.OrdinalIgnoreCase)).Sum(x => x.Units),
+                creditUnits = filtered.Where(x => string.Equals(x.TransactionType, "credit", StringComparison.OrdinalIgnoreCase)).Sum(x => x.Units),
+                services = filtered
+                    .GroupBy(x => string.IsNullOrWhiteSpace(x.Service) ? "unknown" : x.Service.Trim().ToLowerInvariant())
+                    .Select(g => new
+                    {
+                        service = g.Key,
+                        count = g.Count(),
+                        units = g.Sum(x => x.Units)
+                    })
+                    .OrderByDescending(x => x.count)
+                    .ToList(),
+                currentBalances = balances
+            },
+            items = filtered.Select(x => new
+            {
+                id = x.Id,
+                occurredAtUtc = x.CreatedAtUtc,
+                metricKey = x.MetricKey,
+                transactionType = x.TransactionType,
+                units = x.Units,
+                source = x.Source,
+                service = x.Service,
+                referenceId = x.ReferenceId,
+                status = x.Status
+            })
+        });
+    }
+
     [HttpGet("dunning-status")]
     public async Task<IActionResult> DunningStatus(CancellationToken ct)
     {

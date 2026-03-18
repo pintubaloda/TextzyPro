@@ -74,13 +74,14 @@ public class KycController(
             }
         }
 
-        // Pre-check credits/limits (non-destructive). Actual consumption happens only on verified callback.
+        // Pre-check credits/limits and reserve credits up front. Failed sessions are refunded later.
         var pluginSlug = $"{provider}-kyc";
         var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
         var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
         var baseCredits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
         var operationCode = normalizedDocTypes.Count == 1 ? normalizedDocTypes[0] : string.Empty;
         var creditsNeeded = billingCfg.ResolveCredits(operationCode, baseCredits);
+        var sessionId = Guid.NewGuid();
 
         var current = await billingGuard.GetCurrentUsageAsync(tenancy.TenantId, metricKey, ct);
         var check = await billingGuard.CheckLimitAsync(tenancy.TenantId, metricKey, current + creditsNeeded, ct);
@@ -97,13 +98,20 @@ public class KycController(
             });
         }
 
-        var consume = await billingGuard.TryConsumeAsync(tenancy.TenantId, metricKey, creditsNeeded, ct);
+        var consume = await billingGuard.TryConsumeDetailedAsync(
+            tenancy.TenantId,
+            metricKey,
+            creditsNeeded,
+            source: "kyc.session.create",
+            service: pluginSlug,
+            referenceId: sessionId.ToString(),
+            ct: ct);
         if (!consume.Allowed)
             return StatusCode(StatusCodes.Status402PaymentRequired, new { error = consume.Message, key = metricKey });
 
         var row = new KycSession
         {
-            Id = Guid.NewGuid(),
+            Id = sessionId,
             TenantId = tenancy.TenantId,
             CreatedByUserId = auth.UserId,
             ProviderCode = provider,
@@ -134,8 +142,24 @@ public class KycController(
         db.KycSessions.Add(row);
         await db.SaveChangesAsync(ct);
 
-        var providerImpl = router.Resolve(provider);
-        var (redirectUrl, state) = await providerImpl.BuildRedirectAsync(row, ct);
+        string redirectUrl;
+        string state;
+        try
+        {
+            var providerImpl = router.Resolve(provider);
+            (redirectUrl, state) = await providerImpl.BuildRedirectAsync(row, ct);
+        }
+        catch
+        {
+            await billingGuard.RefundConsumptionAsync(consume.Receipt, ct);
+            row.Status = "failed";
+            row.FailureReason = "Failed to initialize KYC session.";
+            row.CreditsUsed = 0;
+            row.UpdatedAtUtc = DateTime.UtcNow;
+            row.CompletedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return Ok(new { status = row.Status, failureReason = row.FailureReason, sessionId = row.Id });
+        }
         await audit.WriteAsync("kyc.session.create", $"provider={provider}; tenant={tenancy.TenantSlug}; session={row.Id}", ct);
 
         var payload = new

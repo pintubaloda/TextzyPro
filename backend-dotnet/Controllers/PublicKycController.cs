@@ -50,6 +50,7 @@ public class PublicKycController(
             row.FailureReason = $"provider_error:{error}";
             row.CompletedAtUtc = DateTime.UtcNow;
             row.UpdatedAtUtc = DateTime.UtcNow;
+            await ReverseConsumedCreditsIfNeededAsync(row, ct);
             await db.SaveChangesAsync(ct);
             await TryWebhookAsync(row, ok: false, ct);
             return RedirectToOutcome(row, ok: false);
@@ -66,6 +67,8 @@ public class PublicKycController(
         row.ResultJsonEncrypted = string.IsNullOrWhiteSpace(result.ResultJson) ? string.Empty : crypto.Encrypt(result.ResultJson);
         row.CompletedAtUtc = DateTime.UtcNow;
         row.UpdatedAtUtc = DateTime.UtcNow;
+        if (!result.Ok && string.Equals(row.Status, "failed", StringComparison.OrdinalIgnoreCase))
+            await ReverseConsumedCreditsIfNeededAsync(row, ct);
         await db.SaveChangesAsync(ct);
 
         if (result.Ok && row.CreditsUsed <= 0)
@@ -103,6 +106,30 @@ public class PublicKycController(
 
         await TryWebhookAsync(row, ok: result.Ok, ct);
         return RedirectToOutcome(row, ok: result.Ok);
+    }
+
+    private async Task ReverseConsumedCreditsIfNeededAsync(KycSession row, CancellationToken ct)
+    {
+        if (row.CreditsUsed <= 0 || string.IsNullOrWhiteSpace(row.BillingMetric))
+            return;
+
+        try
+        {
+            await billingGuard.AddCreditUnitsAsync(
+                row.TenantId,
+                row.BillingMetric,
+                row.CreditsUsed,
+                ct,
+                source: "public.kyc.callback",
+                service: $"{row.ProviderCode}-kyc",
+                referenceId: row.Id.ToString(),
+                status: "refunded");
+            row.CreditsUsed = 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to refund KYC credits for tenant {TenantId} session {SessionId}", row.TenantId, row.Id);
+        }
     }
 
     private static Guid ResolveSessionIdFromQueryOrState(string? sessionId, string? state)

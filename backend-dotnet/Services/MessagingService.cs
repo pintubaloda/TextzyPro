@@ -248,10 +248,21 @@ public class MessagingService(
             ? EstimateSmsSegments(messageBody)
             : new SmsSegmentInfo(1, false);
 
+        BillingConsumeReceipt? consumeReceipt = null;
+        var messageId = Guid.NewGuid();
+
         if (request.Channel == ChannelType.WhatsApp)
         {
-            var c = await billingGuard.TryConsumeAsync(tenancy.TenantId, "whatsappMessages", 1, ct);
+            var c = await billingGuard.TryConsumeDetailedAsync(
+                tenancy.TenantId,
+                "whatsappMessages",
+                1,
+                source: "messaging.enqueue",
+                service: "whatsapp",
+                referenceId: messageId.ToString(),
+                ct: ct);
             if (!c.Allowed) throw new InvalidOperationException(c.Message);
+            consumeReceipt = c.Receipt;
         }
         else if (request.Channel == ChannelType.Sms)
         {
@@ -260,152 +271,173 @@ public class MessagingService(
             if (optedOut)
                 throw new InvalidOperationException("Recipient has opted out from SMS.");
 
-            var c = await billingGuard.TryConsumeAsync(tenancy.TenantId, "smsCredits", smsSegmentInfo.Segments, ct);
+            var c = await billingGuard.TryConsumeDetailedAsync(
+                tenancy.TenantId,
+                "smsCredits",
+                smsSegmentInfo.Segments,
+                source: "messaging.enqueue",
+                service: "sms",
+                referenceId: messageId.ToString(),
+                ct: ct);
             if (!c.Allowed) throw new InvalidOperationException(c.Message);
+            consumeReceipt = c.Receipt;
         }
-
-        var message = new Message
+        try
         {
-            Id = Guid.NewGuid(),
-            TenantId = tenancy.TenantId,
-            CampaignId = request.CampaignId,
-            Channel = request.Channel,
-            Recipient = request.Recipient,
-            Body = messageBody,
-            MessageType = messageType,
-            IdempotencyKey = idempotencyKey,
-            RetryCount = 0,
-            LastError = string.Empty,
-            QueueProvider = queue.ActiveProvider,
-            Status = "Queued"
-        };
-
-        db.Messages.Add(message);
-        if (keyRow is null)
-        {
-            keyRow = new IdempotencyKeyRecord
+            var message = new Message
             {
-                Id = Guid.NewGuid(),
+                Id = messageId,
                 TenantId = tenancy.TenantId,
-                Key = idempotencyKey,
-                MessageId = message.Id,
-                Status = "reserved",
-                CreatedAtUtc = now,
-                ExpiresAtUtc = now.AddHours(24)
+                CampaignId = request.CampaignId,
+                Channel = request.Channel,
+                Recipient = request.Recipient,
+                Body = messageBody,
+                MessageType = messageType,
+                IdempotencyKey = idempotencyKey,
+                RetryCount = 0,
+                LastError = string.Empty,
+                QueueProvider = queue.ActiveProvider,
+                Status = "Queued"
             };
-            db.IdempotencyKeys.Add(keyRow);
-        }
-        else
-        {
-            keyRow.MessageId = message.Id;
-            keyRow.Status = "reserved";
-            keyRow.ExpiresAtUtc = now.AddHours(24);
-        }
-        db.MessageEvents.Add(new MessageEvent
-        {
-            Id = Guid.NewGuid(),
-            TenantId = tenancy.TenantId,
-            MessageId = message.Id,
-            ProviderMessageId = message.ProviderMessageId,
-            Direction = "outbound",
-            EventType = "queued",
-            State = "Queued",
-            StatePriority = 10,
-            EventTimestampUtc = DateTime.UtcNow,
-            RecipientId = message.Recipient,
-            CustomerPhone = message.Recipient,
-            MessageType = message.MessageType,
-            RawPayloadJson = "{}",
-            CreatedAtUtc = DateTime.UtcNow
-        });
 
-        if (request.Channel == ChannelType.Sms)
-        {
-            const decimal unitPrice = 1.00m; // Per-message charge model
-            db.SmsBillingLedgers.Add(new SmsBillingLedger
+            db.Messages.Add(message);
+            if (keyRow is null)
             {
-                Id = Guid.NewGuid(),
-                TenantId = tenancy.TenantId,
-                MessageId = message.Id,
-                Recipient = message.Recipient,
-                ProviderMessageId = string.Empty,
-                Currency = "INR",
-                UnitPrice = unitPrice,
-                Segments = smsSegmentInfo.Segments,
-                TotalAmount = decimal.Round(unitPrice * smsSegmentInfo.Segments, 2),
-                BillingState = "charged",
-                DeliveryState = "submitted",
-                Notes = smsSegmentInfo.IsUnicode
-                    ? "Charged at enqueue (Unicode SMS segmenting: 70/67)."
-                    : "Charged at enqueue (English SMS segmenting: 160/153).",
-                CreatedAtUtc = DateTime.UtcNow
-            });
-        }
-
-        // Auto-create/update contact from outbound sends (WhatsApp/SMS).
-        var recipientHash = contactPii.IsEnabled ? contactPii.ComputePhoneHash(request.Recipient) : string.Empty;
-        var existingContact = contactPii.IsEnabled
-            ? db.Contacts.FirstOrDefault(x => x.TenantId == tenancy.TenantId && x.PhoneHash == recipientHash)
-            : db.Contacts.FirstOrDefault(x => x.TenantId == tenancy.TenantId && x.Phone == request.Recipient);
-        if (existingContact is null)
-        {
-            var defaultSegment = db.ContactSegments.FirstOrDefault(x => x.TenantId == tenancy.TenantId && x.Name.ToLower() == "new");
-            if (defaultSegment is null)
-            {
-                defaultSegment = new ContactSegment
+                keyRow = new IdempotencyKeyRecord
                 {
                     Id = Guid.NewGuid(),
                     TenantId = tenancy.TenantId,
-                    Name = "New",
-                    RuleJson = "{}",
-                    CreatedAtUtc = DateTime.UtcNow
+                    Key = idempotencyKey,
+                    MessageId = message.Id,
+                    Status = "reserved",
+                    CreatedAtUtc = now,
+                    ExpiresAtUtc = now.AddHours(24)
                 };
-                db.ContactSegments.Add(defaultSegment);
+                db.IdempotencyKeys.Add(keyRow);
             }
-
-            var newContact = new Contact
+            else
+            {
+                keyRow.MessageId = message.Id;
+                keyRow.Status = "reserved";
+                keyRow.ExpiresAtUtc = now.AddHours(24);
+            }
+            db.MessageEvents.Add(new MessageEvent
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenancy.TenantId,
-                Name = request.Recipient,
-                Phone = request.Recipient,
-                SegmentId = defaultSegment.Id,
-                TagsCsv = "New",
-                OptInStatus = "unknown",
+                MessageId = message.Id,
+                ProviderMessageId = message.ProviderMessageId,
+                Direction = "outbound",
+                EventType = "queued",
+                State = "Queued",
+                StatePriority = 10,
+                EventTimestampUtc = DateTime.UtcNow,
+                RecipientId = message.Recipient,
+                CustomerPhone = message.Recipient,
+                MessageType = message.MessageType,
+                RawPayloadJson = "{}",
                 CreatedAtUtc = DateTime.UtcNow
-            };
-            contactPii.Protect(newContact);
-            db.Contacts.Add(newContact);
-            var currentContacts = await db.Contacts.CountAsync(x => x.TenantId == tenancy.TenantId, ct);
-            await billingGuard.SetAbsoluteUsageAsync(tenancy.TenantId, "contacts", currentContacts + 1, ct);
-        }
-        else
-        {
-            if (string.IsNullOrWhiteSpace(existingContact.Name) && string.IsNullOrWhiteSpace(existingContact.NameEncrypted))
-                existingContact.Name = request.Recipient;
-            contactPii.Protect(existingContact);
-        }
+            });
 
-        try
-        {
-            await db.SaveChangesAsync(ct);
+            if (request.Channel == ChannelType.Sms)
+            {
+                const decimal unitPrice = 1.00m; // Per-message charge model
+                db.SmsBillingLedgers.Add(new SmsBillingLedger
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenancy.TenantId,
+                    MessageId = message.Id,
+                    Recipient = message.Recipient,
+                    ProviderMessageId = string.Empty,
+                    Currency = "INR",
+                    UnitPrice = unitPrice,
+                    Segments = smsSegmentInfo.Segments,
+                    TotalAmount = decimal.Round(unitPrice * smsSegmentInfo.Segments, 2),
+                    BillingState = "charged",
+                    DeliveryState = "submitted",
+                    Notes = smsSegmentInfo.IsUnicode
+                        ? "Charged at enqueue (Unicode SMS segmenting: 70/67)."
+                        : "Charged at enqueue (English SMS segmenting: 160/153).",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+            }
+
+            var recipientHash = contactPii.IsEnabled ? contactPii.ComputePhoneHash(request.Recipient) : string.Empty;
+            var existingContact = contactPii.IsEnabled
+                ? db.Contacts.FirstOrDefault(x => x.TenantId == tenancy.TenantId && x.PhoneHash == recipientHash)
+                : db.Contacts.FirstOrDefault(x => x.TenantId == tenancy.TenantId && x.Phone == request.Recipient);
+            if (existingContact is null)
+            {
+                var defaultSegment = db.ContactSegments.FirstOrDefault(x => x.TenantId == tenancy.TenantId && x.Name.ToLower() == "new");
+                if (defaultSegment is null)
+                {
+                    defaultSegment = new ContactSegment
+                    {
+                        Id = Guid.NewGuid(),
+                        TenantId = tenancy.TenantId,
+                        Name = "New",
+                        RuleJson = "{}",
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                    db.ContactSegments.Add(defaultSegment);
+                }
+
+                var newContact = new Contact
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenancy.TenantId,
+                    Name = request.Recipient,
+                    Phone = request.Recipient,
+                    SegmentId = defaultSegment.Id,
+                    TagsCsv = "New",
+                    OptInStatus = "unknown",
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+                contactPii.Protect(newContact);
+                db.Contacts.Add(newContact);
+                var currentContacts = await db.Contacts.CountAsync(x => x.TenantId == tenancy.TenantId, ct);
+                await billingGuard.SetAbsoluteUsageAsync(tenancy.TenantId, "contacts", currentContacts + 1, ct);
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(existingContact.Name) && string.IsNullOrWhiteSpace(existingContact.NameEncrypted))
+                    existingContact.Name = request.Recipient;
+                contactPii.Protect(existingContact);
+            }
+
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                var existingAfterConflict = await db.Messages
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.TenantId == tenancy.TenantId && x.IdempotencyKey == idempotencyKey, ct);
+                if (existingAfterConflict is not null)
+                {
+                    await billingGuard.RefundConsumptionAsync(consumeReceipt, ct);
+                    consumeReceipt = null;
+                    return existingAfterConflict;
+                }
+                throw;
+            }
+
+            await queue.EnqueueAsync(new OutboundMessageQueueItem
+            {
+                MessageId = message.Id,
+                TenantId = tenancy.TenantId,
+                TenantSlug = tenancy.TenantSlug,
+                IdempotencyKey = idempotencyKey
+            }, ct);
+            consumeReceipt = null;
+            return message;
         }
-        catch (DbUpdateException)
+        catch
         {
-            var existingAfterConflict = await db.Messages
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.TenantId == tenancy.TenantId && x.IdempotencyKey == idempotencyKey, ct);
-            if (existingAfterConflict is not null) return existingAfterConflict;
+            await billingGuard.RefundConsumptionAsync(consumeReceipt, ct);
             throw;
         }
-        await queue.EnqueueAsync(new OutboundMessageQueueItem
-        {
-            MessageId = message.Id,
-            TenantId = tenancy.TenantId,
-            TenantSlug = tenancy.TenantSlug,
-            IdempotencyKey = idempotencyKey
-        }, ct);
-        return message;
     }
 
     private readonly record struct SmsSegmentInfo(int Segments, bool IsUnicode);

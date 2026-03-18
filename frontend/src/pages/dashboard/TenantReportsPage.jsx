@@ -10,10 +10,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { downloadBillingInvoice, getBillingInvoices, listSmsBillingLedger, listWhatsappMessageReport } from "@/lib/api";
 import KycReportsPage from "./KycReportsPage";
+import TenantCreditLedgerReportPage from "./TenantCreditLedgerReportPage";
 import TenantLedgerReportPage from "./TenantLedgerReportPage";
 
 const REPORT_OPTIONS = [
   { value: "ledger", label: "Unified Ledger", description: "One timeline for SMS, WhatsApp, KYC, and billing purchases." },
+  { value: "credit-ledger", label: "Credit Ledger", description: "Simple debit, refund, and credit movement trail for credit-based services." },
   { value: "sms", label: "SMS Usage Report", description: "Per-message SMS billing and delivery ledger." },
   { value: "whatsapp", label: "WhatsApp Usage Report", description: "Outbound WhatsApp messages with status and delivery timing." },
   { value: "kyc", label: "KYC Usage Report", description: "KYC sessions with document previews, status, and extracted data." },
@@ -187,7 +189,7 @@ function SmsUsageReportPanel() {
           </table>
         </div>
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}–{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
+          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}ï¿½{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
           <div className="flex items-center gap-2">
             <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
               <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
@@ -374,7 +376,7 @@ function WhatsAppUsageReportPanel() {
           </table>
         </div>
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}–{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
+          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}ï¿½{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
           <div className="flex items-center gap-2">
             <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
               <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
@@ -574,7 +576,7 @@ function PurchaseReportPanel() {
           </table>
         </div>
         <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
-          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}–{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
+          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}ï¿½{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
           <div className="flex items-center gap-2">
             <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
               <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
@@ -635,6 +637,7 @@ export default function TenantReportsPage() {
       </Card>
 
       {report === "ledger" && <TenantLedgerReportPage />}
+      {report === "credit-ledger" && <TenantCreditLedgerReportPage />}
       {report === "sms" && <SmsUsageReportPanel />}
       {report === "whatsapp" && <WhatsAppUsageReportPanel />}
       {report === "kyc" && <KycReportsPage />}

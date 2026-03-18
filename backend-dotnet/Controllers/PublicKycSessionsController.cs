@@ -230,32 +230,6 @@ public class PublicKycSessionsController(
             return Ok(new { status = "failed", failureReason = $"docType '{docType}' is not allowed. Allowed: {string.Join(", ", allowed)}" });
         }
 
-        // Credit pre-check.
-        var pluginSlug = $"{provider}-kyc";
-        var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
-        var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
-        var baseCredits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
-        var creditsNeeded = billingCfg.ResolveCredits(docType, baseCredits);
-
-        var current = await billingGuard.GetCurrentUsageAsync(tenantId, metricKey, ct);
-        var check = await billingGuard.CheckLimitAsync(tenantId, metricKey, current + creditsNeeded, ct);
-        if (!check.Allowed)
-            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = check.Message, key = metricKey });
-
-        var available = await billingGuard.GetTotalAvailableUnitsAsync(tenantId, metricKey, ct);
-        if (available != int.MaxValue && available < creditsNeeded)
-        {
-            return StatusCode(StatusCodes.Status402PaymentRequired, new
-            {
-                error = $"Insufficient credits. Need {creditsNeeded} {metricKey} units, available {available}.",
-                key = metricKey
-            });
-        }
-
-        var consume = await billingGuard.TryConsumeAsync(tenantId, metricKey, creditsNeeded, ct);
-        if (!consume.Allowed)
-            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = consume.Message, key = metricKey });
-
         var webhookUrl = (request.WebhookUrl ?? string.Empty).Trim();
         var customerRef = (request.CustomerRef ?? string.Empty).Trim();
         if (!string.IsNullOrWhiteSpace(customerRef))
@@ -273,9 +247,43 @@ public class PublicKycSessionsController(
             if (!string.IsNullOrWhiteSpace(defaultWebhook)) webhookUrl = defaultWebhook;
         }
 
+        // Credit pre-check.
+        var pluginSlug = $"{provider}-kyc";
+        var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
+        var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
+        var baseCredits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
+        var creditsNeeded = billingCfg.ResolveCredits(docType, baseCredits);
+        var sessionId = Guid.NewGuid();
+
+        var current = await billingGuard.GetCurrentUsageAsync(tenantId, metricKey, ct);
+        var check = await billingGuard.CheckLimitAsync(tenantId, metricKey, current + creditsNeeded, ct);
+        if (!check.Allowed)
+            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = check.Message, key = metricKey });
+
+        var available = await billingGuard.GetTotalAvailableUnitsAsync(tenantId, metricKey, ct);
+        if (available != int.MaxValue && available < creditsNeeded)
+        {
+            return StatusCode(StatusCodes.Status402PaymentRequired, new
+            {
+                error = $"Insufficient credits. Need {creditsNeeded} {metricKey} units, available {available}.",
+                key = metricKey
+            });
+        }
+
+        var consume = await billingGuard.TryConsumeDetailedAsync(
+            tenantId,
+            metricKey,
+            creditsNeeded,
+            source: "public.kyc.session.start",
+            service: pluginSlug,
+            referenceId: sessionId.ToString(),
+            ct: ct);
+        if (!consume.Allowed)
+            return StatusCode(StatusCodes.Status402PaymentRequired, new { error = consume.Message, key = metricKey });
+
         var row = new KycSession
         {
-            Id = Guid.NewGuid(),
+            Id = sessionId,
             TenantId = tenantId,
             CreatedByUserId = Guid.Empty,
             ProviderCode = provider,
@@ -296,8 +304,19 @@ public class PublicKycSessionsController(
         controlDb.KycSessions.Add(row);
         await controlDb.SaveChangesAsync(ct);
 
-        var providerImpl = router.Resolve(provider);
-        var (redirectUrl, state) = await providerImpl.BuildRedirectAsync(row, ct);
+        string redirectUrl;
+        string state;
+        try
+        {
+            var providerImpl = router.Resolve(provider);
+            (redirectUrl, state) = await providerImpl.BuildRedirectAsync(row, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to initialize KYC session {SessionId} for provider {Provider}", row.Id, provider);
+            await ReverseConsumedCreditsAsync(row, "Failed to initialize KYC session.", ct);
+            return Ok(new { status = "failed", failureReason = row.FailureReason, sessionId = row.Id });
+        }
 
         if (string.Equals(provider, "gst", StringComparison.OrdinalIgnoreCase))
         {
@@ -305,6 +324,10 @@ public class PublicKycSessionsController(
             if (latest is not null)
             {
                 row = latest;
+                if (string.Equals(row.Status, "failed", StringComparison.OrdinalIgnoreCase))
+                {
+                    await ReverseConsumedCreditsAsync(row, string.IsNullOrWhiteSpace(row.FailureReason) ? "KYC session failed." : row.FailureReason, ct);
+                }
                 if (string.Equals(row.Status, "verified", StringComparison.OrdinalIgnoreCase) && row.CreditsUsed <= 0)
                 {
                     try
@@ -344,6 +367,36 @@ public class PublicKycSessionsController(
         // Some IIS/proxy setups have been observed returning 200 with an empty body when using ObjectResult/formatters.
         // Write JSON explicitly to ensure non-empty body + stable content-type.
         return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
+    }
+
+    private async Task ReverseConsumedCreditsAsync(KycSession row, string failureReason, CancellationToken ct)
+    {
+        if (row.CreditsUsed > 0 && !string.IsNullOrWhiteSpace(row.BillingMetric))
+        {
+            try
+            {
+                await billingGuard.AddCreditUnitsAsync(
+                    row.TenantId,
+                    row.BillingMetric,
+                    row.CreditsUsed,
+                    ct,
+                    source: "public.kyc.session.start",
+                    service: $"{row.ProviderCode}-kyc",
+                    referenceId: row.Id.ToString(),
+                    status: "refunded");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to refund KYC credits for tenant {TenantId} session {SessionId}", row.TenantId, row.Id);
+            }
+        }
+
+        row.Status = "failed";
+        row.FailureReason = failureReason;
+        row.CreditsUsed = 0;
+        row.UpdatedAtUtc = DateTime.UtcNow;
+        row.CompletedAtUtc ??= DateTime.UtcNow;
+        await controlDb.SaveChangesAsync(ct);
     }
 
     private object BuildPublicResult(string rawResultJson, Guid sessionId, bool includeBase64)

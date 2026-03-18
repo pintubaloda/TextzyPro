@@ -28,6 +28,7 @@ import {
   getPlatformKycReport,
   getPlatformKycReportSession,
 } from "@/lib/api";
+import { useBranding } from "@/hooks/useBranding";
 
 function downloadCsv(filename, rows) {
   const csv = rows.map((cols) => cols.map((value) => {
@@ -128,7 +129,31 @@ function prettifyFailureReason(reason) {
   return text;
 }
 
-function KycPreviewCard({ collected, active }) {
+function mapRequestedToDoctype(req) {
+  const value = String(req || "").trim().toUpperCase();
+  if (!value) return "";
+  if (value === "PAN") return "PANCR";
+  if (value === "DL" || value === "DRIVING_LICENCE" || value === "DRIVINGLICENSE" || value === "DRIVING-LICENCE") return "DRVLC";
+  if (value === "AADHAAR" || value === "AADHAR") return "AADHAAR_REPORT";
+  return value;
+}
+
+function pickBestFileIndex(files, record) {
+  if (!Array.isArray(files) || files.length === 0) return 0;
+  const requested = Array.isArray(record?.docTypes) && record.docTypes[0] ? String(record.docTypes[0]) : "";
+  const want = mapRequestedToDoctype(requested);
+  if (want) {
+    const index = files.findIndex((file) => String(file?.doctype || "").toUpperCase() === want);
+    if (index >= 0) return index;
+    if (want === "AADHAAR_REPORT") {
+      const fallbackIndex = files.findIndex((file) => String(file?.doctype || "").toUpperCase() === "ADHAR");
+      if (fallbackIndex >= 0) return fallbackIndex;
+    }
+  }
+  return 0;
+}
+
+function KycPreviewCard({ brand, collected, active }) {
   const name = safeGet(collected, "name", "-");
   const dob = safeGet(collected, "dob", "-");
   const gender = safeGet(collected, "gender", "-");
@@ -146,9 +171,18 @@ function KycPreviewCard({ collected, active }) {
       </div>
       <div className="relative">
         <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-semibold text-slate-900">DigiLocker Document Preview</div>
-            <div className="text-xs text-slate-500">{docType} KYC Record</div>
+          <div className="flex items-center gap-3">
+            {brand?.logoUrl ? (
+              <img src={brand.logoUrl} alt={brand.name || "Textzy"} className="h-10 w-10 rounded-xl border border-slate-200 object-cover" />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-900">
+                {String(brand?.name || "Textzy").slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div className="text-sm font-semibold text-slate-900">{brand?.name || "Textzy"}</div>
+              <div className="text-xs text-slate-500">{docType} KYC Record</div>
+            </div>
           </div>
           <Badge className="bg-emerald-600 hover:bg-emerald-600">Verified</Badge>
         </div>
@@ -172,6 +206,7 @@ function KycPreviewCard({ collected, active }) {
 }
 
 export default function PlatformKycReportPage() {
+  const { brand } = useBranding();
   const [rows, setRows] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -269,6 +304,23 @@ export default function PlatformKycReportPage() {
       toast.success(`${label} copied`);
     } catch {
       toast.error("Failed to copy response");
+    }
+  };
+
+  const openRow = async (row) => {
+    setActive(row);
+    setActiveDetail(null);
+    setActiveFileIndex(0);
+    setOpen(true);
+    try {
+      const detail = await getPlatformKycReportSession(row.sessionId, true);
+      setActiveDetail(detail);
+      const detailFiles = Array.isArray(detail?.result?.documents) ? detail.result.documents : [];
+      if (detailFiles.length > 0) {
+        setActiveFileIndex(pickBestFileIndex(detailFiles, detail || row));
+      }
+    } catch (error) {
+      toast.error(error?.message || "Failed to load session detail");
     }
   };
 
@@ -428,18 +480,7 @@ export default function PlatformKycReportPage() {
                     </div>
                   </div>
                   <div className="mt-4 flex justify-end">
-                    <Button variant="outline" size="sm" onClick={async () => {
-                      setActive(row);
-                      setActiveDetail(null);
-                      setActiveFileIndex(0);
-                      setOpen(true);
-                      try {
-                        const detail = await getPlatformKycReportSession(row.sessionId, true);
-                        setActiveDetail(detail);
-                      } catch (error) {
-                        toast.error(error?.message || "Failed to load session detail");
-                      }
-                    }}>View</Button>
+                    <Button variant="outline" size="sm" onClick={() => openRow(row)}>View</Button>
                   </div>
                 </div>
               );
@@ -481,18 +522,7 @@ export default function PlatformKycReportPage() {
                       <td className="px-4 py-3"><Badge className={status.className}><StatusIcon className="mr-1.5 h-3.5 w-3.5" />{status.label}</Badge></td>
                       <td className="px-4 py-3 text-slate-600">{Number(row.creditsUsed || 0)}</td>
                       <td className="px-4 py-3 text-slate-600">{row.webhook ? `${row.webhook.statusCode} (${row.webhook.ok ? "ok" : "failed"})` : "-"}</td>
-                      <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={async () => {
-                        setActive(row);
-                        setActiveDetail(null);
-                        setActiveFileIndex(0);
-                        setOpen(true);
-                        try {
-                          const detail = await getPlatformKycReportSession(row.sessionId, true);
-                          setActiveDetail(detail);
-                        } catch (error) {
-                          toast.error(error?.message || "Failed to load session detail");
-                        }
-                      }}>View</Button></td>
+                      <td className="px-4 py-3"><Button variant="outline" size="sm" onClick={() => openRow(row)}>View</Button></td>
                     </tr>
                   );
                 })}
@@ -552,7 +582,7 @@ export default function PlatformKycReportPage() {
                       ) : null}
                     </div>
                   ) : !isGstProvider ? (
-                    <KycPreviewCard collected={activeDetail?.result?.collected || {}} active={activeDetail || active} />
+                    <KycPreviewCard brand={brand} collected={activeDetail?.result?.collected || active?.collected || {}} active={activeDetail || active} />
                   ) : (
                     <div className="flex h-[540px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white text-sm text-slate-500">No preview file returned in this AppyFlow session.</div>
                   )}
@@ -626,11 +656,45 @@ export default function PlatformKycReportPage() {
                       );
                     }
 
+                    const errs = safeGet(activeDetail?.result, "fileDownloadErrors", []);
                     const digilockerId = safeGet(result?.userDetails, "digilockerid", "-");
                     const aadhaarNo = safeGet(collected, "aadhaarNumber", "-");
                     const photo = toDataUrl(collected.photoBase64);
                     return (
                       <div className="space-y-3">
+                        {Array.isArray(errs) && errs.length > 0 ? (
+                          <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-amber-900">Some DigiLocker downloads were blocked</div>
+                                <div className="mt-1 text-xs text-amber-900/80">
+                                  {errs.some((entry) => {
+                                    const code = String(entry?.errorCode || "").toUpperCase();
+                                    const msg = String(entry?.error || entry?.message || entry?.error_description || "").toLowerCase();
+                                    return code === "DIGILOCKER_INSUFFICIENT_SCOPE" || msg.includes("insufficient_scope");
+                                  })
+                                    ? "e-Aadhaar XML needs higher privileges/scopes for this DigiLocker partner. This record is generated from available profile + issued-doc metadata."
+                                    : "This record is generated from available profile + issued-doc metadata."}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-2 space-y-1 text-xs text-amber-900/80">
+                              {errs.slice(0, 3).map((entry, index) => {
+                                const uri = String(entry?.uri || "-");
+                                const dt = String(entry?.doctype || "-");
+                                const status = entry?.status ? ` status=${entry.status}` : "";
+                                const msg = String(entry?.error || entry?.message || "Download failed.");
+                                return (
+                                  <div key={`${uri}-${index}`} className="rounded-xl bg-white/60 px-2 py-1">
+                                    <span className="font-medium">{dt}</span> <span className="text-amber-900/70">{uri}{status}</span>: {msg}
+                                  </div>
+                                );
+                              })}
+                              {errs.length > 3 ? <div className="text-amber-900/70">+{errs.length - 3} more</div> : null}
+                            </div>
+                          </div>
+                        ) : null}
+
                         {photo ? (
                           <div className="flex items-start gap-3">
                             <img src={photo} alt="photo" className="h-24 w-24 rounded-2xl border border-slate-200 object-cover" />

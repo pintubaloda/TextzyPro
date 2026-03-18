@@ -4,6 +4,23 @@ using Textzy.Api.Data;
 
 namespace Textzy.Api.Services;
 
+public sealed record BillingConsumeReceipt(
+    Guid TenantId,
+    string MetricKey,
+    int RequestedUnits,
+    int ConsumedFromBalance,
+    int ConsumedFromPlan,
+    string Source,
+    string Service,
+    string ReferenceId);
+
+public sealed record BillingConsumeResult(
+    bool Allowed,
+    int Limit,
+    int Used,
+    string Message,
+    BillingConsumeReceipt? Receipt);
+
 public class BillingGuardService(ControlDbContext db)
 {
     public string CurrentMonthKey => DateTime.UtcNow.ToString("yyyy-MM");
@@ -88,13 +105,26 @@ public class BillingGuardService(ControlDbContext db)
 
     public async Task<(bool Allowed, int Limit, int Used, string Message)> TryConsumeAsync(Guid tenantId, string key, int delta = 1, CancellationToken ct = default)
     {
+        var result = await TryConsumeDetailedAsync(tenantId, key, delta, ct: ct);
+        return (result.Allowed, result.Limit, result.Used, result.Message);
+    }
+
+    public async Task<BillingConsumeResult> TryConsumeDetailedAsync(
+        Guid tenantId,
+        string key,
+        int delta = 1,
+        string source = "",
+        string service = "",
+        string referenceId = "",
+        CancellationToken ct = default)
+    {
         var usage = await GetOrCreateUsageAsync(tenantId, ct);
         var current = await GetCurrentUsageAsync(tenantId, key, ct);
         if (IsUsagePackCreditMetric(key))
         {
             var prepaidBalance = await GetCreditBalanceAsync(tenantId, key, ct);
             if (string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase) && prepaidBalance <= 0)
-                return (false, 0, delta, "No KYC credits available. Please buy a KYC pack.");
+                return new BillingConsumeResult(false, 0, delta, "No KYC credits available. Please buy a KYC pack.", null);
             if (prepaidBalance > 0)
             {
                 var isKycMetric = string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase);
@@ -106,7 +136,7 @@ public class BillingGuardService(ControlDbContext db)
                 if (delta > totalAvailable)
                 {
                     var label = string.Equals(key, "digilockerKyc", StringComparison.OrdinalIgnoreCase) ? "KYC credits" : "SMS credits";
-                    return (false, totalAvailable, delta, $"Available {label} are insufficient: need {delta}, available {totalAvailable}");
+                    return new BillingConsumeResult(false, totalAvailable, delta, $"Available {label} are insufficient: need {delta}, available {totalAvailable}", null);
                 }
 
                 var consumeFromBalance = Math.Min(prepaidBalance, delta);
@@ -117,24 +147,87 @@ public class BillingGuardService(ControlDbContext db)
                 if (consumeFromPlan > 0)
                 {
                     var planCheck = await CheckLimitAsync(tenantId, key, current + consumeFromPlan, ct);
-                    if (!planCheck.Allowed) return planCheck;
+                    if (!planCheck.Allowed) return new BillingConsumeResult(planCheck.Allowed, planCheck.Limit, planCheck.Used, planCheck.Message, null);
                 }
 
                 SetUsageValue(usage, key, current + consumeFromPlan);
                 usage.UpdatedAtUtc = DateTime.UtcNow;
+                await WriteLedgerAsync(
+                    tenantId,
+                    key,
+                    "debit",
+                    delta,
+                    source,
+                    service,
+                    referenceId,
+                    "applied",
+                    ct);
                 await db.SaveChangesAsync(ct);
-                return (true, totalAvailable, delta, string.Empty);
+                return new BillingConsumeResult(
+                    true,
+                    totalAvailable,
+                    delta,
+                    string.Empty,
+                    new BillingConsumeReceipt(tenantId, key, delta, consumeFromBalance, consumeFromPlan, source, service, referenceId));
             }
         }
 
         var next = Math.Max(0, current + delta);
         var check = await CheckLimitAsync(tenantId, key, next, ct);
-        if (!check.Allowed) return check;
+        if (!check.Allowed) return new BillingConsumeResult(check.Allowed, check.Limit, check.Used, check.Message, null);
 
         SetUsageValue(usage, key, next);
         usage.UpdatedAtUtc = DateTime.UtcNow;
+        await WriteLedgerAsync(
+            tenantId,
+            key,
+            "debit",
+            delta,
+            source,
+            service,
+            referenceId,
+            "applied",
+            ct);
         await db.SaveChangesAsync(ct);
-        return check;
+        return new BillingConsumeResult(
+            check.Allowed,
+            check.Limit,
+            check.Used,
+            check.Message,
+            new BillingConsumeReceipt(tenantId, key, delta, 0, delta, source, service, referenceId));
+    }
+
+    public async Task RefundConsumptionAsync(BillingConsumeReceipt? receipt, CancellationToken ct = default)
+    {
+        if (receipt is null) return;
+        if (receipt.RequestedUnits <= 0) return;
+
+        if (receipt.ConsumedFromBalance > 0)
+        {
+            var balance = await GetOrCreateCreditBalanceEntityAsync(receipt.TenantId, receipt.MetricKey, ct);
+            balance.UnitsRemaining += receipt.ConsumedFromBalance;
+            balance.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        if (receipt.ConsumedFromPlan > 0)
+        {
+            var usage = await GetOrCreateUsageAsync(receipt.TenantId, ct);
+            var current = await GetCurrentUsageAsync(receipt.TenantId, receipt.MetricKey, ct);
+            SetUsageValue(usage, receipt.MetricKey, Math.Max(0, current - receipt.ConsumedFromPlan));
+            usage.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        await WriteLedgerAsync(
+            receipt.TenantId,
+            receipt.MetricKey,
+            "refund",
+            receipt.RequestedUnits,
+            receipt.Source,
+            receipt.Service,
+            receipt.ReferenceId,
+            "refunded",
+            ct);
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task SetAbsoluteUsageAsync(Guid tenantId, string key, int value, CancellationToken ct = default)
@@ -175,13 +268,52 @@ public class BillingGuardService(ControlDbContext db)
         return Math.Max(0, row?.UnitsRemaining ?? 0);
     }
 
-    public async Task AddCreditUnitsAsync(Guid tenantId, string key, int units, CancellationToken ct = default)
+    public async Task AddCreditUnitsAsync(
+        Guid tenantId,
+        string key,
+        int units,
+        CancellationToken ct = default,
+        string source = "",
+        string service = "",
+        string referenceId = "",
+        string status = "credited")
     {
         if (units <= 0) return;
         var row = await GetOrCreateCreditBalanceEntityAsync(tenantId, key, ct);
         row.UnitsRemaining += units;
         row.UpdatedAtUtc = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(source) || !string.IsNullOrWhiteSpace(service) || !string.IsNullOrWhiteSpace(referenceId))
+        {
+            await WriteLedgerAsync(tenantId, key, "credit", units, source, service, referenceId, status, ct);
+        }
         await db.SaveChangesAsync(ct);
+    }
+
+    private Task WriteLedgerAsync(
+        Guid tenantId,
+        string key,
+        string transactionType,
+        int units,
+        string source,
+        string service,
+        string referenceId,
+        string status,
+        CancellationToken ct)
+    {
+        db.TenantCreditTransactions.Add(new Textzy.Api.Models.TenantCreditTransaction
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            MetricKey = key,
+            TransactionType = (transactionType ?? string.Empty).Trim().ToLowerInvariant(),
+            Units = Math.Max(0, units),
+            Source = (source ?? string.Empty).Trim(),
+            Service = (service ?? string.Empty).Trim(),
+            ReferenceId = (referenceId ?? string.Empty).Trim(),
+            Status = string.IsNullOrWhiteSpace(status) ? "applied" : status.Trim().ToLowerInvariant(),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        return Task.CompletedTask;
     }
 
     private async Task<Textzy.Api.Models.TenantUsage> GetOrCreateUsageAsync(Guid tenantId, CancellationToken ct)

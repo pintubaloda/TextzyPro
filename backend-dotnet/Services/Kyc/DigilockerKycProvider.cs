@@ -44,6 +44,8 @@ public class DigiLockerKycProvider(
 
     private sealed record ProviderOauthError(string? Error, string? ErrorDescription);
 
+    private sealed record ProviderFailureOutcome(string Status, string FailureReason);
+
     private sealed class DigilockerHttpException : Exception
     {
         public DigilockerHttpException(string operation, int statusCode, string url, string? body, Exception? inner = null)
@@ -77,6 +79,78 @@ public class DigiLockerKycProvider(
         {
             return null;
         }
+    }
+
+    private static string? TryGetProviderErrorCode(string? body)
+        => TryParseOauthError(body)?.Error;
+
+    private static string? TryGetProviderErrorDescription(string? body)
+        => TryParseOauthError(body)?.ErrorDescription;
+
+    private static bool IsExplicitAadhaarNotAvailable(string? errorCode)
+        => string.Equals((errorCode ?? string.Empty).Trim(), "aadhaar_not_linked", StringComparison.OrdinalIgnoreCase)
+           || string.Equals((errorCode ?? string.Empty).Trim(), "aadhaar_not_available", StringComparison.OrdinalIgnoreCase);
+
+    private static ProviderFailureOutcome ResolveProviderFailureOutcome(
+        int issuedDocsStatus,
+        string issuedBody,
+        int? eAadhaarStatus,
+        string? eAadhaarErrorCode,
+        string? eAadhaarErrorDescription,
+        string fallbackFailureReason)
+    {
+        var providerErrorCode = string.Empty;
+        var providerErrorDescription = string.Empty;
+        var upstreamStatus = issuedDocsStatus;
+
+        if (eAadhaarStatus.HasValue && eAadhaarStatus.Value > 0)
+        {
+            upstreamStatus = eAadhaarStatus.Value;
+            providerErrorCode = (eAadhaarErrorCode ?? string.Empty).Trim();
+            providerErrorDescription = (eAadhaarErrorDescription ?? string.Empty).Trim();
+        }
+        else
+        {
+            providerErrorCode = (TryGetProviderErrorCode(issuedBody) ?? string.Empty).Trim();
+            providerErrorDescription = (TryGetProviderErrorDescription(issuedBody) ?? string.Empty).Trim();
+        }
+
+        var failureReason = string.IsNullOrWhiteSpace(fallbackFailureReason)
+            ? "Requested document not available from DigiLocker."
+            : fallbackFailureReason.Trim();
+
+        if (!string.IsNullOrWhiteSpace(providerErrorCode) && !failureReason.Contains($"error={providerErrorCode}", StringComparison.OrdinalIgnoreCase))
+            failureReason += $" error={providerErrorCode}";
+
+        if (!string.IsNullOrWhiteSpace(providerErrorDescription) && !failureReason.Contains(providerErrorDescription, StringComparison.OrdinalIgnoreCase))
+            failureReason += $" description={providerErrorDescription}";
+
+        if (IsExplicitAadhaarNotAvailable(providerErrorCode))
+            return new ProviderFailureOutcome("failed", failureReason);
+
+        if (upstreamStatus == 530)
+            return new ProviderFailureOutcome("pending", failureReason);
+
+        if (upstreamStatus is 400 or 401 or 403 or 404)
+            return new ProviderFailureOutcome("failed", failureReason);
+
+        return new ProviderFailureOutcome("failed", failureReason);
+    }
+
+    private static bool HasAnyDigilockerData(
+        IReadOnlyDictionary<string, object?> collected,
+        IReadOnlyCollection<IssuedItem> issuedItems,
+        IReadOnlyCollection<object> downloaded,
+        IReadOnlyCollection<object> parsedDocs,
+        int userDetailsStatus,
+        string userDetailsBody)
+    {
+        if (collected.Count > 0) return true;
+        if (issuedItems.Count > 0) return true;
+        if (downloaded.Count > 0) return true;
+        if (parsedDocs.Count > 0) return true;
+        if (userDetailsStatus >= 200 && userDetailsStatus <= 299 && !string.IsNullOrWhiteSpace(userDetailsBody)) return true;
+        return false;
     }
 
     private static object BuildFileDownloadError(string uri, string? doctype, Exception ex)
@@ -375,6 +449,9 @@ public class DigiLockerKycProvider(
         var downloadErrors = new List<object>();
         var parsedDocs = new List<object>();
         var collected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        int? eAadhaarStatus = null;
+        string? eAadhaarErrorCode = null;
+        string? eAadhaarErrorDescription = null;
         // Always collect basic profile fields from /user even when document download is blocked.
         if (settings.IncludeUserDetailsInResult && userDetailsStatus >= 200 && userDetailsStatus <= 299)
         {
@@ -462,6 +539,12 @@ public class DigiLockerKycProvider(
                 catch (Exception ex)
                 {
                     // Best-effort. Do not fail KYC purely due to missing e-Aadhaar XML, but record for debugging.
+                    if (ex is DigilockerHttpException hx)
+                    {
+                        eAadhaarStatus = hx.StatusCode;
+                        eAadhaarErrorCode = TryGetProviderErrorCode(hx.Body);
+                        eAadhaarErrorDescription = TryGetProviderErrorDescription(hx.Body);
+                    }
                     downloadErrors.Add(BuildFileDownloadError("oauth2/3/xml/eaadhaar", "ADHAR", ex));
                 }
             }
@@ -565,9 +648,17 @@ public class DigiLockerKycProvider(
         };
 
         var resultJson = JsonSerializer.Serialize(normalized);
-        // Decide success based on what the tenant requested, not only "issued-docs list succeeded".
-        // Otherwise "aadhaar" requests can wrongly show PAN/DL records and be marked verified.
-        var ok = issuedOk && IsRequestedDocSatisfied(requestedDocTypes, issuedItems, collected);
+        // Treat the session as successful when DigiLocker returns any usable document/profile data.
+        // This keeps sessions successful even when the requested docType differs from the returned
+        // records (for example Aadhaar requested, but PAN/DL metadata/documents are still available).
+        var hasAnyDigilockerData = HasAnyDigilockerData(
+            collected,
+            issuedItems,
+            downloaded,
+            parsedDocs,
+            userDetailsStatus,
+            userDetailsBody);
+        var ok = hasAnyDigilockerData || (issuedOk && IsRequestedDocSatisfied(requestedDocTypes, issuedItems, collected));
         var failureReason = string.Empty;
         if (!ok)
         {
@@ -587,10 +678,19 @@ public class DigiLockerKycProvider(
             }
             catch { }
         }
+        var failureOutcome = ok
+            ? new ProviderFailureOutcome("verified", string.Empty)
+            : ResolveProviderFailureOutcome(
+                issuedDocsStatus,
+                issuedBody,
+                eAadhaarStatus,
+                eAadhaarErrorCode,
+                eAadhaarErrorDescription,
+                failureReason);
         return new KycProviderCallbackResult(
             ok,
-            ok ? "verified" : "failed",
-            ok ? string.Empty : failureReason,
+            failureOutcome.Status,
+            failureOutcome.FailureReason,
             resultJson,
             docTypes.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
     }
