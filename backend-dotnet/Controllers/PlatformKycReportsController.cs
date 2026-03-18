@@ -119,21 +119,15 @@ public class PlatformKycReportsController(ControlDbContext db, AuthContext auth,
             .Where(x => userIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, ct);
 
-        var latestDeliveryMeta = await db.KycWebhookDeliveries.AsNoTracking()
-            .Where(x => sessionIds.Contains(x.SessionId))
-            .GroupBy(x => x.SessionId)
-            .Select(g => new { SessionId = g.Key, LatestAt = g.Max(x => x.CreatedAtUtc) })
-            .ToListAsync(ct);
-
-        var latestMap = new Dictionary<Guid, DateTime>();
-        foreach (var item in latestDeliveryMeta)
-            latestMap[item.SessionId] = item.LatestAt;
-
         var latestDeliveries = await db.KycWebhookDeliveries.AsNoTracking()
-            .Where(x => sessionIds.Contains(x.SessionId) && latestMap.ContainsKey(x.SessionId) && x.CreatedAtUtc == latestMap[x.SessionId])
+            .Where(x => sessionIds.Contains(x.SessionId))
+            .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
 
-        var deliveryMap = latestDeliveries.ToDictionary(x => x.SessionId, x => x);
+        var deliveryMap = latestDeliveries
+            .GroupBy(x => x.SessionId)
+            .Select(g => g.First())
+            .ToDictionary(x => x.SessionId, x => x);
 
         var items = rows.Select(row =>
         {
