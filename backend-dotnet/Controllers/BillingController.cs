@@ -546,7 +546,7 @@ public class BillingController(
         });
     }
 
-    [HttpPost("razorpay/create-order")]
+    [HttpPost("razorpay/plan-order")]
     public async Task<IActionResult> RazorpayCreateOrder([FromBody] ChangePlanRequest request, CancellationToken ct)
     {
         if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
@@ -668,7 +668,7 @@ public class BillingController(
         });
     }
 
-    [HttpPost("razorpay/create-integration-order")]
+    [HttpPost("razorpay/integration-order")]
     public async Task<IActionResult> RazorpayCreateIntegrationOrder([FromBody] CreateIntegrationOrderRequest request, CancellationToken ct)
     {
         if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
