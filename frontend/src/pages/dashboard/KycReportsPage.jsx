@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useBranding } from "@/hooks/useBranding";
 
@@ -67,6 +70,29 @@ function formatResponse(value) {
   } catch {
     return String(value);
   }
+}
+
+function isWithinDateRange(value, fromDate, toDate) {
+  if (!value) return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return true;
+  if (fromDate && date < new Date(`${fromDate}T00:00:00`)) return false;
+  if (toDate && date > new Date(`${toDate}T23:59:59.999`)) return false;
+  return true;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((cols) => cols.map((value) => {
+    const normalized = String(value ?? "");
+    return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
+  }).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function KycPreviewCard({ brand, collected, active }) {
@@ -172,6 +198,7 @@ export default function KycReportsPage() {
   const [activeDetail, setActiveDetail] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [filters, setFilters] = useState({ q: "", status: "all", api: "all", fromDate: "", toDate: "", pageSize: 10, page: 1 });
 
   function mapRequestedToDoctype(req) {
     const r = String(req || "").trim().toUpperCase();
@@ -225,13 +252,65 @@ export default function KycReportsPage() {
     return [...rows].sort((a, b) => String(b?.createdAtUtc || "").localeCompare(String(a?.createdAtUtc || "")));
   }, [rows]);
 
+  const filtered = useMemo(() => {
+    const query = filters.q.trim().toLowerCase();
+    return sorted.filter((row) => {
+      if (!isWithinDateRange(row?.createdAtUtc, filters.fromDate, filters.toDate)) return false;
+      const status = String(row?.status || "").toLowerCase();
+      const provider = String(row?.provider || "").toLowerCase();
+      const matchesStatus = filters.status === "all" || status === filters.status;
+      const matchesApi = filters.api === "all" || provider === filters.api;
+      const haystack = [
+        row?.sessionId,
+        row?.customerRef,
+        row?.provider,
+        row?.status,
+        row?.docTypes?.join(" "),
+        row?.collected?.mobile,
+        row?.collected?.email,
+        row?.collected?.name,
+      ].filter(Boolean).join(" ").toLowerCase();
+      const matchesQuery = !query || haystack.includes(query);
+      return matchesStatus && matchesApi && matchesQuery;
+    });
+  }, [filters, sorted]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / filters.pageSize)), [filtered.length, filters.pageSize]);
+
+  const pagedRows = useMemo(() => {
+    const start = (filters.page - 1) * filters.pageSize;
+    return filtered.slice(start, start + filters.pageSize);
+  }, [filtered, filters.page, filters.pageSize]);
+
   const summary = useMemo(() => {
-    const total = sorted.length;
-    const verified = sorted.filter((row) => String(row?.status || "").toLowerCase() === "verified").length;
-    const failed = sorted.filter((row) => String(row?.status || "").toLowerCase() === "failed").length;
-    const creditsUsed = sorted.reduce((sum, row) => sum + Number(row?.creditsUsed || 0), 0);
+    const total = filtered.length;
+    const verified = filtered.filter((row) => String(row?.status || "").toLowerCase() === "verified").length;
+    const failed = filtered.filter((row) => String(row?.status || "").toLowerCase() === "failed").length;
+    const creditsUsed = filtered.reduce((sum, row) => sum + Number(row?.creditsUsed || 0), 0);
     return { total, verified, failed, creditsUsed };
-  }, [sorted]);
+  }, [filtered]);
+
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, page: Math.min(prev.page, totalPages) }));
+  }, [totalPages]);
+
+  const exportRows = () => {
+    downloadCsv("kyc-user-report.csv", [
+      ["Session ID", "Provider", "Doc Type", "Status", "Customer Ref", "Credits Used", "Mobile", "Email", "Created At"],
+      ...filtered.map((row) => [
+        row?.sessionId || "",
+        row?.provider || "",
+        Array.isArray(row?.docTypes) ? row.docTypes.join(" | ") : "",
+        normalizeStatus(row?.status).label,
+        row?.customerRef || "",
+        Number(row?.creditsUsed || 0),
+        safeGet(row?.collected, "mobile", ""),
+        safeGet(row?.collected, "email", ""),
+        formatDate(row?.createdAtUtc),
+      ]),
+    ]);
+    toast.success("KYC report exported");
+  };
 
   async function openRow(r) {
     setActive(r);
@@ -274,7 +353,7 @@ export default function KycReportsPage() {
   }, [activeFileIndex, open]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6">
+    <div className="w-full py-2">
       <div className="mb-4 grid gap-3 md:grid-cols-4">
         <Card className="rounded-3xl border-slate-200"><CardContent className="pt-5"><div className="text-xs uppercase text-slate-500">Sessions</div><div className="mt-2 text-2xl font-semibold text-slate-900">{summary.total}</div><div className="text-xs text-slate-500">Saved KYC records</div></CardContent></Card>
         <Card className="rounded-3xl border-slate-200"><CardContent className="pt-5"><div className="text-xs uppercase text-slate-500">Verified</div><div className="mt-2 text-2xl font-semibold text-emerald-700">{summary.verified}</div><div className="text-xs text-slate-500">Completed successfully</div></CardContent></Card>
@@ -288,14 +367,120 @@ export default function KycReportsPage() {
             <CardTitle>KYC Reports</CardTitle>
             <CardDescription>Saved KYC sessions with customer reference, credit usage, extracted fields, and document previews.</CardDescription>
           </div>
-          <Button className="bg-orange-500 hover:bg-orange-600" disabled={busy} onClick={refresh}>
-            {busy ? "Loading..." : "Refresh"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={exportRows} disabled={!filtered.length}>Export CSV</Button>
+            <Button className="bg-orange-500 hover:bg-orange-600" disabled={busy} onClick={refresh}>
+              {busy ? "Loading..." : "Refresh"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="overflow-auto rounded-2xl border border-slate-200">
+          <div className="mb-4 grid gap-4 md:grid-cols-6">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Search</Label>
+              <Input
+                value={filters.q}
+                onChange={(event) => setFilters((prev) => ({ ...prev, q: event.target.value, page: 1 }))}
+                placeholder="Search session, customer ref, mobile, email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={filters.status} onValueChange={(value) => setFilters((prev) => ({ ...prev, status: value, page: 1 }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  <SelectItem value="verified">Success</SelectItem>
+                  <SelectItem value="failed">Fail</SelectItem>
+                  <SelectItem value="created">Pending</SelectItem>
+                  <SelectItem value="redirected">Redirected</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>API</Label>
+              <Select value={filters.api} onValueChange={(value) => setFilters((prev) => ({ ...prev, api: value, page: 1 }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All APIs</SelectItem>
+                  <SelectItem value="digilocker">DigiLocker</SelectItem>
+                  <SelectItem value="gst">AppyFlow GST</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>From date</Label>
+              <Input
+                type="date"
+                value={filters.fromDate}
+                onChange={(event) => setFilters((prev) => ({ ...prev, fromDate: event.target.value, page: 1 }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>To date</Label>
+              <Input
+                type="date"
+                value={filters.toDate}
+                onChange={(event) => setFilters((prev) => ({ ...prev, toDate: event.target.value, page: 1 }))}
+              />
+            </div>
+          </div>
+          <div className="space-y-3 md:hidden">
+            {pagedRows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-slate-500">
+                No KYC records yet.
+              </div>
+            ) : (
+              pagedRows.map((r, idx) => {
+                const c = r.collected || {};
+                const status = normalizeStatus(r.status);
+                const doc = (Array.isArray(r.docTypes) && r.docTypes[0]) ? r.docTypes[0] : "-";
+                return (
+                  <div key={r.sessionId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.18em] text-slate-500">#{(filters.page - 1) * filters.pageSize + idx + 1}</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900">{String(doc || "").toUpperCase()}</div>
+                        <div className="text-xs text-slate-500">{formatDate(r.createdAtUtc)}</div>
+                      </div>
+                      <Badge className={status.className}>{status.label}</Badge>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <div className="text-xs uppercase text-slate-500">Customer Ref</div>
+                        <div className="mt-1 font-medium text-slate-900 break-all">{r.customerRef || "-"}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-slate-500">Credits</div>
+                        <div className="mt-1 font-medium text-slate-900">{Number(r.creditsUsed || 0)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-slate-500">Mobile</div>
+                        <div className="mt-1 font-medium text-slate-900 break-all">{safeGet(c, "mobile", "-")}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-slate-500">Email</div>
+                        <div className="mt-1 font-medium text-slate-900 break-all">{safeGet(c, "email", "-")}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-xs uppercase text-slate-500">Session ID</div>
+                        <div className="mt-1 font-medium text-slate-900 break-all">{r.sessionId}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                      <Button variant="outline" className="rounded-xl" onClick={() => openRow(r)}>
+                        View more
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="hidden overflow-auto rounded-2xl border border-slate-200 md:block">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-600">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm">
                 <tr>
                   <th className="px-4 py-3">S.No</th>
                   <th className="px-4 py-3">Doc</th>
@@ -310,20 +495,20 @@ export default function KycReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {sorted.length === 0 ? (
+                {pagedRows.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
                       No KYC records yet.
                     </td>
                   </tr>
                 ) : (
-                  sorted.map((r, idx) => {
+                  pagedRows.map((r, idx) => {
                     const c = r.collected || {};
                     const status = normalizeStatus(r.status);
                     const doc = (Array.isArray(r.docTypes) && r.docTypes[0]) ? r.docTypes[0] : "-";
                     return (
                       <tr key={r.sessionId} className="border-t border-slate-200">
-                        <td className="px-4 py-3">{idx + 1}</td>
+                        <td className="px-4 py-3">{(filters.page - 1) * filters.pageSize + idx + 1}</td>
                         <td className="px-4 py-3 font-medium text-slate-900">{String(doc || "").toUpperCase()}</td>
                         <td className="px-4 py-3">
                           <Badge className={status.className}>{status.label}</Badge>
@@ -345,6 +530,24 @@ export default function KycReportsPage() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div className="text-sm text-slate-600">
+              Showing {filtered.length ? ((filters.page - 1) * filters.pageSize) + 1 : 0}–{Math.min(filters.page * filters.pageSize, filtered.length)} of {filtered.length.toLocaleString()} records
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={String(filters.pageSize)} onValueChange={(value) => setFilters((prev) => ({ ...prev, pageSize: Number(value), page: 1 }))}>
+                <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 / page</SelectItem>
+                  <SelectItem value="25">25 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" className="rounded-xl" disabled={filters.page <= 1} onClick={() => setFilters((prev) => ({ ...prev, page: prev.page - 1 }))}>Previous</Button>
+              <div className="min-w-[90px] text-center text-sm text-slate-600">Page {filters.page} / {totalPages}</div>
+              <Button variant="outline" className="rounded-xl" disabled={filters.page >= totalPages} onClick={() => setFilters((prev) => ({ ...prev, page: prev.page + 1 }))}>Next</Button>
+            </div>
           </div>
         </CardContent>
       </Card>

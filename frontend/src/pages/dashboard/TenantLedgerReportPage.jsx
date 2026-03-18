@@ -23,6 +23,15 @@ const money = (value, currency = "INR") => {
   return `${String(currency || "INR").toUpperCase()} ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+const isWithinDateRange = (value, fromDate, toDate) => {
+  if (!value) return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return true;
+  if (fromDate && date < new Date(`${fromDate}T00:00:00`)) return false;
+  if (toDate && date > new Date(`${toDate}T23:59:59.999`)) return false;
+  return true;
+};
+
 const statusMeta = (raw) => {
   const value = String(raw || "").trim();
   const lower = value.toLowerCase();
@@ -61,12 +70,26 @@ function SummaryCard({ title, value, hint }) {
   );
 }
 
+function downloadCsv(filename, rows) {
+  const csv = rows.map((cols) => cols.map((value) => {
+    const normalized = String(value ?? "");
+    return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
+  }).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function TenantLedgerReportPage() {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
   const [data, setData] = useState({ summary: {}, items: [] });
-  const [filters, setFilters] = useState({ service: "all", status: "all", q: "", take: 250 });
+  const [filters, setFilters] = useState({ service: "all", status: "all", q: "", fromDate: "", toDate: "", take: 250, page: 1, pageSize: 12 });
 
   const load = async (nextFilters = filters) => {
     setBusy(true);
@@ -96,6 +119,37 @@ export default function TenantLedgerReportPage() {
   const services = useMemo(() => Array.isArray(data?.summary?.services) ? data.summary.services : [], [data]);
   const currentBalances = useMemo(() => data?.summary?.currentBalances || {}, [data]);
   const balanceRows = useMemo(() => Object.entries(currentBalances || {}), [currentBalances]);
+  const filteredItems = useMemo(
+    () => (data?.items || []).filter((row) => isWithinDateRange(row?.occurredAtUtc, filters.fromDate, filters.toDate)),
+    [data?.items, filters.fromDate, filters.toDate],
+  );
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredItems.length / filters.pageSize)), [filteredItems.length, filters.pageSize]);
+  const pagedItems = useMemo(() => filteredItems.slice((filters.page - 1) * filters.pageSize, filters.page * filters.pageSize), [filteredItems, filters.page, filters.pageSize]);
+
+  useEffect(() => {
+    setFilters((prev) => ({ ...prev, page: Math.min(prev.page, totalPages) }));
+  }, [totalPages]);
+
+  const exportRows = () => {
+    downloadCsv("tenant-ledger-report.csv", [
+      ["Date", "API Name", "Service", "Event", "Reference ID", "Customer Ref", "Credits Used", "Units", "Amount", "Status", "Recipient", "Description"],
+      ...filteredItems.map((row) => [
+        formatUtc(row?.occurredAtUtc),
+        row?.apiName || "",
+        row?.service || "",
+        row?.entryType || "",
+        row?.referenceId || "",
+        row?.customerRef || "",
+        Number(row?.creditsUsed || 0),
+        Number(row?.units || 0),
+        row?.amount != null ? money(row.amount, row.currency) : "",
+        statusMeta(row?.status).label,
+        row?.recipient || "",
+        row?.description || "",
+      ]),
+    ]);
+    toast.success("Ledger exported");
+  };
 
   return (
     <div className="space-y-6">
@@ -106,6 +160,7 @@ export default function TenantLedgerReportPage() {
             <CardDescription>One strong ledger for SMS, WhatsApp, KYC, and billing purchases with credits, references, and status visibility.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={exportRows} disabled={!data?.items?.length}>Export CSV</Button>
             <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => load(filters)} disabled={busy}>
               {busy ? "Loading..." : "Refresh"}
             </Button>
@@ -128,7 +183,7 @@ export default function TenantLedgerReportPage() {
               <CardContent className="grid gap-4 md:grid-cols-4">
                 <div className="space-y-2">
                   <Label>Service</Label>
-                  <Select value={filters.service} onValueChange={(value) => setFilters((prev) => ({ ...prev, service: value }))}>
+                  <Select value={filters.service} onValueChange={(value) => setFilters((prev) => ({ ...prev, service: value, page: 1 }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All services</SelectItem>
@@ -141,7 +196,7 @@ export default function TenantLedgerReportPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Status</Label>
-                  <Select value={filters.status} onValueChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}>
+                  <Select value={filters.status} onValueChange={(value) => setFilters((prev) => ({ ...prev, status: value, page: 1 }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All status</SelectItem>
@@ -155,17 +210,25 @@ export default function TenantLedgerReportPage() {
                   <Label>Search</Label>
                   <Input
                     value={filters.q}
-                    onChange={(event) => setFilters((prev) => ({ ...prev, q: event.target.value }))}
+                    onChange={(event) => setFilters((prev) => ({ ...prev, q: event.target.value, page: 1 }))}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") load(filters);
                     }}
                     placeholder="Search ref id, customer ref, API name, recipient"
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>From date</Label>
+                  <Input type="date" value={filters.fromDate} onChange={(event) => setFilters((prev) => ({ ...prev, fromDate: event.target.value, page: 1 }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>To date</Label>
+                  <Input type="date" value={filters.toDate} onChange={(event) => setFilters((prev) => ({ ...prev, toDate: event.target.value, page: 1 }))} />
+                </div>
                 <div className="md:col-span-4 flex flex-wrap gap-2">
                   <Button className="bg-slate-900 hover:bg-slate-800" onClick={() => load(filters)} disabled={busy}>Apply Filters</Button>
                   <Button variant="outline" onClick={() => {
-                    const reset = { service: "all", status: "all", q: "", take: 250 };
+                    const reset = { service: "all", status: "all", q: "", fromDate: "", toDate: "", take: 250, page: 1, pageSize: 12 };
                     setFilters(reset);
                     load(reset);
                   }}>Reset</Button>
@@ -201,7 +264,7 @@ export default function TenantLedgerReportPage() {
                     <span className="font-medium text-slate-900">{Number(row.count || 0).toLocaleString()} rows</span>
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
-                    Credits {Number(row.creditsUsed || 0).toLocaleString()} • Amount {money(row.amount || 0)}
+                    Credits {Number(row.creditsUsed || 0).toLocaleString()} | Amount {money(row.amount || 0)}
                   </div>
                 </div>
               ))}
@@ -218,7 +281,7 @@ export default function TenantLedgerReportPage() {
         <CardContent>
           <div className="overflow-auto rounded-2xl border border-slate-200">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-600">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm">
                 <tr>
                   {["Date", "API Name", "Event", "Ref ID", "Customer Ref", "Credit Used", "Amount", "Status", "View"].map((header) => (
                     <th key={header} className="px-4 py-3">{header}</th>
@@ -226,12 +289,12 @@ export default function TenantLedgerReportPage() {
                 </tr>
               </thead>
               <tbody>
-                {!data?.items?.length ? (
+                {!pagedItems?.length ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-slate-500">{busy ? "Loading unified ledger..." : "No ledger entries match the current filters."}</td>
                   </tr>
                 ) : (
-                  data.items.map((row) => {
+                  pagedItems.map((row) => {
                     const status = statusMeta(row?.status);
                     return (
                       <tr key={`${row.id}-${row.referenceId}`} className="border-t border-slate-200">
@@ -257,6 +320,22 @@ export default function TenantLedgerReportPage() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div className="text-sm text-slate-600">Showing {filteredItems.length ? ((filters.page - 1) * filters.pageSize) + 1 : 0} - {Math.min(filters.page * filters.pageSize, filteredItems.length)} of {filteredItems.length.toLocaleString()} rows</div>
+            <div className="flex items-center gap-2">
+              <Select value={String(filters.pageSize)} onValueChange={(value) => setFilters((prev) => ({ ...prev, pageSize: Number(value), page: 1 }))}>
+                <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="12">12 / page</SelectItem>
+                  <SelectItem value="25">25 / page</SelectItem>
+                  <SelectItem value="50">50 / page</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" className="rounded-xl" disabled={filters.page <= 1} onClick={() => setFilters((prev) => ({ ...prev, page: prev.page - 1 }))}>Previous</Button>
+              <div className="min-w-[90px] text-center text-sm text-slate-600">Page {filters.page} / {totalPages}</div>
+              <Button variant="outline" className="rounded-xl" disabled={filters.page >= totalPages} onClick={() => setFilters((prev) => ({ ...prev, page: prev.page + 1 }))}>Next</Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -292,3 +371,4 @@ export default function TenantLedgerReportPage() {
     </div>
   );
 }
+

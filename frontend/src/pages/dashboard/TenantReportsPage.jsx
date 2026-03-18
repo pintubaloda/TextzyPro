@@ -39,12 +39,41 @@ const normalizeStatus = (raw) => {
   return { label: value, variant: "secondary" };
 };
 
+const money = (value, currency = "INR") => `${String(currency || "INR").toUpperCase()} ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const isWithinDateRange = (value, fromDate, toDate) => {
+  if (!value) return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return true;
+  if (fromDate && date < new Date(`${fromDate}T00:00:00`)) return false;
+  if (toDate && date > new Date(`${toDate}T23:59:59.999`)) return false;
+  return true;
+};
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((cols) => cols.map((value) => {
+    const normalized = String(value ?? "");
+    return /[",\n]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
+  }).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function SmsUsageReportPanel() {
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const refresh = async () => {
     setBusy(true);
@@ -64,14 +93,39 @@ function SmsUsageReportPanel() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((row) => {
+      if (!isWithinDateRange(row?.createdAtUtc, fromDate, toDate)) return false;
+      if (!q) return true;
       const recipient = String(row?.recipient || "").toLowerCase();
       const provider = String(row?.providerMessageId || "").toLowerCase();
       const messageId = String(row?.messageId || "").toLowerCase();
       return recipient.includes(q) || provider.includes(q) || messageId.includes(q);
     });
-  }, [query, rows]);
+  }, [fromDate, query, rows, toDate]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / pageSize)), [filtered.length, pageSize]);
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize]);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const exportRows = () => {
+    downloadCsv("sms-usage-report.csv", [
+      ["Date", "Ref ID", "Recipient", "Segments", "Billing State", "Delivery State", "Amount", "Provider Message ID"],
+      ...filtered.map((row) => [
+        formatUtc(row?.createdAtUtc),
+        row?.messageId || row?.id || "",
+        row?.recipient || "",
+        row?.segments || 0,
+        row?.billingState || "",
+        row?.deliveryState || "",
+        money(row?.totalAmount || 0, row?.currency || "INR"),
+        row?.providerMessageId || "",
+      ]),
+    ]);
+    toast.success("SMS report exported");
+  };
 
   return (
     <Card className="border-slate-200">
@@ -80,8 +134,11 @@ function SmsUsageReportPanel() {
           <CardTitle>SMS Usage Report</CardTitle>
           <CardDescription>Per-message billing ledger with delivery status and provider references.</CardDescription>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search recipient / ref id" className="h-10 w-56" />
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 w-40" />
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 w-40" />
+          <Button variant="outline" onClick={exportRows} disabled={!filtered.length}>Export CSV</Button>
           <Button className="bg-orange-500 hover:bg-orange-600" disabled={busy} onClick={refresh}>
             {busy ? "Loading..." : "Refresh"}
           </Button>
@@ -90,7 +147,7 @@ function SmsUsageReportPanel() {
       <CardContent>
         <div className="overflow-auto rounded-2xl border border-slate-200">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm">
               <tr>
                 <th className="px-4 py-3">S.No</th>
                 <th className="px-4 py-3">Date</th>
@@ -102,16 +159,16 @@ function SmsUsageReportPanel() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {paged.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-slate-500">No SMS records yet.</td>
                 </tr>
               ) : (
-                filtered.map((row, idx) => {
+                paged.map((row, idx) => {
                   const status = normalizeStatus(row?.deliveryState || row?.billingState);
                   return (
                     <tr key={row?.id || idx} className="border-t border-slate-200">
-                      <td className="px-4 py-3">{idx + 1}</td>
+                      <td className="px-4 py-3">{(page - 1) * pageSize + idx + 1}</td>
                       <td className="px-4 py-3 text-slate-500">{formatUtc(row?.createdAtUtc)}</td>
                       <td className="px-4 py-3 font-medium text-slate-900">{String(row?.messageId || row?.id || "-")}</td>
                       <td className="px-4 py-3">{row?.recipient || "-"}</td>
@@ -128,6 +185,22 @@ function SmsUsageReportPanel() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}–{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
+          <div className="flex items-center gap-2">
+            <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
+              <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / page</SelectItem>
+                <SelectItem value="25">25 / page</SelectItem>
+                <SelectItem value="50">50 / page</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" className="rounded-xl" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>Previous</Button>
+            <div className="min-w-[90px] text-center text-sm text-slate-600">Page {page} / {totalPages}</div>
+            <Button variant="outline" className="rounded-xl" disabled={page >= totalPages} onClick={() => setPage((prev) => prev + 1)}>Next</Button>
+          </div>
         </div>
       </CardContent>
 
@@ -180,8 +253,12 @@ function WhatsAppUsageReportPanel() {
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const refresh = async () => {
     setBusy(true);
@@ -201,15 +278,41 @@ function WhatsAppUsageReportPanel() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((row) => {
+      if (!isWithinDateRange(row?.createdAtUtc, fromDate, toDate)) return false;
+      if (!q) return true;
       const recipient = String(row?.recipient || "").toLowerCase();
       const status = String(row?.status || "").toLowerCase();
       const provider = String(row?.providerMessageId || "").toLowerCase();
       const id = String(row?.id || "").toLowerCase();
       return recipient.includes(q) || status.includes(q) || provider.includes(q) || id.includes(q);
     });
-  }, [query, rows]);
+  }, [fromDate, query, rows, toDate]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / pageSize)), [filtered.length, pageSize]);
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize]);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const exportRows = () => {
+    downloadCsv("whatsapp-usage-report.csv", [
+      ["Date", "Ref ID", "Recipient", "Type", "Status", "Provider Message ID", "Delivered", "Read", "Last Error"],
+      ...filtered.map((row) => [
+        formatUtc(row?.createdAtUtc),
+        row?.id || "",
+        row?.recipient || "",
+        row?.messageType || "",
+        row?.status || "",
+        row?.providerMessageId || "",
+        formatUtc(row?.deliveredAtUtc),
+        formatUtc(row?.readAtUtc),
+        row?.lastError || "",
+      ]),
+    ]);
+    toast.success("WhatsApp report exported");
+  };
 
   return (
     <Card className="border-slate-200">
@@ -218,8 +321,11 @@ function WhatsAppUsageReportPanel() {
           <CardTitle>WhatsApp Usage Report</CardTitle>
           <CardDescription>Outbound WhatsApp messages with status, provider ID, and delivery timing.</CardDescription>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search recipient / status / ref id" className="h-10 w-56" />
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 w-40" />
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 w-40" />
+          <Button variant="outline" onClick={exportRows} disabled={!filtered.length}>Export CSV</Button>
           <Button className="bg-orange-500 hover:bg-orange-600" disabled={busy} onClick={refresh}>
             {busy ? "Loading..." : "Refresh"}
           </Button>
@@ -228,7 +334,7 @@ function WhatsAppUsageReportPanel() {
       <CardContent>
         <div className="overflow-auto rounded-2xl border border-slate-200">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm">
               <tr>
                 <th className="px-4 py-3">S.No</th>
                 <th className="px-4 py-3">Date</th>
@@ -240,16 +346,16 @@ function WhatsAppUsageReportPanel() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {paged.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-slate-500">No WhatsApp records yet.</td>
                 </tr>
               ) : (
-                filtered.map((row, idx) => {
+                paged.map((row, idx) => {
                   const status = normalizeStatus(row?.status);
                   return (
                     <tr key={row?.id || idx} className="border-t border-slate-200">
-                      <td className="px-4 py-3">{idx + 1}</td>
+                      <td className="px-4 py-3">{(page - 1) * pageSize + idx + 1}</td>
                       <td className="px-4 py-3 text-slate-500">{formatUtc(row?.createdAtUtc)}</td>
                       <td className="px-4 py-3 font-medium text-slate-900">{String(row?.id || "-")}</td>
                       <td className="px-4 py-3">{row?.recipient || "-"}</td>
@@ -266,6 +372,22 @@ function WhatsAppUsageReportPanel() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}–{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
+          <div className="flex items-center gap-2">
+            <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
+              <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / page</SelectItem>
+                <SelectItem value="25">25 / page</SelectItem>
+                <SelectItem value="50">50 / page</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" className="rounded-xl" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>Previous</Button>
+            <div className="min-w-[90px] text-center text-sm text-slate-600">Page {page} / {totalPages}</div>
+            <Button variant="outline" className="rounded-xl" disabled={page >= totalPages} onClick={() => setPage((prev) => prev + 1)}>Next</Button>
+          </div>
         </div>
       </CardContent>
 
@@ -320,6 +442,10 @@ function PurchaseReportPanel() {
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const refresh = async () => {
     setBusy(true);
@@ -339,14 +465,39 @@ function PurchaseReportPanel() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((row) => {
+      if (!isWithinDateRange(row?.issuedAtUtc || row?.createdAtUtc, fromDate, toDate)) return false;
+      if (!q) return true;
       const invoiceNo = String(row?.invoiceNo || "").toLowerCase();
       const reference = String(row?.referenceNo || "").toLowerCase();
       const status = String(row?.status || "").toLowerCase();
       return invoiceNo.includes(q) || reference.includes(q) || status.includes(q);
     });
-  }, [query, rows]);
+  }, [fromDate, query, rows, toDate]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / pageSize)), [filtered.length, pageSize]);
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize]);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const exportRows = () => {
+    downloadCsv("purchase-report.csv", [
+      ["Date", "Ref ID", "Invoice No", "Type", "Status", "Subtotal", "Tax", "Total"],
+      ...filtered.map((row) => [
+        formatUtc(row?.issuedAtUtc || row?.createdAtUtc),
+        row?.referenceNo || row?.invoiceNo || row?.id || "",
+        row?.invoiceNo || "",
+        row?.invoiceKind || "",
+        row?.status || "",
+        money(row?.subtotal || 0),
+        money(row?.taxAmount || 0),
+        money(row?.total || 0),
+      ]),
+    ]);
+    toast.success("Purchase report exported");
+  };
 
   const download = async (row) => {
     try {
@@ -369,8 +520,11 @@ function PurchaseReportPanel() {
           <CardTitle>Purchase Report</CardTitle>
           <CardDescription>Invoices and subscription payments for your workspace.</CardDescription>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search invoice / reference / status" className="h-10 w-64" />
+          <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 w-40" />
+          <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 w-40" />
+          <Button variant="outline" onClick={exportRows} disabled={!filtered.length}>Export CSV</Button>
           <Button className="bg-orange-500 hover:bg-orange-600" disabled={busy} onClick={refresh}>
             {busy ? "Loading..." : "Refresh"}
           </Button>
@@ -379,7 +533,7 @@ function PurchaseReportPanel() {
       <CardContent>
         <div className="overflow-auto rounded-2xl border border-slate-200">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-slate-600 shadow-sm">
               <tr>
                 <th className="px-4 py-3">S.No</th>
                 <th className="px-4 py-3">Date</th>
@@ -391,17 +545,17 @@ function PurchaseReportPanel() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {paged.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-slate-500">No invoices yet.</td>
                 </tr>
               ) : (
-                filtered.map((row, idx) => {
+                paged.map((row, idx) => {
                   const status = normalizeStatus(row?.status);
                   const refId = row?.referenceNo || row?.invoiceNo || row?.id;
                   return (
                     <tr key={row?.id || idx} className="border-t border-slate-200">
-                      <td className="px-4 py-3">{idx + 1}</td>
+                      <td className="px-4 py-3">{(page - 1) * pageSize + idx + 1}</td>
                       <td className="px-4 py-3 text-slate-500">{formatUtc(row?.issuedAtUtc || row?.createdAtUtc)}</td>
                       <td className="px-4 py-3 font-medium text-slate-900">{refId || "-"}</td>
                       <td className="px-4 py-3">{row?.invoiceKind || "-"}</td>
@@ -418,6 +572,22 @@ function PurchaseReportPanel() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm text-slate-600">Showing {filtered.length ? ((page - 1) * pageSize) + 1 : 0}–{Math.min(page * pageSize, filtered.length)} of {filtered.length.toLocaleString()} rows</div>
+          <div className="flex items-center gap-2">
+            <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); setPage(1); }}>
+              <SelectTrigger className="h-9 w-[110px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 / page</SelectItem>
+                <SelectItem value="25">25 / page</SelectItem>
+                <SelectItem value="50">50 / page</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" className="rounded-xl" disabled={page <= 1} onClick={() => setPage((prev) => prev - 1)}>Previous</Button>
+            <div className="min-w-[90px] text-center text-sm text-slate-600">Page {page} / {totalPages}</div>
+            <Button variant="outline" className="rounded-xl" disabled={page >= totalPages} onClick={() => setPage((prev) => prev + 1)}>Next</Button>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -472,3 +642,4 @@ export default function TenantReportsPage() {
     </div>
   );
 }
+
