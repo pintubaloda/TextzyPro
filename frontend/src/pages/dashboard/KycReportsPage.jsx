@@ -72,6 +72,38 @@ function formatResponse(value) {
   }
 }
 
+function renderAttributeGroups(rawAttributes) {
+  const groups = rawAttributes && typeof rawAttributes === "object" ? Object.entries(rawAttributes) : [];
+  if (!groups.length) return null;
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 text-xs font-medium text-slate-500">Raw XML Attributes</div>
+      <div className="grid gap-3 md:grid-cols-3">
+        {groups.map(([groupName, values]) => {
+          const entries = values && typeof values === "object" ? Object.entries(values) : [];
+          return (
+            <div key={groupName} className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{groupName}</div>
+              {entries.length ? (
+                <div className="space-y-1 text-xs">
+                  {entries.map(([key, value]) => (
+                    <div key={key} className="break-all">
+                      <span className="text-slate-500">{key}:</span>{" "}
+                      <span className="font-medium text-slate-900">{String(value ?? "")}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400">No values</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function isWithinDateRange(value, fromDate, toDate) {
   if (!value) return true;
   const date = new Date(value);
@@ -749,6 +781,7 @@ export default function KycReportsPage() {
               })()}
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                {renderAttributeGroups(safeGet(activeDetail?.result?.collected, "rawAttributes", null) || safeGet(active?.collected, "rawAttributes", null))}
                 {safeGet(activeDetail?.result?.source, "rawXmlDecoded", "") ? (
                   <div className="mb-3">
                     <div className="mb-2 text-xs font-medium text-slate-500">Decoded XML</div>

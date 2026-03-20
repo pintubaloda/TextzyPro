@@ -209,7 +209,13 @@ public class AadhaarXmlKycService
             ["address"] = NormalizeWhitespace(string.Join(", ", addressParts)),
             ["photoBase64"] = (pht?.Value ?? string.Empty).Trim(),
             ["email"] = FirstNonEmpty(PoiAttr("e"), RootAttr("e")),
-            ["mobileFromXml"] = FirstNonEmpty(PoiAttr("m"), RootAttr("m"))
+            ["mobileFromXml"] = FirstNonEmpty(PoiAttr("m"), RootAttr("m")),
+            ["rawAttributes"] = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["root"] = ExtractAttributes(offlineRoot, "referenceId", "uid", "txn", "ts", "ver", "ret", "m", "e"),
+                ["poi"] = ExtractAttributes(poi, "name", "dob", "yob", "gender", "m", "e"),
+                ["poa"] = ExtractAttributes(poa, "co", "careof", "house", "street", "lm", "loc", "vtc", "po", "dist", "subdist", "state", "pc", "country")
+            }
         };
     }
 
@@ -548,6 +554,19 @@ public class AadhaarXmlKycService
 
     private static string FirstNonEmpty(params string[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static Dictionary<string, object?> ExtractAttributes(XElement? element, params string[] names)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (element is null) return result;
+        foreach (var name in names)
+        {
+            var value = (element.Attribute(name)?.Value ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(value))
+                result[name] = value;
+        }
+        return result;
+    }
 
     private static bool CanRenderPhoto(IReadOnlyDictionary<string, object?> collected)
         => TryDecodeJpegPhoto(GetString(collected, "photoBase64")) is not null;
