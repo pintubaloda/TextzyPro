@@ -1161,6 +1161,14 @@ export async function createKycSession(payload) {
   return apiPost('/api/kyc/sessions', payload)
 }
 
+export async function uploadAadhaarXmlKyc(sessionId, { mobileNumber, shareCode, zipFile }) {
+  const formData = new FormData()
+  formData.append('mobileNumber', String(mobileNumber || '').trim())
+  formData.append('shareCode', String(shareCode || '').trim())
+  if (zipFile) formData.append('zipFile', zipFile)
+  return apiPostForm(`/api/kyc/sessions/${encodeURIComponent(sessionId)}/aadhaar-xml`, formData)
+}
+
 export async function getKycSession(sessionId) {
   return apiGet(`/api/kyc/sessions/${encodeURIComponent(sessionId)}`)
 }

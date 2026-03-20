@@ -61,6 +61,7 @@ public static class ServiceRegistrationExtensions
         // KYC providers (plugin-style routing)
         services.AddScoped<Textzy.Api.Services.Kyc.IKycProvider, Textzy.Api.Services.Kyc.DigiLockerKycProvider>();
         services.AddScoped<Textzy.Api.Services.Kyc.IKycProvider, Textzy.Api.Services.Kyc.GstKycProvider>();
+        services.AddScoped<Textzy.Api.Services.Kyc.AadhaarXmlKycService>();
         services.AddScoped<Textzy.Api.Services.Kyc.KycProviderRouter>();
         services.AddSignalR();
         services.AddScoped<WhatsAppCloudService>();

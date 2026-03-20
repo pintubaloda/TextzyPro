@@ -36,6 +36,7 @@ import {
   verifyAuthenticator,
   createKycSession,
   getKycSession,
+  uploadAadhaarXmlKyc,
 } from "@/lib/api";
 
 const maskSecret = (value) => {
@@ -139,8 +140,12 @@ const IntegrationsPage = () => {
   });
   const [savingTenantApi, setSavingTenantApi] = useState(false);
   const [kycTest, setKycTest] = useState({
+    provider: "digilocker",
     docType: "PAN",
     customerRef: "",
+    mobileNumber: "",
+    shareCode: "",
+    zipFile: null,
     busy: false,
     sessionId: "",
     status: "",
@@ -303,10 +308,11 @@ const IntegrationsPage = () => {
       setKycTest((prev) => ({ ...prev, busy: true, error: "" }));
       const origin = window.location.origin;
       const redirectBack = `${origin}/dashboard/integrations?kycReturn=1`;
+      const provider = String(kycTest.provider || "digilocker").trim().toLowerCase();
       const res = await createKycSession({
-        provider: "digilocker",
+        provider,
         customerRef: String(kycTest.customerRef || "").trim(),
-        docTypes: [String(kycTest.docType || "PAN").trim()],
+        docTypes: [provider === "aadhaarxml" ? "AADHAAR" : String(kycTest.docType || "PAN").trim()],
         successRedirectUrl: redirectBack,
         failureRedirectUrl: redirectBack,
         webhookUrl: "", // use tenant default if set
@@ -318,6 +324,26 @@ const IntegrationsPage = () => {
         status: res?.status || "created",
         lastResult: null,
       }));
+
+      if (provider === "aadhaarxml") {
+        if (!res?.sessionId) throw new Error("Missing sessionId from server.");
+        if (!kycTest.zipFile) throw new Error("Aadhaar ZIP file is required.");
+        const uploadRes = await uploadAadhaarXmlKyc(res.sessionId, {
+          mobileNumber: kycTest.mobileNumber,
+          shareCode: kycTest.shareCode,
+          zipFile: kycTest.zipFile,
+        });
+        setKycTest((prev) => ({
+          ...prev,
+          status: uploadRes?.status || prev.status,
+          error: uploadRes?.failureReason || "",
+          lastResult: uploadRes || null,
+        }));
+        if (String(uploadRes?.status || "").toLowerCase() === "verified") {
+          toast.success("Aadhaar XML verified successfully");
+        }
+        return;
+      }
 
       const redirectUrl =
         res?.redirectUrl ||
@@ -337,6 +363,13 @@ const IntegrationsPage = () => {
       setKycTest((prev) => ({ ...prev, busy: false }));
     }
   };
+
+  const latestKycPdf = useMemo(() => {
+    const files = kycTest?.lastResult?.result?.files || kycTest?.lastResult?.files || [];
+    if (!Array.isArray(files)) return "";
+    const row = files.find((item) => String(item?.doctype || "").toUpperCase().includes("AADHAAR_REPORT")) || files[0];
+    return row?.fileBase64 ? `data:${row?.mime || "application/pdf"};base64,${row.fileBase64}` : "";
+  }, [kycTest.lastResult]);
 
   const beginAuthenticatorSetup = async (provider) => {
     try {
@@ -795,29 +828,71 @@ const IntegrationsPage = () => {
 
           <Card className="border-slate-200 shadow-sm">
             <CardHeader>
-              <CardTitle>Test DigiLocker KYC Flow</CardTitle>
-              <CardDescription>Create one KYC session (one docType) and continue to DigiLocker consent. You will return here with `sessionId` + `status` in the URL.</CardDescription>
+              <CardTitle>KYC Test Console</CardTitle>
+              <CardDescription>Run DigiLocker redirect tests or Aadhaar XML upload tests using the same KYC credit balance.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="grid gap-2">
+                <Label>Mode</Label>
+                <Select
+                  value={kycTest.provider}
+                  onValueChange={(value) =>
+                    setKycTest((p) => ({
+                      ...p,
+                      provider: value,
+                      docType: value === "aadhaarxml" ? "AADHAAR" : p.docType,
+                      lastResult: null,
+                      error: "",
+                    }))
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="digilocker">DigiLocker Redirect</SelectItem>
+                    <SelectItem value="aadhaarxml">Aadhaar XML Upload</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-3">
-                <div className="grid gap-2">
-                  <Label>DocType</Label>
-                  <Select value={kycTest.docType} onValueChange={(v) => setKycTest((p) => ({ ...p, docType: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PAN">PAN</SelectItem>
-                      <SelectItem value="AADHAAR">AADHAAR</SelectItem>
-                      <SelectItem value="DL">DL</SelectItem>
-                      <SelectItem value="RC">RC</SelectItem>
-                      <SelectItem value="PASSPORT">PASSPORT</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {kycTest.provider === "digilocker" ? (
+                  <div className="grid gap-2">
+                    <Label>DocType</Label>
+                    <Select value={kycTest.docType} onValueChange={(v) => setKycTest((p) => ({ ...p, docType: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PAN">PAN</SelectItem>
+                        <SelectItem value="AADHAAR">AADHAAR</SelectItem>
+                        <SelectItem value="DL">DL</SelectItem>
+                        <SelectItem value="RC">RC</SelectItem>
+                        <SelectItem value="PASSPORT">PASSPORT</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    <Label>Mobile Number</Label>
+                    <Input value={kycTest.mobileNumber} onChange={(e) => setKycTest((p) => ({ ...p, mobileNumber: e.target.value }))} placeholder="919876543210" />
+                  </div>
+                )}
                 <div className="grid gap-2 md:col-span-2">
                   <Label>Customer Ref (optional)</Label>
                   <Input value={kycTest.customerRef} onChange={(e) => setKycTest((p) => ({ ...p, customerRef: e.target.value }))} placeholder="user-123" />
                 </div>
               </div>
+
+              {kycTest.provider === "aadhaarxml" ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label>Share Code</Label>
+                    <Input value={kycTest.shareCode} onChange={(e) => setKycTest((p) => ({ ...p, shareCode: e.target.value }))} placeholder="1234" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Aadhaar ZIP File</Label>
+                    <Input type="file" accept=".zip,application/zip" onChange={(e) => setKycTest((p) => ({ ...p, zipFile: e.target.files?.[0] || null }))} />
+                  </div>
+                </div>
+              ) : null}
 
               {kycTest.sessionId ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
@@ -832,7 +907,7 @@ const IntegrationsPage = () => {
 
               <div className="flex flex-wrap gap-2">
                 <Button className="bg-orange-500 hover:bg-orange-600" disabled={kycTest.busy} onClick={startKycTest}>
-                  {kycTest.busy ? "Starting..." : "Start DigiLocker Test"}
+                  {kycTest.busy ? "Processing..." : kycTest.provider === "aadhaarxml" ? "Upload Aadhaar XML Test" : "Start DigiLocker Test"}
                 </Button>
                 {kycTest.sessionId ? (
                   <Button variant="outline" onClick={async () => {
@@ -844,6 +919,11 @@ const IntegrationsPage = () => {
                       toast.error(e?.message || "Failed to refresh");
                     }
                   }}>Refresh Status</Button>
+                ) : null}
+                {latestKycPdf ? (
+                  <Button variant="outline" onClick={() => window.open(latestKycPdf, "_blank", "noopener,noreferrer")}>
+                    View Generated PDF
+                  </Button>
                 ) : null}
               </div>
 

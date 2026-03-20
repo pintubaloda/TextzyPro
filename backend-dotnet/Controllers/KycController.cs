@@ -20,6 +20,7 @@ public class KycController(
     IntegrationCatalogBillingService integrationBilling,
     SecretCryptoService crypto,
     KycProviderRouter router,
+    AadhaarXmlKycService aadhaarXmlKyc,
     AuditLogService audit) : ControllerBase
 {
     [HttpPost("sessions")]
@@ -31,7 +32,7 @@ public class KycController(
         var isApiClient = string.Equals(auth.Role, "api_client", StringComparison.OrdinalIgnoreCase);
         if (!isApiClient && !rbac.HasPermission(ApiWrite)) return Forbid();
 
-        var provider = string.IsNullOrWhiteSpace(request.Provider) ? "digilocker" : request.Provider.Trim().ToLowerInvariant();
+        var provider = NormalizeProvider(request.Provider);
         if (provider.Length > 40) return BadRequest("provider is too long.");
         if (request.DocTypes.Count > 25) return BadRequest("Too many docTypes.");
         // Billing is per docType/scope; keep sessions predictable.
@@ -75,7 +76,9 @@ public class KycController(
         }
 
         // Pre-check credits/limits and reserve credits up front. Failed sessions are refunded later.
-        var pluginSlug = $"{provider}-kyc";
+        var pluginSlug = string.Equals(provider, "aadhaarxml", StringComparison.OrdinalIgnoreCase)
+            ? "digilocker-kyc"
+            : $"{provider}-kyc";
         var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
         var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
         var baseCredits = billingCfg.CreditsPerSuccess > 0 ? billingCfg.CreditsPerSuccess : 3;
@@ -142,6 +145,21 @@ public class KycController(
         db.KycSessions.Add(row);
         await db.SaveChangesAsync(ct);
 
+        if (string.Equals(provider, "aadhaarxml", StringComparison.OrdinalIgnoreCase))
+        {
+            await audit.WriteAsync("kyc.session.create", $"provider={provider}; tenant={tenancy.TenantSlug}; session={row.Id}", ct);
+            var uploadPayload = new
+            {
+                sessionId = row.Id,
+                provider = row.ProviderCode,
+                status = row.Status,
+                uploadRequired = true,
+                acceptedFileType = ".zip",
+                acceptedDocType = normalizedDocTypes.FirstOrDefault() ?? "AADHAAR"
+            };
+            return Content(JsonSerializer.Serialize(uploadPayload), "application/json; charset=utf-8");
+        }
+
         string redirectUrl;
         string state;
         try
@@ -173,6 +191,95 @@ public class KycController(
 
         // Defensive: avoid rare formatter/proxy issues where a 200 response body is dropped.
         return Content(JsonSerializer.Serialize(payload), "application/json; charset=utf-8");
+    }
+
+    [HttpPost("sessions/{id:guid}/aadhaar-xml")]
+    [RequestSizeLimit(25 * 1024 * 1024)]
+    public async Task<IActionResult> UploadAadhaarXml(Guid id, [FromForm] UploadAadhaarXmlRequest request, CancellationToken ct)
+    {
+        if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
+
+        var isApiClient = string.Equals(auth.Role, "api_client", StringComparison.OrdinalIgnoreCase);
+        if (!isApiClient && !rbac.HasPermission(ApiWrite)) return Forbid();
+
+        var row = await db.KycSessions.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenancy.TenantId, ct);
+        if (row is null) return NotFound();
+        if (!string.Equals(row.ProviderCode, "aadhaarxml", StringComparison.OrdinalIgnoreCase))
+            return BadRequest("Session is not an Aadhaar XML session.");
+
+        try
+        {
+            var verification = await aadhaarXmlKyc.VerifyAsync(
+                request.ZipFile ?? throw new InvalidOperationException("Aadhaar ZIP file is required."),
+                request.ShareCode,
+                request.MobileNumber,
+                row.Id,
+                ct);
+
+            var resultPayload = new Dictionary<string, object?>
+            {
+                ["provider"] = "aadhaarxml",
+                ["status"] = "verified",
+                ["collected"] = verification.Collected,
+                ["files"] = new object[]
+                {
+                    new Dictionary<string, object?>
+                    {
+                        ["doctype"] = "AADHAAR_REPORT",
+                        ["fileName"] = verification.ReportFileName,
+                        ["mime"] = verification.ReportMime,
+                        ["fileBase64"] = Convert.ToBase64String(verification.ReportPdf),
+                        ["generatedAtUtc"] = verification.ProcessedAtUtc
+                    }
+                },
+                ["source"] = new Dictionary<string, object?>
+                {
+                    ["fileName"] = verification.SourceFileName,
+                    ["zipSha256"] = verification.SourceZipSha256,
+                    ["xmlSha256"] = verification.SourceXmlSha256,
+                    ["mobileNumber"] = verification.MobileNumber
+                },
+                ["trail"] = new Dictionary<string, object?>
+                {
+                    ["verifiedAtUtc"] = verification.ProcessedAtUtc,
+                    ["verificationMode"] = "aadhaar_xml_upload",
+                    ["sessionId"] = row.Id
+                }
+            };
+
+            row.Status = "verified";
+            row.FailureReason = string.Empty;
+            row.ResultJsonEncrypted = crypto.Encrypt(JsonSerializer.Serialize(resultPayload));
+            row.UpdatedAtUtc = DateTime.UtcNow;
+            row.CompletedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            await audit.WriteAsync("kyc.session.verify", $"provider=aadhaarxml; tenant={tenancy.TenantSlug}; session={row.Id}", ct);
+
+            return Ok(new
+            {
+                sessionId = row.Id,
+                provider = row.ProviderCode,
+                status = row.Status,
+                result = resultPayload
+            });
+        }
+        catch (Exception ex)
+        {
+            await RefundAadhaarXmlCreditsIfNeededAsync(row, ct);
+            row.Status = "failed";
+            row.FailureReason = ex.Message;
+            row.UpdatedAtUtc = DateTime.UtcNow;
+            row.CompletedAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            return Ok(new
+            {
+                sessionId = row.Id,
+                provider = row.ProviderCode,
+                status = row.Status,
+                failureReason = row.FailureReason
+            });
+        }
     }
 
     [HttpGet("sessions/{id:guid}")]
@@ -275,6 +382,21 @@ public class KycController(
         public string WebhookUrl { get; set; } = string.Empty;
     }
 
+    public sealed class UploadAadhaarXmlRequest
+    {
+        public string MobileNumber { get; set; } = string.Empty;
+        public string ShareCode { get; set; } = string.Empty;
+        public IFormFile? ZipFile { get; set; }
+    }
+
+    private static string NormalizeProvider(string? provider)
+    {
+        var normalized = string.IsNullOrWhiteSpace(provider) ? "digilocker" : provider.Trim().ToLowerInvariant();
+        if (normalized is "aadhaar_xml" or "aadhaar-xml" or "eaadhaar" or "eaadhaarxml")
+            return "aadhaarxml";
+        return normalized;
+    }
+
     private static List<string> NormalizeDocTypes(List<string> docTypes)
     {
         return (docTypes ?? [])
@@ -317,6 +439,30 @@ public class KycController(
         catch
         {
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private async Task RefundAadhaarXmlCreditsIfNeededAsync(KycSession row, CancellationToken ct)
+    {
+        if (row.CreditsUsed <= 0 || string.IsNullOrWhiteSpace(row.BillingMetric))
+            return;
+
+        try
+        {
+            await billingGuard.AddCreditUnitsAsync(
+                row.TenantId,
+                row.BillingMetric,
+                row.CreditsUsed,
+                ct,
+                source: "kyc.aadhaarxml.upload",
+                service: "digilocker-kyc",
+                referenceId: row.Id.ToString(),
+                status: "refunded");
+            row.CreditsUsed = 0;
+        }
+        catch
+        {
+            // Keep the original failure visible even if refund logging fails.
         }
     }
 }

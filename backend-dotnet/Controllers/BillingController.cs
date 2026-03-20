@@ -1309,7 +1309,9 @@ public class BillingController(
     private static string ResolveKycApiName(string? providerCode)
         => string.Equals(providerCode, "gst", StringComparison.OrdinalIgnoreCase)
             ? "AppyFlow GST"
-            : "DigiLocker KYC";
+            : string.Equals(providerCode, "aadhaarxml", StringComparison.OrdinalIgnoreCase)
+                ? "Aadhaar XML KYC"
+                : "DigiLocker KYC";
 
     private static string ResolveKycDescription(KycSession session)
     {
@@ -1317,6 +1319,10 @@ public class BillingController(
             return string.IsNullOrWhiteSpace(session.GstNumber)
                 ? "GST verification session"
                 : $"GST verification for {session.GstNumber}";
+        if (string.Equals(session.ProviderCode, "aadhaarxml", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(session.CustomerRef)
+                ? "Aadhaar XML verification session"
+                : $"Aadhaar XML verification for {session.CustomerRef}";
         return string.IsNullOrWhiteSpace(session.CustomerRef)
             ? "DigiLocker verification session"
             : $"DigiLocker verification for {session.CustomerRef}";
