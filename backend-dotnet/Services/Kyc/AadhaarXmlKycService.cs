@@ -94,40 +94,15 @@ public class AadhaarXmlKycService
             var xml = Encoding.UTF8.GetString(xmlBytes);
             var doc = XDocument.Parse(xml);
             var plbd = doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("PrintLetterBarcodeData", StringComparison.OrdinalIgnoreCase));
-            if (plbd is null)
-                throw new InvalidOperationException("Uploaded XML is not a valid Aadhaar XML file.");
+            if (plbd is not null)
+                return ParsePrintLetterBarcodeData(doc, plbd);
 
-            string Attr(string key) => (plbd.Attribute(key)?.Value ?? string.Empty).Trim();
+            var offlineRoot = doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("OfflinePaperlessKyc", StringComparison.OrdinalIgnoreCase))
+                ?? (doc.Root?.Name.LocalName.Equals("OfflinePaperlessKyc", StringComparison.OrdinalIgnoreCase) == true ? doc.Root : null);
+            if (offlineRoot is not null)
+                return ParseOfflinePaperlessKyc(doc, offlineRoot);
 
-            var uid = Attr("uid");
-            var co = Attr("co");
-            var addressParts = new List<string>();
-            void Add(string v) { if (!string.IsNullOrWhiteSpace(v)) addressParts.Add(v); }
-            Add(co);
-            Add(Attr("house"));
-            Add(Attr("street"));
-            Add(Attr("lm"));
-            Add(Attr("loc"));
-            Add(Attr("vtc"));
-            Add(Attr("po"));
-            Add(Attr("dist"));
-            Add(Attr("subdist"));
-            Add(Attr("state"));
-            Add(Attr("pc"));
-
-            var collected = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["aadhaarNumber"] = uid,
-                ["aadhaarMasked"] = MaskId(uid),
-                ["name"] = Attr("name"),
-                ["dob"] = Attr("dob"),
-                ["gender"] = Attr("gender"),
-                ["fatherName"] = ExtractFatherName(co),
-                ["address"] = NormalizeWhitespace(string.Join(", ", addressParts)),
-                ["photoBase64"] = (doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Pht", StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty).Trim()
-            };
-
-            return collected;
+            throw new InvalidOperationException("Uploaded XML is not a valid Aadhaar XML file.");
         }
         catch (InvalidOperationException)
         {
@@ -137,6 +112,92 @@ public class AadhaarXmlKycService
         {
             throw new InvalidOperationException("Failed to parse Aadhaar XML.", ex);
         }
+    }
+
+    private static Dictionary<string, object?> ParsePrintLetterBarcodeData(XDocument doc, XElement plbd)
+    {
+        string Attr(string key) => (plbd.Attribute(key)?.Value ?? string.Empty).Trim();
+
+        var uid = Attr("uid");
+        var co = Attr("co");
+        var addressParts = new List<string>();
+        void Add(string v) { if (!string.IsNullOrWhiteSpace(v)) addressParts.Add(v); }
+        Add(co);
+        Add(Attr("house"));
+        Add(Attr("street"));
+        Add(Attr("lm"));
+        Add(Attr("loc"));
+        Add(Attr("vtc"));
+        Add(Attr("po"));
+        Add(Attr("dist"));
+        Add(Attr("subdist"));
+        Add(Attr("state"));
+        Add(Attr("pc"));
+
+        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["aadhaarNumber"] = uid,
+            ["aadhaarMasked"] = MaskId(uid),
+            ["name"] = Attr("name"),
+            ["dob"] = Attr("dob"),
+            ["gender"] = Attr("gender"),
+            ["fatherName"] = ExtractFatherName(co),
+            ["address"] = NormalizeWhitespace(string.Join(", ", addressParts)),
+            ["photoBase64"] = (doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Pht", StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty).Trim()
+        };
+    }
+
+    private static Dictionary<string, object?> ParseOfflinePaperlessKyc(XDocument doc, XElement offlineRoot)
+    {
+        var uidData = offlineRoot.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("UidData", StringComparison.OrdinalIgnoreCase));
+        var poi = uidData?.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Poi", StringComparison.OrdinalIgnoreCase))
+            ?? offlineRoot.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Poi", StringComparison.OrdinalIgnoreCase));
+        var poa = uidData?.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Poa", StringComparison.OrdinalIgnoreCase))
+            ?? offlineRoot.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Poa", StringComparison.OrdinalIgnoreCase));
+        var pht = uidData?.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Pht", StringComparison.OrdinalIgnoreCase))
+            ?? offlineRoot.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Pht", StringComparison.OrdinalIgnoreCase));
+
+        if (poi is null && poa is null)
+            throw new InvalidOperationException("Uploaded XML does not contain Aadhaar identity data.");
+
+        string RootAttr(string key) => (offlineRoot.Attribute(key)?.Value ?? string.Empty).Trim();
+        string PoiAttr(string key) => (poi?.Attribute(key)?.Value ?? string.Empty).Trim();
+        string PoaAttr(string key) => (poa?.Attribute(key)?.Value ?? string.Empty).Trim();
+
+        var referenceId = RootAttr("referenceId");
+        var uid = RootAttr("uid");
+        if (string.IsNullOrWhiteSpace(uid))
+            uid = PoiAttr("uid");
+
+        var careOf = FirstNonEmpty(PoaAttr("co"), PoaAttr("careof"), PoiAttr("co"));
+        var addressParts = new List<string>();
+        void Add(string value) { if (!string.IsNullOrWhiteSpace(value)) addressParts.Add(value); }
+        Add(careOf);
+        Add(PoaAttr("house"));
+        Add(PoaAttr("street"));
+        Add(PoaAttr("lm"));
+        Add(PoaAttr("loc"));
+        Add(PoaAttr("vtc"));
+        Add(PoaAttr("po"));
+        Add(PoaAttr("dist"));
+        Add(PoaAttr("subdist"));
+        Add(PoaAttr("state"));
+        Add(PoaAttr("pc"));
+
+        var maskedId = !string.IsNullOrWhiteSpace(uid) ? MaskId(uid) : MaskReferenceId(referenceId);
+        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["aadhaarNumber"] = uid,
+            ["aadhaarMasked"] = maskedId,
+            ["referenceId"] = referenceId,
+            ["name"] = PoiAttr("name"),
+            ["dob"] = FirstNonEmpty(PoiAttr("dob"), PoiAttr("yob")),
+            ["gender"] = PoiAttr("gender"),
+            ["fatherName"] = ExtractFatherName(careOf),
+            ["address"] = NormalizeWhitespace(string.Join(", ", addressParts)),
+            ["photoBase64"] = (pht?.Value ?? string.Empty).Trim(),
+            ["email"] = PoiAttr("e")
+        };
     }
 
     private static byte[] BuildVerificationPdf(Dictionary<string, object?> collected, Dictionary<string, object?> trail)
@@ -267,6 +328,14 @@ public class AadhaarXmlKycService
         return idx >= 0 && idx + 1 < co.Length ? co[(idx + 1)..].Trim() : co.Trim();
     }
 
+    private static string MaskReferenceId(string referenceId)
+    {
+        var value = NormalizeWhitespace(referenceId);
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        if (value.Length <= 8) return value;
+        return $"{value[..4]}...{value[^4..]}";
+    }
+
     private static string NormalizeMobile(string raw)
     {
         var digits = new string((raw ?? string.Empty).Where(char.IsDigit).ToArray());
@@ -283,4 +352,7 @@ public class AadhaarXmlKycService
 
     private static string GetString(IReadOnlyDictionary<string, object?> values, string key)
         => values.TryGetValue(key, out var value) ? (value?.ToString() ?? string.Empty) : string.Empty;
+
+    private static string FirstNonEmpty(params string[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 }
