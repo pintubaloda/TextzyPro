@@ -10,6 +10,8 @@ public sealed record AadhaarXmlVerificationResult(
     byte[] ReportPdf,
     string ReportFileName,
     string ReportMime,
+    string RawXmlUtf8,
+    string RawXmlBase64,
     string SourceFileName,
     string SourceZipSha256,
     string SourceXmlSha256,
@@ -66,6 +68,8 @@ public class AadhaarXmlKycService
             ReportPdf: reportPdf,
             ReportFileName: "textzy-aadhaar-verification-report.pdf",
             ReportMime: "application/pdf",
+            RawXmlUtf8: Encoding.UTF8.GetString(xmlBytes),
+            RawXmlBase64: Convert.ToBase64String(xmlBytes),
             SourceFileName: zipFile.FileName ?? "aadhaar.zip",
             SourceZipSha256: Sha256Hex(zipBytes),
             SourceXmlSha256: Sha256Hex(xmlBytes),
@@ -141,11 +145,13 @@ public class AadhaarXmlKycService
         return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
             ["aadhaarNumber"] = uid,
+            ["aadhaarNumberFull"] = uid,
             ["aadhaarMasked"] = MaskId(uid),
             ["name"] = Attr("name"),
             ["dob"] = Attr("dob"),
             ["gender"] = Attr("gender"),
             ["fatherName"] = ExtractFatherName(co),
+            ["careOfRaw"] = co,
             ["address"] = NormalizeWhitespace(string.Join(", ", addressParts)),
             ["photoBase64"] = (doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Equals("Pht", StringComparison.OrdinalIgnoreCase))?.Value ?? string.Empty).Trim()
         };
@@ -192,12 +198,14 @@ public class AadhaarXmlKycService
         return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
             ["aadhaarNumber"] = uid,
+            ["aadhaarNumberFull"] = uid,
             ["aadhaarMasked"] = maskedId,
             ["referenceId"] = referenceId,
             ["name"] = PoiAttr("name"),
             ["dob"] = FirstNonEmpty(PoiAttr("dob"), PoiAttr("yob")),
             ["gender"] = PoiAttr("gender"),
             ["fatherName"] = ExtractFatherName(careOf),
+            ["careOfRaw"] = careOf,
             ["address"] = NormalizeWhitespace(string.Join(", ", addressParts)),
             ["photoBase64"] = (pht?.Value ?? string.Empty).Trim(),
             ["email"] = FirstNonEmpty(PoiAttr("e"), RootAttr("e")),
@@ -210,7 +218,7 @@ public class AadhaarXmlKycService
         var identity = new List<string>
         {
             $"Name: {GetString(collected, "name")}",
-            $"Aadhaar (masked): {GetString(collected, "aadhaarMasked")}",
+            $"Aadhaar No: {Fallback(FirstNonEmpty(GetString(collected, "aadhaarNumberFull"), GetString(collected, "aadhaarNumber")))}",
         };
 
         var referenceId = GetString(collected, "referenceId");
@@ -221,7 +229,8 @@ public class AadhaarXmlKycService
         [
             $"DOB: {GetString(collected, "dob")}",
             $"Gender: {GetString(collected, "gender")}",
-            $"Father / Guardian: {GetString(collected, "fatherName")}",
+            $"Father / Guardian: {Fallback(GetString(collected, "fatherName"))}",
+            $"Care Of (raw): {Fallback(GetString(collected, "careOfRaw"))}",
             $"Email: {Fallback(GetString(collected, "email"))}",
             $"Mobile (XML): {Fallback(GetString(collected, "mobileFromXml"))}",
             $"Mobile Number: {GetString(collected, "mobileNumber")}",

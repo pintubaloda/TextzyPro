@@ -237,7 +237,9 @@ public class KycController(
                     ["fileName"] = verification.SourceFileName,
                     ["zipSha256"] = verification.SourceZipSha256,
                     ["xmlSha256"] = verification.SourceXmlSha256,
-                    ["mobileNumber"] = verification.MobileNumber
+                    ["mobileNumber"] = verification.MobileNumber,
+                    ["rawXmlBase64"] = verification.RawXmlBase64,
+                    ["rawXmlDecoded"] = verification.RawXmlUtf8
                 },
                 ["trail"] = new Dictionary<string, object?>
                 {

@@ -112,11 +112,13 @@ function KycPreviewCard({ brand, collected, active }) {
   const name = safeGet(collected, "name", "-");
   const dob = safeGet(collected, "dob", "-");
   const gender = safeGet(collected, "gender", "-");
-  const fatherName = safeGet(collected, "fatherName", "-");
-  const aadhaar = safeGet(collected, "aadhaarNumber", "") || safeGet(collected, "aadhaarMasked", "") || (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified" : "-");
+  const fatherName = safeGet(collected, "fatherName", "") || safeGet(collected, "careOfRaw", "-");
+  const aadhaar = safeGet(collected, "aadhaarNumberFull", "") || safeGet(collected, "aadhaarNumber", "") || safeGet(collected, "referenceId", "") || safeGet(collected, "aadhaarMasked", "") || (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified" : "-");
   const pan = safeGet(collected, "pan", "-");
   const address = safeGet(collected, "address", "-");
   const photo = toDataUrl(collected.photoBase64);
+  const email = safeGet(collected, "email", "-");
+  const mobile = safeGet(collected, "mobileFromXml", "") || safeGet(collected, "mobileNumber", "") || safeGet(collected, "mobile", "-");
   const docType = (Array.isArray(active?.docTypes) && active.docTypes[0]) ? String(active.docTypes[0]).toUpperCase() : "KYC";
 
   return (
@@ -169,6 +171,14 @@ function KycPreviewCard({ brand, collected, active }) {
               <div>
                 <div className="text-slate-500">Aadhaar</div>
                 <div className="font-semibold text-slate-900">{aadhaar}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Mobile</div>
+                <div className="font-semibold text-slate-900">{mobile}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Email</div>
+                <div className="font-semibold text-slate-900">{email}</div>
               </div>
               <div>
                 <div className="text-slate-500">PAN</div>
@@ -279,9 +289,11 @@ export default function KycReportsPage() {
         row?.provider,
         row?.status,
         row?.docTypes?.join(" "),
-        row?.collected?.mobile,
-        row?.collected?.email,
-        row?.collected?.name,
+                        row?.collected?.mobileFromXml,
+                        row?.collected?.mobileNumber,
+                        row?.collected?.mobile,
+                        row?.collected?.email,
+                        row?.collected?.name,
       ].filter(Boolean).join(" ").toLowerCase();
       const matchesQuery = !query || haystack.includes(query);
       return matchesStatus && matchesApi && matchesQuery;
@@ -317,7 +329,7 @@ export default function KycReportsPage() {
         normalizeStatus(row?.status).label,
         row?.customerRef || "",
         Number(row?.creditsUsed || 0),
-        safeGet(row?.collected, "mobile", ""),
+        safeGet(row?.collected, "mobileFromXml", "") || safeGet(row?.collected, "mobileNumber", "") || safeGet(row?.collected, "mobile", ""),
         safeGet(row?.collected, "email", ""),
         formatDate(row?.createdAtUtc),
       ]),
@@ -678,8 +690,10 @@ export default function KycReportsPage() {
               {(() => {
                 const collected = activeDetail?.result?.collected || active?.collected || {};
                 const digilockerId = safeGet(activeDetail?.result?.userDetails, "digilockerid", "-");
-                const aadhaarNo = safeGet(collected, "aadhaarNumber", "-");
+                const aadhaarNo = safeGet(collected, "aadhaarNumberFull", "") || safeGet(collected, "aadhaarNumber", "") || safeGet(collected, "referenceId", "") || safeGet(collected, "aadhaarMasked", "-");
                 const photo = toDataUrl(collected.photoBase64);
+                const mobile = safeGet(collected, "mobileFromXml", "") || safeGet(collected, "mobileNumber", "") || safeGet(collected, "mobile", "-");
+                const fatherName = safeGet(collected, "fatherName", "") || safeGet(collected, "careOfRaw", "-");
                 return (
                   <div className="space-y-3">
                     {photo ? (
@@ -697,9 +711,13 @@ export default function KycReportsPage() {
                         <div className="text-slate-500">DigiLocker ID</div>
                         <div className="font-medium text-slate-900">{digilockerId}</div>
                       </div>
+                      <div className="col-span-2">
+                        <div className="text-slate-500">Father / Guardian</div>
+                        <div className="font-medium text-slate-900">{fatherName}</div>
+                      </div>
                       <div>
                         <div className="text-slate-500">Mobile</div>
-                        <div className="font-medium text-slate-900">{safeGet(collected, "mobile", "-")}</div>
+                        <div className="font-medium text-slate-900">{mobile}</div>
                       </div>
                       <div>
                         <div className="text-slate-500">Email</div>
@@ -731,6 +749,22 @@ export default function KycReportsPage() {
               })()}
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                {safeGet(activeDetail?.result?.source, "rawXmlDecoded", "") ? (
+                  <div className="mb-3">
+                    <div className="mb-2 text-xs font-medium text-slate-500">Decoded XML</div>
+                    <pre className="max-h-[180px] overflow-auto rounded-xl bg-white p-3 text-xs text-slate-700">
+                      {safeGet(activeDetail?.result?.source, "rawXmlDecoded", "")}
+                    </pre>
+                  </div>
+                ) : null}
+                {safeGet(activeDetail?.result?.source, "rawXmlBase64", "") ? (
+                  <div className="mb-3">
+                    <div className="mb-2 text-xs font-medium text-slate-500">XML Base64</div>
+                    <pre className="max-h-[120px] overflow-auto rounded-xl bg-white p-3 text-xs text-slate-700">
+                      {safeGet(activeDetail?.result?.source, "rawXmlBase64", "")}
+                    </pre>
+                  </div>
+                ) : null}
                 <div className="mb-2 text-xs font-medium text-slate-500">Received response</div>
                 <pre className="max-h-[220px] overflow-auto rounded-xl bg-white p-3 text-xs text-slate-700">
                   {formatResponse(activeDetail?.result || active?.result || {})}
