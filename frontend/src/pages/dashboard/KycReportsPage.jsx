@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useBranding } from "@/hooks/useBranding";
 
 function safeGet(obj, key, fallback = "") {
   try {
@@ -140,45 +139,36 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
-function KycPreviewCard({ brand, collected, active }) {
+function KycPreviewCard({ collected, active }) {
   const name = safeGet(collected, "name", "-");
   const dob = safeGet(collected, "dob", "-");
   const gender = safeGet(collected, "gender", "-");
   const fatherName = safeGet(collected, "fatherName", "") || safeGet(collected, "careOfRaw", "-");
-  const aadhaar = safeGet(collected, "aadhaarNumberFull", "") || safeGet(collected, "aadhaarNumber", "") || safeGet(collected, "referenceId", "") || safeGet(collected, "aadhaarMasked", "") || (String(safeGet(collected, "aadhaarVerified", "")).toLowerCase() === "true" ? "Verified" : "-");
+  const aadhaar = safeGet(collected, "aadhaarNumberFull", "") || safeGet(collected, "aadhaarNumber", "") || "-";
+  const referenceId = safeGet(collected, "referenceId", "-");
   const pan = safeGet(collected, "pan", "-");
   const address = safeGet(collected, "address", "-");
   const photo = toDataUrl(collected.photoBase64);
   const email = safeGet(collected, "email", "-");
-  const mobile = safeGet(collected, "mobileFromXml", "") || safeGet(collected, "mobileNumber", "") || safeGet(collected, "mobile", "-");
+  const mobile = safeGet(collected, "mobileFromXml", "-");
+  const enteredMobile = safeGet(collected, "mobileNumber", "-");
   const docType = (Array.isArray(active?.docTypes) && active.docTypes[0]) ? String(active.docTypes[0]).toUpperCase() : "KYC";
+  const signatureValid = String(safeGet(collected, "signatureValid", "-"));
 
   return (
     <div className="relative h-[540px] w-full overflow-hidden rounded-xl bg-white">
-      <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.08]">
-        {brand?.logoUrl ? (
-          <img src={brand.logoUrl} alt={brand.name || "Textzy"} className="h-36 w-36 object-contain" />
-        ) : (
-          <div className="text-6xl font-black tracking-tight text-slate-900">{brand?.name || "Textzy"}</div>
-        )}
-      </div>
-
       <div className="relative p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {brand?.logoUrl ? (
-              <img src={brand.logoUrl} alt={brand.name || "Textzy"} className="h-10 w-10 rounded-xl border border-slate-200 object-cover" />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-900">
-                {String(brand?.name || "Textzy").slice(0, 1).toUpperCase()}
-              </div>
-            )}
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-900">
+              ID
+            </div>
             <div>
-              <div className="text-sm font-semibold text-slate-900">{brand?.name || "Textzy"}</div>
-              <div className="text-xs text-slate-500">{docType} KYC Record</div>
+              <div className="text-sm font-semibold text-slate-900">Aadhaar XML Verification</div>
+              <div className="text-xs text-slate-500">{docType} record preview</div>
             </div>
           </div>
-          <Badge className="bg-emerald-600 hover:bg-emerald-600">Verified</Badge>
+          <Badge className="bg-emerald-600 hover:bg-emerald-600">{signatureValid === "True" || signatureValid === "true" ? "Signature Valid" : "Verified"}</Badge>
         </div>
 
         <div className="mt-4 grid grid-cols-[1fr_140px] gap-4 rounded-2xl border border-slate-200 p-4">
@@ -201,12 +191,20 @@ function KycPreviewCard({ brand, collected, active }) {
                 <div className="font-semibold text-slate-900">{fatherName}</div>
               </div>
               <div>
-                <div className="text-slate-500">Aadhaar</div>
+                <div className="text-slate-500">Aadhaar No</div>
                 <div className="font-semibold text-slate-900">{aadhaar}</div>
               </div>
               <div>
-                <div className="text-slate-500">Mobile</div>
+                <div className="text-slate-500">Reference ID</div>
+                <div className="font-semibold text-slate-900">{referenceId}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Mobile Hash</div>
                 <div className="font-semibold text-slate-900">{mobile}</div>
+              </div>
+              <div>
+                <div className="text-slate-500">Entered Mobile</div>
+                <div className="font-semibold text-slate-900">{enteredMobile}</div>
               </div>
               <div>
                 <div className="text-slate-500">Email</div>
@@ -231,12 +229,12 @@ function KycPreviewCard({ brand, collected, active }) {
                 No photo
               </div>
             )}
-            <div className="text-[11px] text-slate-500">Powered by {brand?.name || "Textzy"}</div>
+            <div className="text-[11px] text-slate-500">Offline XML photo</div>
           </div>
         </div>
 
         <div className="mt-3 text-[11px] text-slate-500">
-          Note: If DigiLocker blocks PDF/XML download, this preview is generated from available profile and issued-doc metadata.
+          Preview shows raw Aadhaar XML values and signature state from the stored verification payload.
         </div>
       </div>
     </div>
@@ -244,7 +242,6 @@ function KycPreviewCard({ brand, collected, active }) {
 }
 
 export default function KycReportsPage() {
-  const { brand } = useBranding();
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -637,13 +634,6 @@ export default function KycReportsPage() {
               {previewUrl ? (
                 <div className="relative h-[540px] w-full rounded-xl bg-white overflow-hidden">
                   <iframe title="kyc-preview" src={previewUrl} className="h-full w-full" />
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.08]">
-                    {brand?.logoUrl ? (
-                      <img src={brand.logoUrl} alt={brand.name || "Textzy"} className="h-36 w-36 object-contain" />
-                    ) : (
-                      <div className="text-6xl font-black tracking-tight text-slate-900">{brand?.name || "Textzy"}</div>
-                    )}
-                  </div>
                   {(() => {
                     const files = safeGet(activeDetail?.result, "files", []);
                     if (!Array.isArray(files) || files.length <= 1) return null;
@@ -667,7 +657,7 @@ export default function KycReportsPage() {
                   })()}
                 </div>
               ) : (
-                <KycPreviewCard brand={brand} collected={activeDetail?.result?.collected || active?.collected || {}} active={activeDetail || active} />
+                <KycPreviewCard collected={activeDetail?.result?.collected || active?.collected || {}} active={activeDetail || active} />
               )}
             </div>
 
@@ -722,10 +712,14 @@ export default function KycReportsPage() {
               {(() => {
                 const collected = activeDetail?.result?.collected || active?.collected || {};
                 const digilockerId = safeGet(activeDetail?.result?.userDetails, "digilockerid", "-");
-                const aadhaarNo = safeGet(collected, "aadhaarNumberFull", "") || safeGet(collected, "aadhaarNumber", "") || safeGet(collected, "referenceId", "") || safeGet(collected, "aadhaarMasked", "-");
+                const aadhaarNo = safeGet(collected, "aadhaarNumberFull", "") || safeGet(collected, "aadhaarNumber", "") || "-";
+                const referenceId = safeGet(collected, "referenceId", "-");
                 const photo = toDataUrl(collected.photoBase64);
-                const mobile = safeGet(collected, "mobileFromXml", "") || safeGet(collected, "mobileNumber", "") || safeGet(collected, "mobile", "-");
+                const mobile = safeGet(collected, "mobileFromXml", "-");
+                const enteredMobile = safeGet(collected, "mobileNumber", "-");
                 const fatherName = safeGet(collected, "fatherName", "") || safeGet(collected, "careOfRaw", "-");
+                const signature = activeDetail?.result?.signature || {};
+                const mobileVerification = activeDetail?.result?.mobileVerification || {};
                 return (
                   <div className="space-y-3">
                     {photo ? (
@@ -748,8 +742,12 @@ export default function KycReportsPage() {
                         <div className="font-medium text-slate-900">{fatherName}</div>
                       </div>
                       <div>
-                        <div className="text-slate-500">Mobile</div>
+                        <div className="text-slate-500">Mobile Hash</div>
                         <div className="font-medium text-slate-900">{mobile}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">Entered Mobile</div>
+                        <div className="font-medium text-slate-900">{enteredMobile}</div>
                       </div>
                       <div>
                         <div className="text-slate-500">Email</div>
@@ -774,6 +772,43 @@ export default function KycReportsPage() {
                       <div className="col-span-2">
                         <div className="text-slate-500">Aadhaar No</div>
                         <div className="font-medium text-slate-900">{aadhaarNo}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-slate-500">Reference ID</div>
+                        <div className="font-medium text-slate-900">{referenceId}</div>
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-slate-500">Mobile Hash Matched</div>
+                        <div className="font-medium text-slate-900">{String(safeGet(mobileVerification, "matched", "-"))}</div>
+                      </div>
+                      <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="mb-2 text-xs font-medium text-slate-500">Signature</div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <div className="text-slate-500">Signature Valid</div>
+                            <div className="font-medium text-slate-900">{String(safeGet(signature, "valid", "-"))}</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500">UIDAI Certificate</div>
+                            <div className="font-medium text-slate-900">{String(safeGet(signature, "uidaiCertificate", "-"))}</div>
+                          </div>
+                          <div className="col-span-2">
+                            <div className="text-slate-500">Certificate Subject</div>
+                            <div className="break-all font-medium text-slate-900">{safeGet(signature, "certificateSubject", "-")}</div>
+                          </div>
+                          <div className="col-span-2">
+                            <div className="text-slate-500">Certificate Issuer</div>
+                            <div className="break-all font-medium text-slate-900">{safeGet(signature, "certificateIssuer", "-")}</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500">Signing Algorithm</div>
+                            <div className="font-medium text-slate-900">{safeGet(signature, "signingAlgorithm", "-")}</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500">Digest Algorithm</div>
+                            <div className="font-medium text-slate-900">{safeGet(signature, "digestAlgorithm", "-")}</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

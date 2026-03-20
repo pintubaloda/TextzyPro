@@ -241,6 +241,23 @@ public class KycController(
                     ["rawXmlBase64"] = verification.RawXmlBase64,
                     ["rawXmlDecoded"] = verification.RawXmlUtf8
                 },
+                ["mobileVerification"] = new Dictionary<string, object?>
+                {
+                    ["enteredMobile"] = verification.MobileNumber,
+                    ["xmlMobileHash"] = verification.XmlMobileHash,
+                    ["expectedMobileHash"] = verification.ExpectedMobileHash,
+                    ["matched"] = verification.MobileHashMatched
+                },
+                ["signature"] = new Dictionary<string, object?>
+                {
+                    ["valid"] = verification.SignatureValid,
+                    ["uidaiCertificate"] = verification.CertificateLooksLikeUidai,
+                    ["certificateSubject"] = verification.CertificateSubject,
+                    ["certificateIssuer"] = verification.CertificateIssuer,
+                    ["certificateThumbprint"] = verification.CertificateThumbprint,
+                    ["signingAlgorithm"] = verification.SigningAlgorithm,
+                    ["digestAlgorithm"] = verification.DigestAlgorithm
+                },
                 ["trail"] = new Dictionary<string, object?>
                 {
                     ["verifiedAtUtc"] = verification.ProcessedAtUtc,

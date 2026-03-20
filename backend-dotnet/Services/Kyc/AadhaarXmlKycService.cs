@@ -1,5 +1,8 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.Xml;
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using ICSharpCode.SharpZipLib.Zip;
 
@@ -16,6 +19,16 @@ public sealed record AadhaarXmlVerificationResult(
     string SourceZipSha256,
     string SourceXmlSha256,
     string MobileNumber,
+    string XmlMobileHash,
+    string ExpectedMobileHash,
+    bool MobileHashMatched,
+    bool SignatureValid,
+    bool CertificateLooksLikeUidai,
+    string CertificateSubject,
+    string CertificateIssuer,
+    string CertificateThumbprint,
+    string SigningAlgorithm,
+    string DigestAlgorithm,
     DateTime ProcessedAtUtc);
 
 public class AadhaarXmlKycService
@@ -48,6 +61,27 @@ public class AadhaarXmlKycService
         collected["mobileNumber"] = normalizedMobile;
         collected["aadhaarVerified"] = true;
         collected["verificationMode"] = "aadhaar_xml_upload";
+        var xmlMobileHash = GetString(collected, "mobileFromXml");
+        var expectedMobileHash = ComputeMobileHash(normalizedMobile, shareCode.Trim());
+        var mobileHashMatched = string.Equals(xmlMobileHash, expectedMobileHash, StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(xmlMobileHash) && !mobileHashMatched)
+            throw new InvalidOperationException("Entered mobile number does not match Aadhaar XML mobile hash.");
+
+        var signature = VerifyXmlSignature(xmlBytes);
+        if (!signature.Valid)
+            throw new InvalidOperationException("Aadhaar XML signature verification failed.");
+        if (!signature.LooksLikeUidaiCertificate)
+            throw new InvalidOperationException("Aadhaar XML certificate is not a recognized UIDAI signing certificate.");
+
+        collected["mobileHashMatched"] = mobileHashMatched;
+        collected["expectedMobileHash"] = expectedMobileHash;
+        collected["signatureValid"] = signature.Valid;
+        collected["certificateSubject"] = signature.CertificateSubject;
+        collected["certificateIssuer"] = signature.CertificateIssuer;
+        collected["certificateThumbprint"] = signature.CertificateThumbprint;
+        collected["signingAlgorithm"] = signature.SigningAlgorithm;
+        collected["digestAlgorithm"] = signature.DigestAlgorithm;
+        collected["uidaiCertificate"] = signature.LooksLikeUidaiCertificate;
 
         var processedAtUtc = DateTime.UtcNow;
         var trail = new Dictionary<string, object?>
@@ -74,6 +108,16 @@ public class AadhaarXmlKycService
             SourceZipSha256: Sha256Hex(zipBytes),
             SourceXmlSha256: Sha256Hex(xmlBytes),
             MobileNumber: normalizedMobile,
+            XmlMobileHash: xmlMobileHash,
+            ExpectedMobileHash: expectedMobileHash,
+            MobileHashMatched: mobileHashMatched,
+            SignatureValid: signature.Valid,
+            CertificateLooksLikeUidai: signature.LooksLikeUidaiCertificate,
+            CertificateSubject: signature.CertificateSubject,
+            CertificateIssuer: signature.CertificateIssuer,
+            CertificateThumbprint: signature.CertificateThumbprint,
+            SigningAlgorithm: signature.SigningAlgorithm,
+            DigestAlgorithm: signature.DigestAlgorithm,
             ProcessedAtUtc: processedAtUtc);
     }
 
@@ -238,14 +282,25 @@ public class AadhaarXmlKycService
             $"Father / Guardian: {Fallback(GetString(collected, "fatherName"))}",
             $"Care Of (raw): {Fallback(GetString(collected, "careOfRaw"))}",
             $"Email: {Fallback(GetString(collected, "email"))}",
-            $"Mobile (XML): {Fallback(GetString(collected, "mobileFromXml"))}",
-            $"Mobile Number: {GetString(collected, "mobileNumber")}",
+            $"Mobile Hash (XML): {Fallback(GetString(collected, "mobileFromXml"))}",
+            $"Entered Mobile: {GetString(collected, "mobileNumber")}",
+            $"Mobile Hash Matched: {Fallback(GetString(collected, "mobileHashMatched"))}",
         ]);
 
         var sections = new List<PdfSection>
         {
             new("Verified Identity", identity),
             new("Address", WrapParagraph(GetString(collected, "address"), 56)),
+            new("Signature",
+            [
+                $"Signature Valid: {Fallback(GetString(collected, "signatureValid"))}",
+                $"UIDAI Certificate: {Fallback(GetString(collected, "uidaiCertificate"))}",
+                $"Certificate Subject: {Fallback(GetString(collected, "certificateSubject"))}",
+                $"Certificate Issuer: {Fallback(GetString(collected, "certificateIssuer"))}",
+                $"Certificate Thumbprint: {Fallback(GetString(collected, "certificateThumbprint"))}",
+                $"Signing Algorithm: {Fallback(GetString(collected, "signingAlgorithm"))}",
+                $"Digest Algorithm: {Fallback(GetString(collected, "digestAlgorithm"))}"
+            ]),
             new("Verification Trail",
             [
             $"Session ID: {GetString(trail, "sessionId")}",
@@ -258,7 +313,7 @@ public class AadhaarXmlKycService
             new("Notes",
             [
                 "Verified from a password-protected UIDAI Aadhaar XML ZIP uploaded by the user.",
-                "This PDF is generated by Textzy and includes a timestamped audit trail."
+                "This PDF includes signature metadata and a timestamped audit trail."
             ])
         };
 
@@ -365,12 +420,12 @@ public class AadhaarXmlKycService
         builder.Append("0.98 0.98 1 rg 20 790 555 34 re f\n");
         builder.Append("0.95 0.45 0.05 rg 20 790 555 34 re f\n");
         builder.Append("1 1 1 rg\n");
-        AppendText(builder, 32, 810, "/F2", 16, "TEXTZY AADHAAR XML VERIFICATION REPORT");
+        AppendText(builder, 32, 810, "/F2", 16, "AADHAAR XML VERIFICATION REPORT");
         builder.Append("0.96 0.62 0.10 rg 430 798 120 18 re f\n");
         builder.Append("1 1 1 rg\n");
         AppendText(builder, 438, 809, "/F2", 9, "VERIFIED DOCUMENT");
         builder.Append("0 0 0 rg\n");
-        AppendText(builder, 32, 776, "/F1", 9, "Secure offline Aadhaar XML verification report");
+        AppendText(builder, 32, 776, "/F1", 9, "Offline Aadhaar XML verification report");
 
         var y = 748m;
         if (page.ShowPhoto)
@@ -390,7 +445,7 @@ public class AadhaarXmlKycService
         builder.Append("0.90 0.90 0.92 rg 20 18 555 20 re f\n");
         builder.Append("0.25 0.25 0.25 rg\n");
         AppendText(builder, 28, 28, "/F1", 8, $"Generated {processedAtUtc:yyyy-MM-dd HH:mm:ss} UTC  •  Page {pageNumber}/{totalPages}");
-        AppendText(builder, 360, 28, "/F1", 8, "Trail: timestamped, hashed, encrypted by Textzy");
+        AppendText(builder, 360, 28, "/F1", 8, "Trail: timestamped, signed XML verification");
         return builder.ToString();
     }
 
@@ -554,6 +609,81 @@ public class AadhaarXmlKycService
 
     private static string FirstNonEmpty(params string[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private sealed record XmlSignatureDetails(
+        bool Valid,
+        bool LooksLikeUidaiCertificate,
+        string CertificateSubject,
+        string CertificateIssuer,
+        string CertificateThumbprint,
+        string SigningAlgorithm,
+        string DigestAlgorithm);
+
+    private static XmlSignatureDetails VerifyXmlSignature(byte[] xmlBytes)
+    {
+        var xml = Encoding.UTF8.GetString(xmlBytes);
+        var document = new XmlDocument { PreserveWhitespace = true };
+        document.LoadXml(xml);
+
+        var ns = new XmlNamespaceManager(document.NameTable);
+        ns.AddNamespace("ds", SignedXml.XmlDsigNamespaceUrl);
+        var signatureElement = document.SelectSingleNode("//ds:Signature", ns) as XmlElement
+            ?? throw new InvalidOperationException("Aadhaar XML signature block is missing.");
+
+        var signedXml = new SignedXml(document);
+        signedXml.LoadXml(signatureElement);
+
+        var cert = ExtractCertificate(signedXml)
+            ?? throw new InvalidOperationException("Aadhaar XML signing certificate is missing.");
+
+        var valid = signedXml.CheckSignature(cert, true);
+        var digestAlgorithm = string.Empty;
+        if (signedXml.SignedInfo?.References is not null && signedXml.SignedInfo.References.Count > 0 && signedXml.SignedInfo.References[0] is Reference reference)
+            digestAlgorithm = reference.DigestMethod ?? string.Empty;
+
+        var looksLikeUidai = LooksLikeUidaiCertificate(cert);
+        return new XmlSignatureDetails(
+            Valid: valid,
+            LooksLikeUidaiCertificate: looksLikeUidai,
+            CertificateSubject: cert.Subject,
+            CertificateIssuer: cert.Issuer,
+            CertificateThumbprint: cert.Thumbprint ?? string.Empty,
+            SigningAlgorithm: signedXml.SignatureMethod ?? string.Empty,
+            DigestAlgorithm: digestAlgorithm);
+    }
+
+    private static X509Certificate2? ExtractCertificate(SignedXml signedXml)
+    {
+        if (signedXml.KeyInfo is null) return null;
+        foreach (KeyInfoClause clause in signedXml.KeyInfo)
+        {
+            if (clause is not KeyInfoX509Data data) continue;
+            if (data.Certificates is null) continue;
+            foreach (var certificate in data.Certificates)
+            {
+                if (certificate is X509Certificate cert)
+                    return new X509Certificate2(cert);
+            }
+        }
+
+        return null;
+    }
+
+    private static bool LooksLikeUidaiCertificate(X509Certificate2 cert)
+    {
+        var subject = (cert.Subject ?? string.Empty).ToUpperInvariant();
+        return subject.Contains("UNIQUE IDENTIFICATION AUTHORITY OF INDIA")
+            || subject.Contains("UIDAI")
+            || subject.Contains("DS UNIQUE IDENTIFICATION AUTHORITY OF INDIA");
+    }
+
+    private static string ComputeMobileHash(string mobileNumber, string shareCode)
+    {
+        var raw = $"{mobileNumber}{shareCode}";
+        var bytes = Encoding.UTF8.GetBytes(raw);
+        using var sha = SHA256.Create();
+        return Convert.ToHexString(sha.ComputeHash(bytes)).ToLowerInvariant();
+    }
 
     private static Dictionary<string, object?> ExtractAttributes(XElement? element, params string[] names)
     {
