@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Textzy.Api.Data;
+using Textzy.Api.Utilities;
 
 namespace Textzy.Api.Services;
 
@@ -36,7 +37,7 @@ public class WabaTenantResolver(
                 {
                     TenantId = tid,
                     TenantSlug = parts[1],
-                    DataConnectionString = parts[2]
+                    DataConnectionString = ConnectionStringHelper.ResolveTenantConnectionString(parts[2])
                 };
                 memoryCache.Set(memKey, row, CacheTtl);
                 return row;
@@ -57,7 +58,7 @@ public class WabaTenantResolver(
                 {
                     TenantId = tenant.Id,
                     TenantSlug = tenant.Slug,
-                    DataConnectionString = tenant.DataConnectionString
+                    DataConnectionString = ConnectionStringHelper.ResolveTenantConnectionString(tenant.DataConnectionString)
                 };
                 memoryCache.Set(memKey, resolved, CacheTtl);
                 await distributedCache.SetStringAsync(memKey, $"{resolved.TenantId}|{resolved.TenantSlug}|{resolved.DataConnectionString}",
@@ -81,4 +82,3 @@ public class WabaTenantResolver(
         await distributedCache.RemoveAsync(memKey, ct);
     }
 }
-

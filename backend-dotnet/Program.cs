@@ -1,4 +1,5 @@
 using Textzy.Api.Extensions;
+using Textzy.Api.Utilities;
 
 var builder = WebApplication.CreateBuilder(args);
 builder
@@ -7,6 +8,8 @@ builder
     .AddFrontendCors();
 
 var controlConnection = builder.ResolveControlConnection(out var allowLocalhostInProduction);
+var sharedTenantConnection = builder.ResolveSharedTenantConnection(controlConnection);
+ConnectionStringHelper.ConfigureSharedTenantConnectionString(sharedTenantConnection);
 builder.AddPlatformDatabases(controlConnection);
 
 builder.Services.AddApplicationServices(builder.Configuration);

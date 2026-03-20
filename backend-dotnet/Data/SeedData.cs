@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Textzy.Api.Models;
 using Textzy.Api.Services;
+using Textzy.Api.Utilities;
 
 namespace Textzy.Api.Data;
 
@@ -439,8 +440,9 @@ public static class SeedData
 
     public static TenantDbContext CreateTenantDbContext(string connectionString)
     {
+        var tenantConnection = ConnectionStringHelper.ResolveTenantConnectionString(connectionString);
         var options = new DbContextOptionsBuilder<TenantDbContext>()
-            .UseNpgsql(connectionString)
+            .UseNpgsql(tenantConnection)
             .Options;
         return new TenantDbContext(options);
     }

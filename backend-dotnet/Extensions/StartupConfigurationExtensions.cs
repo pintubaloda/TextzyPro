@@ -168,13 +168,28 @@ public static class StartupConfigurationExtensions
         builder.Services.AddDbContext<TenantDbContext>((sp, opt) =>
         {
             var tenancy = sp.GetRequiredService<TenancyContext>();
-            var tenantConnection = string.IsNullOrWhiteSpace(tenancy.DataConnectionString)
-                ? controlConnection
-                : tenancy.DataConnectionString;
+            var tenantConnection = ConnectionStringHelper.ResolveTenantConnectionString(tenancy.DataConnectionString);
+            if (string.IsNullOrWhiteSpace(tenantConnection))
+            {
+                tenantConnection = controlConnection;
+            }
             opt.UseNpgsql(tenantConnection);
         });
 
         return builder;
+    }
+
+    public static string ResolveSharedTenantConnection(this WebApplicationBuilder builder, string controlConnection)
+    {
+        var rawTenantConnection = ConnectionStringHelper.FirstNonEmpty(
+            builder.Configuration.GetConnectionString("TenantDefault"),
+            builder.Configuration["TENANT_DATABASE_URL"],
+            builder.Configuration["TENANT_DATABASE_PUBLIC_URL"],
+            builder.Configuration["TENANT_DATABASE_CONNECTION"],
+            builder.Configuration["TenantDatabase__ConnectionString"],
+            controlConnection);
+
+        return ConnectionStringHelper.NormalizeConnectionString(rawTenantConnection!);
     }
 
 }

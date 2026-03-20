@@ -5,6 +5,8 @@ namespace Textzy.Api.Utilities;
 
 public static class ConnectionStringHelper
 {
+    private static string _sharedTenantConnectionString = string.Empty;
+
     public static string? FirstNonEmpty(params string?[] values)
     {
         foreach (var value in values)
@@ -71,6 +73,50 @@ public static class ConnectionStringHelper
         {
             throw new InvalidOperationException("Invalid key/value Postgres connection string in ConnectionStrings__Default/DATABASE_URL.", ex);
         }
+    }
+
+    public static void ConfigureSharedTenantConnectionString(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            _sharedTenantConnectionString = string.Empty;
+            return;
+        }
+
+        _sharedTenantConnectionString = NormalizeConnectionString(raw);
+    }
+
+    public static string ResolveTenantConnectionString(string? rawTenantConnectionString)
+    {
+        var tenantConnection = string.IsNullOrWhiteSpace(rawTenantConnectionString)
+            ? string.Empty
+            : NormalizeConnectionString(rawTenantConnectionString);
+
+        if (ShouldUseSharedTenantConnection(tenantConnection))
+        {
+            return !string.IsNullOrWhiteSpace(_sharedTenantConnectionString)
+                ? _sharedTenantConnectionString
+                : tenantConnection;
+        }
+
+        if (!string.IsNullOrWhiteSpace(tenantConnection))
+        {
+            return tenantConnection;
+        }
+
+        return _sharedTenantConnectionString;
+    }
+
+    private static bool ShouldUseSharedTenantConnection(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return false;
+        }
+
+        return connectionString.Contains("railway", StringComparison.OrdinalIgnoreCase) ||
+               connectionString.Contains(".rlwy", StringComparison.OrdinalIgnoreCase) ||
+               connectionString.Contains("hopper.proxy.rlwy.net", StringComparison.OrdinalIgnoreCase);
     }
 
     public static string? BuildFromPgEnvironment()

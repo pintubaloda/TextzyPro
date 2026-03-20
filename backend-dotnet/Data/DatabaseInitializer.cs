@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Services;
+using Textzy.Api.Utilities;
 
 namespace Textzy.Api.Data;
 
@@ -39,7 +40,11 @@ public static class DatabaseInitializer
             {
                 try
                 {
-                    var tenantConn = string.IsNullOrWhiteSpace(tenant.DataConnectionString) ? controlConnection : tenant.DataConnectionString;
+                    var tenantConn = ConnectionStringHelper.ResolveTenantConnectionString(tenant.DataConnectionString);
+                    if (string.IsNullOrWhiteSpace(tenantConn))
+                    {
+                        tenantConn = controlConnection;
+                    }
                     using var tenantDb = SeedData.CreateTenantDbContext(tenantConn);
                     tenantDb.Database.EnsureCreated();
                     ensureTenantCoreSchema(tenantDb);

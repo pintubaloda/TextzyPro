@@ -1,3 +1,5 @@
+using Textzy.Api.Utilities;
+
 namespace Textzy.Api.Services;
 
 public class TenancyContext
@@ -11,6 +13,6 @@ public class TenancyContext
     {
         TenantId = tenantId;
         TenantSlug = tenantSlug;
-        DataConnectionString = dataConnectionString;
+        DataConnectionString = ConnectionStringHelper.ResolveTenantConnectionString(dataConnectionString);
     }
 }
