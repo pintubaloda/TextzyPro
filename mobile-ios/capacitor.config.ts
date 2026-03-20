@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "Textzy iOS",
   webDir: "www",
   server: {
-    url: "https://textzy-frontend-production.up.railway.app/?mobileShell=1&platform=ios",
+    url: "https://textzy.in/?mobileShell=1&platform=ios",
     cleartext: false
   },
   ios: {

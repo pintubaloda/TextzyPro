@@ -88,35 +88,14 @@ public static class ConnectionStringHelper
 
     public static string ResolveTenantConnectionString(string? rawTenantConnectionString)
     {
-        var tenantConnection = string.IsNullOrWhiteSpace(rawTenantConnectionString)
+        if (!string.IsNullOrWhiteSpace(_sharedTenantConnectionString))
+        {
+            return _sharedTenantConnectionString;
+        }
+
+        return string.IsNullOrWhiteSpace(rawTenantConnectionString)
             ? string.Empty
             : NormalizeConnectionString(rawTenantConnectionString);
-
-        if (ShouldUseSharedTenantConnection(tenantConnection))
-        {
-            return !string.IsNullOrWhiteSpace(_sharedTenantConnectionString)
-                ? _sharedTenantConnectionString
-                : tenantConnection;
-        }
-
-        if (!string.IsNullOrWhiteSpace(tenantConnection))
-        {
-            return tenantConnection;
-        }
-
-        return _sharedTenantConnectionString;
-    }
-
-    private static bool ShouldUseSharedTenantConnection(string connectionString)
-    {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return false;
-        }
-
-        return connectionString.Contains("railway", StringComparison.OrdinalIgnoreCase) ||
-               connectionString.Contains(".rlwy", StringComparison.OrdinalIgnoreCase) ||
-               connectionString.Contains("hopper.proxy.rlwy.net", StringComparison.OrdinalIgnoreCase);
     }
 
     public static string? BuildFromPgEnvironment()

@@ -25,9 +25,9 @@ import java.util.UUID
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
-    private val baseHost = "textzy-frontend-production.up.railway.app"
+    private val baseHost = "textzy.in"
     private val baseScheme = "https"
-    private val mobileShellUrl = "https://textzy-frontend-production.up.railway.app/?mobileShell=1#mobile-shell"
+    private val mobileShellUrl = "https://textzy.in/?mobileShell=1#mobile-shell"
     private var pendingPermissionRequest: PermissionRequest? = null
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null

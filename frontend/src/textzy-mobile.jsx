@@ -237,8 +237,8 @@ export default function TextzyMobile() {
       const u = new URL(text, window.location.origin);
       const trustedHosts = new Set([
         window.location.hostname,
-        "textzy-frontend-production.up.railway.app",
-        "textzy-backend-production.up.railway.app",
+        "textzy.in",
+        "api.textzy.in",
       ]);
       if (u.protocol !== "https:" || !trustedHosts.has(u.hostname)) {
         setNotice("Blocked untrusted update URL. Please check platform app-update settings.");
@@ -1325,7 +1325,7 @@ export default function TextzyMobile() {
       runtimeConfig.API_BASE ||
       process.env.REACT_APP_API_BASE ||
       process.env.VITE_API_BASE ||
-      "https://textzy-backend-production.up.railway.app";
+      "https://api.textzy.in";
     const token = String(accessTokenRef.current || "").trim();
 
     // Ensure we have a usable token for realtime. If cookies are flaky, refresh returns a token in headers/body

@@ -1438,7 +1438,7 @@ const PlatformSettingsPage = () => {
             </div>
             <div className="space-y-2">
               <Label>API Base URL</Label>
-              <Input placeholder="https://textzy-backend-production.up.railway.app" value={appConfig.apiBaseUrl} onChange={(e) => setAppConfig((p) => ({ ...p, apiBaseUrl: e.target.value }))} />
+              <Input placeholder="https://api.textzy.in" value={appConfig.apiBaseUrl} onChange={(e) => setAppConfig((p) => ({ ...p, apiBaseUrl: e.target.value }))} />
             </div>
             <div className="space-y-2">
               <Label>SignalR Hub Path</Label>

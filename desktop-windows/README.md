@@ -11,6 +11,6 @@
 
 ## Notes
 - This app opens the dedicated desktop shell with platform flag:
-  - `https://textzy-frontend-production.up.railway.app/?desktopShell=1&platform=windows`
+  - `https://textzy.in/?desktopShell=1&platform=windows`
 - Node integration is disabled.
 - Request host allow-list is enforced in `main.js`.

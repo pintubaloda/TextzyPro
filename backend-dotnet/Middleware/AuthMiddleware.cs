@@ -465,8 +465,8 @@ public class AuthMiddleware(RequestDelegate next)
 
         if (parsed.Count == 0)
         {
-            parsed.Add("https://textzy-frontend-production.up.railway.app");
-            parsed.Add("https://textzy-backend-production.up.railway.app");
+            parsed.Add("https://textzy.in");
+            parsed.Add("https://api.textzy.in");
             parsed.Add("http://localhost:3000");
             parsed.Add("http://localhost:5173");
         }

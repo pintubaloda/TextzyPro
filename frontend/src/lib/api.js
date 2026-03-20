@@ -5,7 +5,7 @@ const API_BASE =
   runtimeConfig.API_BASE ||
   process.env.REACT_APP_API_BASE ||
   process.env.VITE_API_BASE ||
-  'https://textzy-backend-production.up.railway.app'
+  'https://api.textzy.in'
 const STORAGE_KEY = 'textzy.session'
 const CSRF_STORAGE_KEY = 'textzy.csrf'
 const LAST_TENANT_KEY = 'textzy.lastTenantSlug'

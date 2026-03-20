@@ -43,7 +43,7 @@ export const API_BASE =
   (typeof window !== "undefined" && window.__APP_CONFIG__?.API_BASE) ||
   process.env.REACT_APP_API_BASE ||
   process.env.VITE_API_BASE ||
-  "https://textzy-backend-production.up.railway.app";
+  "https://api.textzy.in";
 
 export const SESSION_KEY = "textzy.mobile.session";
 export const DEVICE_KEY = "textzy.mobile.device";

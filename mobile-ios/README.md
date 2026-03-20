@@ -9,7 +9,7 @@ This is a Capacitor iOS wrapper for the same inbox runtime used in Android/mobil
 4. `npm run open`
 
 ## Runtime URL
-- `https://textzy-frontend-production.up.railway.app/?mobileShell=1&platform=ios`
+- `https://textzy.in/?mobileShell=1&platform=ios`
 
 ## Required iOS capabilities
 - Camera permission (QR scan)

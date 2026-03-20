@@ -530,7 +530,7 @@ public class TeamController(
             ?? NormalizeBaseUrl(brandingWebsite)
             ?? NormalizeBaseUrl(config["Invite:AcceptBaseUrl"])
             ?? NormalizeBaseUrl(config["APP_BASE_URL"])
-            ?? "https://textzy-frontend-production.up.railway.app";
+            ?? "https://textzy.in";
     }
 
     private static string? NormalizeBaseUrl(string? raw)
