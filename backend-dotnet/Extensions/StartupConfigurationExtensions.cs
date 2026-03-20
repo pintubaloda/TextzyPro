@@ -186,10 +186,11 @@ public static class StartupConfigurationExtensions
             builder.Configuration["TENANT_DATABASE_URL"],
             builder.Configuration["TENANT_DATABASE_PUBLIC_URL"],
             builder.Configuration["TENANT_DATABASE_CONNECTION"],
-            builder.Configuration["TenantDatabase__ConnectionString"],
-            controlConnection);
+            builder.Configuration["TenantDatabase__ConnectionString"]);
 
-        return ConnectionStringHelper.NormalizeConnectionString(rawTenantConnection!);
+        return string.IsNullOrWhiteSpace(rawTenantConnection)
+            ? string.Empty
+            : ConnectionStringHelper.NormalizeConnectionString(rawTenantConnection);
     }
 
 }
