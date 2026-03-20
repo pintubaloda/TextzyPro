@@ -9,6 +9,8 @@ using ICSharpCode.SharpZipLib.Zip;
 namespace Textzy.Api.Services.Kyc;
 
 public sealed record AadhaarXmlVerificationResult(
+    bool VerificationPassed,
+    string FailureReason,
     Dictionary<string, object?> Collected,
     byte[] ReportPdf,
     string ReportFileName,
@@ -59,19 +61,13 @@ public class AadhaarXmlKycService
         var xmlBytes = ExtractXmlBytes(zipBytes, shareCode.Trim());
         var collected = ParseAadhaarXml(xmlBytes);
         collected["mobileNumber"] = normalizedMobile;
-        collected["aadhaarVerified"] = true;
         collected["verificationMode"] = "aadhaar_xml_upload";
         var xmlMobileHash = GetString(collected, "mobileFromXml");
         var expectedMobileHash = ComputeMobileHash(normalizedMobile, shareCode.Trim());
         var mobileHashMatched = string.Equals(xmlMobileHash, expectedMobileHash, StringComparison.OrdinalIgnoreCase);
-        if (!string.IsNullOrWhiteSpace(xmlMobileHash) && !mobileHashMatched)
-            throw new InvalidOperationException("Entered mobile number does not match Aadhaar XML mobile hash.");
-
         var signature = VerifyXmlSignature(xmlBytes);
-        if (!signature.Valid)
-            throw new InvalidOperationException("Aadhaar XML signature verification failed.");
-        if (!signature.LooksLikeUidaiCertificate)
-            throw new InvalidOperationException("Aadhaar XML certificate is not a recognized UIDAI signing certificate.");
+        var failureReason = ResolveFailureReason(xmlMobileHash, mobileHashMatched, signature);
+        var verificationPassed = string.IsNullOrWhiteSpace(failureReason);
 
         collected["mobileHashMatched"] = mobileHashMatched;
         collected["expectedMobileHash"] = expectedMobileHash;
@@ -82,6 +78,9 @@ public class AadhaarXmlKycService
         collected["signingAlgorithm"] = signature.SigningAlgorithm;
         collected["digestAlgorithm"] = signature.DigestAlgorithm;
         collected["uidaiCertificate"] = signature.LooksLikeUidaiCertificate;
+        collected["aadhaarVerified"] = verificationPassed;
+        collected["verificationStatus"] = verificationPassed ? "verified" : "failed";
+        collected["failureReason"] = failureReason;
 
         var processedAtUtc = DateTime.UtcNow;
         var trail = new Dictionary<string, object?>
@@ -92,15 +91,19 @@ public class AadhaarXmlKycService
             ["sourceXmlSha256"] = Sha256Hex(xmlBytes),
             ["mobileNumber"] = normalizedMobile,
             ["processedAtUtc"] = processedAtUtc,
-            ["trail"] = "aadhaar_xml_upload"
+            ["trail"] = "aadhaar_xml_upload",
+            ["status"] = verificationPassed ? "verified" : "failed",
+            ["failureReason"] = failureReason
         };
 
         var reportPdf = BuildVerificationPdf(collected, trail, processedAtUtc);
 
         return new AadhaarXmlVerificationResult(
+            VerificationPassed: verificationPassed,
+            FailureReason: failureReason,
             Collected: collected,
             ReportPdf: reportPdf,
-            ReportFileName: "textzy-aadhaar-verification-report.pdf",
+            ReportFileName: "aadhaar-xml-verification-report.pdf",
             ReportMime: "application/pdf",
             RawXmlUtf8: Encoding.UTF8.GetString(xmlBytes),
             RawXmlBase64: Convert.ToBase64String(xmlBytes),
@@ -265,6 +268,8 @@ public class AadhaarXmlKycService
 
     private static byte[] BuildVerificationPdf(Dictionary<string, object?> collected, Dictionary<string, object?> trail, DateTime processedAtUtc)
     {
+        var verificationPassed = string.Equals(GetString(collected, "verificationStatus"), "verified", StringComparison.OrdinalIgnoreCase);
+        var failureReason = GetString(collected, "failureReason");
         var identity = new List<string>
         {
             $"Name: {GetString(collected, "name")}",
@@ -289,6 +294,14 @@ public class AadhaarXmlKycService
 
         var sections = new List<PdfSection>
         {
+            new("Verification Summary",
+            [
+                $"Status: {(verificationPassed ? "Verified" : "Failed")}",
+                $"Reason: {Fallback(failureReason)}",
+                $"Signature Valid: {Fallback(GetString(collected, "signatureValid"))}",
+                $"UIDAI Certificate: {Fallback(GetString(collected, "uidaiCertificate"))}",
+                $"Processed At UTC: {processedAtUtc:yyyy-MM-dd HH:mm:ss} UTC"
+            ]),
             new("Verified Identity", identity),
             new("Address", WrapParagraph(GetString(collected, "address"), 56)),
             new("Signature",
@@ -313,6 +326,9 @@ public class AadhaarXmlKycService
             new("Notes",
             [
                 "Verified from a password-protected UIDAI Aadhaar XML ZIP uploaded by the user.",
+                verificationPassed
+                    ? "This hit was charged as a completed Aadhaar XML verification."
+                    : "This hit was charged because the uploaded document was processed successfully, but business validation failed.",
                 "This PDF includes signature metadata and a timestamped audit trail."
             ])
         };
@@ -417,13 +433,15 @@ public class AadhaarXmlKycService
     private static string BuildContentStream(PdfPage page, DateTime processedAtUtc, int pageNumber, int totalPages, string? imageName)
     {
         var builder = new StringBuilder();
-        builder.Append("0.98 0.98 1 rg 20 790 555 34 re f\n");
-        builder.Append("0.95 0.45 0.05 rg 20 790 555 34 re f\n");
+        var isFailed = page.Sections.Any(section => string.Equals(section.Title, "Verification Summary", StringComparison.OrdinalIgnoreCase)
+            && section.Lines.Any(line => line.Contains("Failed", StringComparison.OrdinalIgnoreCase)));
+        builder.Append(isFailed ? "0.99 0.96 0.96 rg 20 790 555 34 re f\n" : "0.98 0.98 1 rg 20 790 555 34 re f\n");
+        builder.Append(isFailed ? "0.83 0.19 0.19 rg 20 790 555 34 re f\n" : "0.95 0.45 0.05 rg 20 790 555 34 re f\n");
         builder.Append("1 1 1 rg\n");
-        AppendText(builder, 32, 810, "/F2", 16, "AADHAAR XML VERIFICATION REPORT");
-        builder.Append("0.96 0.62 0.10 rg 430 798 120 18 re f\n");
+        AppendText(builder, 32, 810, "/F2", 16, isFailed ? "AADHAAR XML FAILURE REPORT" : "AADHAAR XML VERIFICATION REPORT");
+        builder.Append(isFailed ? "0.72 0.15 0.15 rg 430 798 120 18 re f\n" : "0.96 0.62 0.10 rg 430 798 120 18 re f\n");
         builder.Append("1 1 1 rg\n");
-        AppendText(builder, 438, 809, "/F2", 9, "VERIFIED DOCUMENT");
+        AppendText(builder, 438, 809, "/F2", 9, isFailed ? "FAILED REVIEW" : "VERIFIED DOCUMENT");
         builder.Append("0 0 0 rg\n");
         AppendText(builder, 32, 776, "/F1", 9, "Offline Aadhaar XML verification report");
 
@@ -609,6 +627,17 @@ public class AadhaarXmlKycService
 
     private static string FirstNonEmpty(params string[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static string ResolveFailureReason(string xmlMobileHash, bool mobileHashMatched, XmlSignatureDetails signature)
+    {
+        if (!string.IsNullOrWhiteSpace(xmlMobileHash) && !mobileHashMatched)
+            return "Entered mobile number does not match Aadhaar XML mobile hash.";
+        if (!signature.Valid)
+            return "Aadhaar XML digital signature verification failed.";
+        if (!signature.LooksLikeUidaiCertificate)
+            return "Aadhaar XML certificate is not a recognized UIDAI signing certificate.";
+        return string.Empty;
+    }
 
     private sealed record XmlSignatureDetails(
         bool Valid,

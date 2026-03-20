@@ -219,7 +219,8 @@ public class KycController(
             var resultPayload = new Dictionary<string, object?>
             {
                 ["provider"] = "aadhaarxml",
-                ["status"] = "verified",
+                ["status"] = verification.VerificationPassed ? "verified" : "failed",
+                ["failureReason"] = verification.FailureReason,
                 ["collected"] = verification.Collected,
                 ["files"] = new object[]
                 {
@@ -266,19 +267,23 @@ public class KycController(
                 }
             };
 
-            row.Status = "verified";
-            row.FailureReason = string.Empty;
+            row.Status = verification.VerificationPassed ? "verified" : "failed";
+            row.FailureReason = verification.FailureReason;
             row.ResultJsonEncrypted = crypto.Encrypt(JsonSerializer.Serialize(resultPayload));
             row.UpdatedAtUtc = DateTime.UtcNow;
             row.CompletedAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync("kyc.session.verify", $"provider=aadhaarxml; tenant={tenancy.TenantSlug}; session={row.Id}", ct);
+            await audit.WriteAsync(
+                verification.VerificationPassed ? "kyc.session.verify" : "kyc.session.fail",
+                $"provider=aadhaarxml; tenant={tenancy.TenantSlug}; session={row.Id}; reason={verification.FailureReason}",
+                ct);
 
             return Ok(new
             {
                 sessionId = row.Id,
                 provider = row.ProviderCode,
                 status = row.Status,
+                failureReason = row.FailureReason,
                 result = resultPayload
             });
         }
