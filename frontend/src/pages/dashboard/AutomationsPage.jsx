@@ -151,6 +151,20 @@ function computeEdges(nodes) {
   return out;
 }
 
+function toFiniteNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function normalizeWorkflowNodes(rawNodes) {
+  if (!Array.isArray(rawNodes)) return [];
+  return rawNodes.map((node, index) => ({
+    ...node,
+    x: toFiniteNumber(node?.x, 120 + index * 260),
+    y: toFiniteNumber(node?.y, 200),
+  }));
+}
+
 function extractTemplateVars(text) {
   const matches = [...String(text || "").matchAll(/\{\{(\d+)\}\}/g)];
   return [...new Set(matches.map((m) => Number(m[1])))].sort((a, b) => a - b);
@@ -573,6 +587,9 @@ function EdgePath({ edge, nodes, pan }) {
   const dx = Math.abs(tx - sx);
   const cx1 = sx + Math.max(40, dx * 0.5);
   const cx2 = tx - Math.max(40, dx * 0.5);
+
+  if (![sx, sy, tx, ty, cx1, cx2].every(Number.isFinite)) return null;
+
   const pathD = `M ${sx} ${sy} C ${cx1} ${sy}, ${cx2} ${ty}, ${tx} ${ty}`;
 
   const midX = (sx + tx) / 2;
@@ -1382,7 +1399,7 @@ export default function AutomationsPage() {
       let parsed = raw;
       if (typeof parsed === "string") parsed = JSON.parse(parsed);
       if (typeof parsed === "string") parsed = JSON.parse(parsed); // handle double-encoded payloads
-      if (parsed && Array.isArray(parsed.nodes)) return parsed.nodes;
+      if (parsed && Array.isArray(parsed.nodes)) return normalizeWorkflowNodes(parsed.nodes);
       return [];
     } catch {
       return [];
@@ -2754,6 +2771,7 @@ function WorkflowCanvas({
                   const tx = (dragConnect.x2 - pan.x) / zoom;
                   const ty = (dragConnect.y2 - pan.y) / zoom;
                   const dx = Math.abs(tx - sx);
+                  if (![sx, sy, tx, ty].every(Number.isFinite)) return null;
                   const pathD = `M ${sx} ${sy} C ${sx + Math.max(40, dx * 0.5)} ${sy}, ${tx - Math.max(40, dx * 0.5)} ${ty}, ${tx} ${ty}`;
                   return <path d={pathD} fill="none" stroke={T.warning} strokeWidth="2" strokeDasharray="6 3" />;
                 })()}
@@ -2806,7 +2824,7 @@ function WorkflowCanvas({
                         <button className="mt-2 text-[10px] text-orange-600 hover:underline font-medium" onClick={() => {
                           try {
                             const def = JSON.parse(v.definitionJson);
-                            if (def.nodes) { resetNodes(def.nodes); toast.success("Rolled back to this version"); setShowVersions(false); }
+                            if (def.nodes) { resetNodes(normalizeWorkflowNodes(def.nodes)); toast.success("Rolled back to this version"); setShowVersions(false); }
                           } catch { toast.error("Failed to parse version"); }
                         }}>
                           ↩ Restore this version
@@ -2964,7 +2982,7 @@ function WorkflowCanvas({
                       <button className="mt-2 text-[10px] text-orange-600 hover:underline font-medium" onClick={() => {
                         try {
                           const def = JSON.parse(v.definitionJson);
-                          if (def.nodes) { resetNodes(def.nodes); toast.success("Rolled back to this version"); setShowVersions(false); }
+                          if (def.nodes) { resetNodes(normalizeWorkflowNodes(def.nodes)); toast.success("Rolled back to this version"); setShowVersions(false); }
                         } catch { toast.error("Failed to parse version"); }
                       }}>
                         ↩ Restore this version
