@@ -41,7 +41,8 @@ public sealed class IntegrationCatalogBillingService(
             return Normalize(config.MetricKey, config.CreditsPerSuccess, config.OperationCredits);
 
         // Safe defaults.
-        if (string.Equals(slug, "digilocker-kyc", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(slug, "digilocker-kyc", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(slug, "aadhaarxml-kyc", StringComparison.OrdinalIgnoreCase))
         {
             // Preserve legacy behavior: allow global default from digilocker scope if catalog hasn't been extended yet.
             var legacyCredits = await TryReadLegacyDigilockerCreditsPerSuccessAsync(ct) ?? 3;
@@ -105,7 +106,8 @@ public sealed class IntegrationCatalogBillingService(
                 }
 
                 // Back-compat: if catalog item exists but credits aren't set, fallback to legacy setting for DigiLocker.
-                if (string.Equals(itemSlug, "digilocker-kyc", StringComparison.OrdinalIgnoreCase) && credits <= 0)
+                if ((string.Equals(itemSlug, "digilocker-kyc", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(itemSlug, "aadhaarxml-kyc", StringComparison.OrdinalIgnoreCase)) && credits <= 0)
                 {
                     credits = await TryReadLegacyDigilockerCreditsPerSuccessAsync(ct) ?? 3;
                 }

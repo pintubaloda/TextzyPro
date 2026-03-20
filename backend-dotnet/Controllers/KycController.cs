@@ -77,7 +77,7 @@ public class KycController(
 
         // Pre-check credits/limits and reserve credits up front. Failed sessions are refunded later.
         var pluginSlug = string.Equals(provider, "aadhaarxml", StringComparison.OrdinalIgnoreCase)
-            ? "digilocker-kyc"
+            ? "aadhaarxml-kyc"
             : $"{provider}-kyc";
         var billingCfg = await integrationBilling.ResolveAsync(pluginSlug, ct);
         var metricKey = string.IsNullOrWhiteSpace(billingCfg.MetricKey) ? "digilockerKyc" : billingCfg.MetricKey.Trim();
@@ -468,15 +468,15 @@ public class KycController(
 
         try
         {
-            await billingGuard.AddCreditUnitsAsync(
-                row.TenantId,
-                row.BillingMetric,
-                row.CreditsUsed,
-                ct,
-                source: "kyc.aadhaarxml.upload",
-                service: "digilocker-kyc",
-                referenceId: row.Id.ToString(),
-                status: "refunded");
+                    await billingGuard.AddCreditUnitsAsync(
+                        row.TenantId,
+                        row.BillingMetric,
+                        row.CreditsUsed,
+                        ct,
+                        source: "kyc.aadhaarxml.upload",
+                        service: "aadhaarxml-kyc",
+                        referenceId: row.Id.ToString(),
+                        status: "refunded");
             row.CreditsUsed = 0;
         }
         catch
