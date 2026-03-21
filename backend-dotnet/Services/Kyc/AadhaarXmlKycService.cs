@@ -437,20 +437,17 @@ public class AadhaarXmlKycService
         var builder = new StringBuilder();
         var isFailed = page.Sections.Any(section => string.Equals(section.Title, "Verification Summary", StringComparison.OrdinalIgnoreCase)
             && section.Lines.Any(line => line.Contains("Failed", StringComparison.OrdinalIgnoreCase)));
-        builder.Append(isFailed ? "0.99 0.96 0.96 rg 20 790 555 34 re f\n" : "0.98 0.98 1 rg 20 790 555 34 re f\n");
-        builder.Append(isFailed ? "0.83 0.19 0.19 rg 20 790 555 34 re f\n" : "0.95 0.45 0.05 rg 20 790 555 34 re f\n");
-        builder.Append("1 1 1 rg\n");
-        AppendText(builder, 32, 810, "/F2", 16, isFailed ? "AADHAAR XML FAILURE REPORT" : "AADHAAR XML VERIFICATION REPORT");
-        builder.Append(isFailed ? "0.72 0.15 0.15 rg 430 798 120 18 re f\n" : "0.96 0.62 0.10 rg 430 798 120 18 re f\n");
-        builder.Append("1 1 1 rg\n");
-        AppendText(builder, 438, 809, "/F2", 9, isFailed ? "FAILED REVIEW" : "VERIFIED DOCUMENT");
+        builder.Append("0.97 0.97 0.97 rg 20 790 555 34 re f\n");
+        builder.Append("0 0 0 RG 1 w 20 790 555 34 re S\n");
         builder.Append("0 0 0 rg\n");
+        AppendText(builder, 32, 810, "/F2", 15, isFailed ? "AADHAAR XML FAILURE REPORT" : "AADHAAR XML VERIFICATION REPORT");
+        AppendText(builder, 456, 809, "/F2", 9, isFailed ? "FAILED" : "VERIFIED");
         AppendText(builder, 32, 776, "/F1", 9, "Offline Aadhaar XML verification report");
 
         var y = 748m;
         if (page.ShowPhoto)
         {
-            DrawSection(builder, "Identity Snapshot", page.Sections.FirstOrDefault(s => s.Title == "Verified Identity")?.Lines ?? [], 28, ref y, 360, "#F8FAFC");
+            DrawSection(builder, "Identity Snapshot", page.Sections.FirstOrDefault(s => s.Title == "Verified Identity")?.Lines ?? [], 28, ref y, 360, "#FFFFFF");
             DrawPhotoPanel(builder, GetStringFromSection(page, "Verified Identity", "Name"), imageName, 408, 748, 144, 170);
             y -= 16;
             foreach (var section in page.Sections.Skip(1))
@@ -462,10 +459,10 @@ public class AadhaarXmlKycService
                 DrawSection(builder, section.Title, section.Lines, 28, ref y, 524, "#FFFFFF");
         }
 
-        builder.Append("0.90 0.90 0.92 rg 20 18 555 20 re f\n");
+        builder.Append("0.95 0.95 0.95 rg 20 18 555 20 re f\n");
         builder.Append("0.25 0.25 0.25 rg\n");
-        AppendText(builder, 28, 28, "/F1", 8, $"Generated {processedAtUtc:yyyy-MM-dd HH:mm:ss} UTC  •  Page {pageNumber}/{totalPages}");
-        AppendText(builder, 360, 28, "/F1", 8, "Trail: timestamped, signed XML verification");
+        AppendText(builder, 28, 28, "/F1", 8, $"Generated {processedAtUtc:yyyy-MM-dd HH:mm:ss} UTC  Page {pageNumber}/{totalPages}");
+        AppendText(builder, 320, 28, "/F1", 8, "Aadhaar XML DSig trail available");
         return builder.ToString();
     }
 
@@ -478,11 +475,11 @@ public class AadhaarXmlKycService
 
         ApplyFill(builder, fillHex);
         builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} {3} re f\n", x, boxBottom, width, height);
-        builder.Append("0.85 0.88 0.92 RG 1 w\n");
+        builder.Append("0.60 0.60 0.60 RG 1 w\n");
         builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} {3} re S\n", x, boxBottom, width, height);
-        builder.Append("0.96 0.62 0.10 rg\n");
+        builder.Append("0.90 0.90 0.90 rg\n");
         builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} 18 re f\n", x, y - 22, width, 18);
-        builder.Append("1 1 1 rg\n");
+        builder.Append("0 0 0 rg\n");
         AppendText(builder, x + 8, y - 10, "/F2", 10, title);
         builder.Append("0.15 0.18 0.25 rg\n");
 
@@ -501,11 +498,11 @@ public class AadhaarXmlKycService
         var bottom = top - height;
         builder.Append("0.98 0.99 0.99 rg\n");
         builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} {3} re f\n", x, bottom, width, height);
-        builder.Append("0.85 0.88 0.92 RG 1 w\n");
+        builder.Append("0.60 0.60 0.60 RG 1 w\n");
         builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} {3} re S\n", x, bottom, width, height);
-        builder.Append("0.96 0.62 0.10 rg\n");
+        builder.Append("0.90 0.90 0.90 rg\n");
         builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} 18 re f\n", x, top - 22, width, 18);
-        builder.Append("1 1 1 rg\n");
+        builder.Append("0 0 0 rg\n");
         AppendText(builder, x + 8, top - 10, "/F2", 10, "Photo Preview");
         builder.Append("0.15 0.18 0.25 rg\n");
 
@@ -525,7 +522,8 @@ public class AadhaarXmlKycService
             AppendText(builder, x + 36, bottom + 88, "/F1", 10, "Photo not available");
         }
 
-        AppendText(builder, x + 12, bottom + 10, "/F2", 9, Truncate(name, 26));
+        AppendText(builder, x + 12, bottom + 18, "/F2", 9, Truncate(name, 26));
+        AppendText(builder, x + 12, bottom + 8, "/F1", 8, "Digitally signed from Aadhaar XML");
     }
 
     private static void AppendText(StringBuilder builder, decimal x, decimal y, string font, int fontSize, string text)
@@ -778,3 +776,4 @@ public class AadhaarXmlKycService
         return text[..Math.Max(0, max - 3)] + "...";
     }
 }
+

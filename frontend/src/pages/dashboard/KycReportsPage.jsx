@@ -93,6 +93,14 @@ function formatResponse(value) {
   }
 }
 
+function downloadBlobUrl(url, filename = "kyc-document.pdf") {
+  if (!url) return;
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+}
+
 function renderAttributeGroups(rawAttributes) {
   const groups = rawAttributes && typeof rawAttributes === "object" ? Object.entries(rawAttributes) : [];
   if (!groups.length) return null;
@@ -657,7 +665,7 @@ export default function KycReportsPage() {
       </Card>
 
       <Dialog open={open} onOpenChange={(v) => setOpen(v)}>
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="h-[92vh] w-[96vw] max-w-[1500px] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>KYC Record</DialogTitle>
           </DialogHeader>
@@ -678,12 +686,44 @@ export default function KycReportsPage() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.25fr_1fr]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <div className="mb-2 text-xs font-medium text-slate-500">Document preview</div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="text-xs font-medium text-slate-500">Document preview</div>
+                {previewUrl ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      className="h-7 rounded-lg px-2 text-xs"
+                      onClick={() => {
+                        const files = safeGet(activeDetail?.result, "files", []);
+                        const f = Array.isArray(files) ? files[activeFileIndex] : null;
+                        downloadBlobUrl(previewUrl, String(f?.fileName || "kyc-document.pdf"));
+                      }}
+                    >
+                      Download
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-7 rounded-lg px-2 text-xs"
+                      onClick={() => {
+                        const popup = window.open(previewUrl, "_blank");
+                        if (popup) {
+                          popup.focus();
+                          setTimeout(() => {
+                            try { popup.print(); } catch {}
+                          }, 400);
+                        }
+                      }}
+                    >
+                      Print
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
               {previewUrl ? (
-                <div className="relative h-[540px] w-full rounded-xl bg-white overflow-hidden">
-                  <iframe title="kyc-preview" src={previewUrl} className="h-full w-full" />
+                <div className="relative h-[700px] w-full rounded-xl bg-white overflow-hidden">
+                  <iframe title="kyc-preview" src={`${previewUrl}#toolbar=1&navpanes=0`} className="h-full w-full" />
                   {(() => {
                     const files = safeGet(activeDetail?.result, "files", []);
                     if (!Array.isArray(files) || files.length <= 1) return null;
