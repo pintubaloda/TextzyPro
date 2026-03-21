@@ -393,7 +393,10 @@ public class WabaWebhookWorker(
                         .FirstOrDefaultAsync(x => x.TenantId == resolved.TenantId && x.ProviderMessageId == inboundProviderId, stoppingToken);
                     if (existingInbound is null)
                     {
-                        var resolvedInboundMessageType = IsMediaType(inboundMessageType) ? $"media:{inboundMessageType}" : "session";
+                        var normalizedInboundType = (inboundMessageType ?? string.Empty).Trim().ToLowerInvariant();
+                        var resolvedInboundMessageType = IsMediaType(normalizedInboundType)
+                            ? $"media:{normalizedInboundType}"
+                            : (string.IsNullOrWhiteSpace(normalizedInboundType) ? "session" : normalizedInboundType);
                         var normalizedInboundBody = IsMediaType(inboundMessageType)
                             ? ComposeInboundMediaBody(inbound)
                             : ComposeInboundBody(inbound);
@@ -2004,7 +2007,7 @@ public class WabaWebhookWorker(
         }
 
         var title = pickValue("title", "reason");
-        var detail = pickValue("message", "description", "details", "type");
+        var detail = pickValue("message", "description", "details", "type", "code", "error");
         if (!string.IsNullOrWhiteSpace(title) && !string.IsNullOrWhiteSpace(detail))
             return $"Unsupported message: {title} ({detail})";
         if (!string.IsNullOrWhiteSpace(title))
