@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Textzy.Api.Data;
@@ -40,10 +41,104 @@ public class PublicMessagesController(
     }
 
     [HttpPost("send")]
-    public async Task<IActionResult> SendByPost([FromBody] PublicSendRequest request, CancellationToken ct)
+    public async Task<IActionResult> SendByPost(CancellationToken ct)
     {
+        // Simple public API: allow POST with query params (no JSON body required),
+        // and optionally accept form/json when provided.
+        var request = BuildRequestFromQuery();
+
+        if (Request.HasFormContentType)
+        {
+            var form = await Request.ReadFormAsync(ct);
+            request = MergeRequest(request, BuildRequestFromLookup((string key, out string value) =>
+            {
+                var ok = form.TryGetValue(key, out var values);
+                value = ok ? (values.FirstOrDefault() ?? string.Empty) : string.Empty;
+                return ok && !string.IsNullOrWhiteSpace(value);
+            }));
+            return await SendCore(request, ct);
+        }
+
+        if ((Request.ContentLength ?? 0) > 0)
+        {
+            try
+            {
+                using var reader = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true);
+                var raw = await reader.ReadToEndAsync(ct);
+                if (!string.IsNullOrWhiteSpace(raw))
+                {
+                    var fromJson = JsonSerializer.Deserialize<PublicSendRequest>(raw, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                    if (fromJson is not null)
+                        request = MergeRequest(request, fromJson);
+                }
+            }
+            catch
+            {
+                // Ignore malformed body to keep API behavior simple.
+            }
+        }
+
         return await SendCore(request, ct);
     }
+
+    private PublicSendRequest BuildRequestFromQuery()
+        => BuildRequestFromLookup((string key, out string value) =>
+        {
+            value = Request.Query[key].FirstOrDefault() ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(value);
+        });
+
+    private static PublicSendRequest BuildRequestFromLookup(TryGetValueDelegate tryGet)
+    {
+        static string Read(TryGetValueDelegate getter, params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                if (getter(key, out var value) && !string.IsNullOrWhiteSpace(value))
+                    return value;
+            }
+            return string.Empty;
+        }
+
+        return new PublicSendRequest
+        {
+            Recipient = Read(tryGet, "recipient"),
+            Message = Read(tryGet, "msg", "message"),
+            User = Read(tryGet, "user"),
+            Password = Read(tryGet, "pswd", "password"),
+            ApiKey = Read(tryGet, "apikey", "apiKey"),
+            TenantSlug = Read(tryGet, "tenantSlug"),
+            Channel = Read(tryGet, "channel"),
+            Sender = Read(tryGet, "sender", "senderid"),
+            PeId = Read(tryGet, "PE_ID", "peId", "peid", "entityid"),
+            TemplateId = Read(tryGet, "Template_ID", "templateId", "templateid"),
+            IdempotencyKey = Read(tryGet, "idempotencyKey")
+        };
+    }
+
+    private static PublicSendRequest MergeRequest(PublicSendRequest primary, PublicSendRequest secondary)
+    {
+        string Pick(string a, string b) => string.IsNullOrWhiteSpace(a) ? (b ?? string.Empty) : a;
+        return new PublicSendRequest
+        {
+            Recipient = Pick(primary.Recipient, secondary.Recipient),
+            Message = Pick(primary.Message, secondary.Message),
+            User = Pick(primary.User, secondary.User),
+            Password = Pick(primary.Password, secondary.Password),
+            ApiKey = Pick(primary.ApiKey, secondary.ApiKey),
+            TenantSlug = Pick(primary.TenantSlug, secondary.TenantSlug),
+            Channel = Pick(primary.Channel, secondary.Channel),
+            Sender = Pick(primary.Sender, secondary.Sender),
+            PeId = Pick(primary.PeId, secondary.PeId),
+            TemplateId = Pick(primary.TemplateId, secondary.TemplateId),
+            IdempotencyKey = Pick(primary.IdempotencyKey, secondary.IdempotencyKey)
+        };
+    }
+
+    private delegate bool TryGetValueDelegate(string key, out string value);
 
     private async Task<IActionResult> SendCore(PublicSendRequest request, CancellationToken ct)
     {
