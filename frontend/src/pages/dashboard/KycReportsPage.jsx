@@ -30,6 +30,28 @@ function normalizeStatus(status) {
   return { label: "-", className: "border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-100" };
 }
 
+function isAadhaarProvider(record) {
+  return String(record?.provider || "").toLowerCase() === "aadhaarxml";
+}
+
+function effectiveStatus(record) {
+  if (!record) return "";
+  if (isAadhaarProvider(record)) {
+    const candidate = String(record?.resultStatus || record?.result?.status || "").trim();
+    if (candidate) return candidate;
+  }
+  return String(record?.status || "").trim();
+}
+
+function effectiveFailureReason(record) {
+  if (!record) return "";
+  if (isAadhaarProvider(record)) {
+    const candidate = String(record?.resultFailureReason || record?.result?.failureReason || "").trim();
+    if (candidate) return candidate;
+  }
+  return String(record?.failureReason || "").trim();
+}
+
 function toDataUrl(base64) {
   const b = String(base64 || "").trim();
   if (!b) return "";
@@ -154,8 +176,9 @@ function KycPreviewCard({ collected, active }) {
   const enteredMobile = safeGet(collected, "mobileNumber", "-");
   const docType = (Array.isArray(active?.docTypes) && active.docTypes[0]) ? String(active.docTypes[0]).toUpperCase() : "KYC";
   const signatureValid = String(safeGet(collected, "signatureValid", "-"));
-  const verified = String(safeGet(collected, "verificationStatus", safeGet(active, "status", ""))).toLowerCase() === "verified";
-  const failureReason = safeGet(collected, "failureReason", "") || safeGet(active, "failureReason", "");
+  const verified = String(safeGet(collected, "verificationStatus", effectiveStatus(active))).toLowerCase() === "verified";
+  const failureReason = safeGet(collected, "failureReason", "") || effectiveFailureReason(active);
+  const showSignature = isAadhaarProvider(active);
 
   return (
     <div className="relative h-[540px] w-full overflow-hidden rounded-xl bg-white">
@@ -174,9 +197,11 @@ function KycPreviewCard({ collected, active }) {
             <Badge className={verified ? "bg-emerald-600 hover:bg-emerald-600" : "bg-rose-600 hover:bg-rose-600"}>
               {verified ? "Verified" : "Failed"}
             </Badge>
-            <Badge variant="outline" className="border-slate-300 bg-white">
-              {signatureValid === "True" || signatureValid === "true" ? "Digital Signature Valid" : "Signature Check Failed"}
-            </Badge>
+            {showSignature ? (
+              <Badge variant="outline" className="border-slate-300 bg-white">
+                {signatureValid === "True" || signatureValid === "true" ? "Digital Signature Valid" : "Signature Check Failed"}
+              </Badge>
+            ) : null}
           </div>
         </div>
 
@@ -234,12 +259,14 @@ function KycPreviewCard({ collected, active }) {
                 <div className="text-slate-500">Address</div>
                 <div className="font-semibold text-slate-900">{address}</div>
               </div>
-              <div className="col-span-2">
-                <div className="text-slate-500">Digital Signature</div>
-                <div className="font-semibold text-slate-900">
-                  {signatureValid === "True" || signatureValid === "true" ? "Valid UIDAI-signed XML" : "Signature validation failed"}
+              {showSignature ? (
+                <div className="col-span-2">
+                  <div className="text-slate-500">Digital Signature</div>
+                  <div className="font-semibold text-slate-900">
+                    {signatureValid === "True" || signatureValid === "true" ? "Valid UIDAI-signed XML" : "Signature validation failed"}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           </div>
 
@@ -330,7 +357,7 @@ export default function KycReportsPage() {
     const query = filters.q.trim().toLowerCase();
     return sorted.filter((row) => {
       if (!isWithinDateRange(row?.createdAtUtc, filters.fromDate, filters.toDate)) return false;
-      const status = String(row?.status || "").toLowerCase();
+      const status = String(effectiveStatus(row) || "").toLowerCase();
       const provider = String(row?.provider || "").toLowerCase();
       const matchesStatus = filters.status === "all" || status === filters.status;
       const matchesApi = filters.api === "all" || provider === filters.api;
@@ -360,8 +387,8 @@ export default function KycReportsPage() {
 
   const summary = useMemo(() => {
     const total = filtered.length;
-    const verified = filtered.filter((row) => String(row?.status || "").toLowerCase() === "verified").length;
-    const failed = filtered.filter((row) => String(row?.status || "").toLowerCase() === "failed").length;
+    const verified = filtered.filter((row) => String(effectiveStatus(row) || "").toLowerCase() === "verified").length;
+    const failed = filtered.filter((row) => String(effectiveStatus(row) || "").toLowerCase() === "failed").length;
     const creditsUsed = filtered.reduce((sum, row) => sum + Number(row?.creditsUsed || 0), 0);
     return { total, verified, failed, creditsUsed };
   }, [filtered]);
@@ -377,7 +404,7 @@ export default function KycReportsPage() {
         row?.sessionId || "",
         row?.provider || "",
         Array.isArray(row?.docTypes) ? row.docTypes.join(" | ") : "",
-        normalizeStatus(row?.status).label,
+        normalizeStatus(effectiveStatus(row)).label,
         row?.customerRef || "",
         Number(row?.creditsUsed || 0),
         safeGet(row?.collected, "mobileFromXml", "") || safeGet(row?.collected, "mobileNumber", "") || safeGet(row?.collected, "mobile", ""),
@@ -482,6 +509,7 @@ export default function KycReportsPage() {
                   <SelectItem value="all">All APIs</SelectItem>
                   <SelectItem value="digilocker">DigiLocker</SelectItem>
                   <SelectItem value="gst">AppyFlow GST</SelectItem>
+                  <SelectItem value="aadhaarxml">Aadhaar XML</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -510,7 +538,7 @@ export default function KycReportsPage() {
             ) : (
               pagedRows.map((r, idx) => {
                 const c = r.collected || {};
-                const status = normalizeStatus(r.status);
+                const status = normalizeStatus(effectiveStatus(r));
                 const doc = (Array.isArray(r.docTypes) && r.docTypes[0]) ? r.docTypes[0] : "-";
                 return (
                   <div key={r.sessionId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -580,7 +608,7 @@ export default function KycReportsPage() {
                 ) : (
                   pagedRows.map((r, idx) => {
                     const c = r.collected || {};
-                    const status = normalizeStatus(r.status);
+                    const status = normalizeStatus(effectiveStatus(r));
                     const doc = (Array.isArray(r.docTypes) && r.docTypes[0]) ? r.docTypes[0] : "-";
                     return (
                       <tr key={r.sessionId} className="border-t border-slate-200">
@@ -639,14 +667,14 @@ export default function KycReportsPage() {
               <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Customer Ref</div><div className="mt-2 text-sm font-semibold text-slate-900">{activeDetail?.customerRef || active.customerRef || "-"}</div></CardContent></Card>
               <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Credits Used</div><div className="mt-2 text-sm font-semibold text-slate-900">{Number(activeDetail?.creditsUsed || active?.creditsUsed || 0)}</div></CardContent></Card>
               <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Created</div><div className="mt-2 text-sm font-semibold text-slate-900">{formatDate(activeDetail?.createdAtUtc || active.createdAtUtc)}</div></CardContent></Card>
-              <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Status</div><div className="mt-2 text-sm font-semibold text-slate-900"><Badge className={normalizeStatus(activeDetail?.status || active.status || "").className}>{normalizeStatus(activeDetail?.status || active.status || "").label}</Badge></div></CardContent></Card>
+              <Card className="border-slate-200"><CardContent className="pt-4"><div className="text-xs uppercase text-slate-500">Status</div><div className="mt-2 text-sm font-semibold text-slate-900"><Badge className={normalizeStatus(effectiveStatus(activeDetail || active)).className}>{normalizeStatus(effectiveStatus(activeDetail || active)).label}</Badge></div></CardContent></Card>
             </div>
           )}
 
-          {prettifyFailureReason(activeDetail?.failureReason || active?.failureReason) ? (
+          {prettifyFailureReason(effectiveFailureReason(activeDetail || active)) ? (
             <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-600">Failure Reason</div>
-              <div className="mt-1">{prettifyFailureReason(activeDetail?.failureReason || active?.failureReason)}</div>
+              <div className="mt-1">{prettifyFailureReason(effectiveFailureReason(activeDetail || active))}</div>
             </div>
           ) : null}
 
@@ -739,10 +767,12 @@ export default function KycReportsPage() {
                 const mobile = safeGet(collected, "mobileFromXml", "-");
                 const enteredMobile = safeGet(collected, "mobileNumber", "-");
                 const fatherName = safeGet(collected, "fatherName", "") || safeGet(collected, "careOfRaw", "-");
-                const signature = activeDetail?.result?.signature || {};
+                const signature = activeDetail?.result?.signature || active?.signature || {};
                 const mobileVerification = activeDetail?.result?.mobileVerification || {};
                 const signatureOk = String(safeGet(signature, "valid", "")).toLowerCase() === "true";
                 const uidaiCert = String(safeGet(signature, "uidaiCertificate", "")).toLowerCase() === "true";
+                const isAadhaar = isAadhaarProvider(activeDetail || active);
+                const verificationUrl = safeGet(activeDetail?.result?.trail, "verificationUrl", "") || safeGet(activeDetail?.result?.source, "verificationUrl", "");
                 return (
                   <div className="space-y-3">
                     {photo ? (
@@ -800,7 +830,7 @@ export default function KycReportsPage() {
                         <div className="text-slate-500">Mobile Hash Matched</div>
                         <div className="font-medium text-slate-900">{String(safeGet(mobileVerification, "matched", "-"))}</div>
                       </div>
-                      <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      {isAadhaar ? <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div>
                             <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Digital Signature</div>
@@ -817,6 +847,16 @@ export default function KycReportsPage() {
                             </Badge>
                           </div>
                         </div>
+                        {verificationUrl ? (
+                          <a
+                            href={verificationUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mb-3 inline-flex rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                          >
+                            Open signature verification
+                          </a>
+                        ) : null}
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div>
                             <div className="text-slate-500">Signature Valid</div>
@@ -843,7 +883,7 @@ export default function KycReportsPage() {
                             <div className="font-medium text-slate-900">{safeGet(signature, "digestAlgorithm", "-")}</div>
                           </div>
                         </div>
-                      </div>
+                      </div> : null}
                     </div>
                   </div>
                 );

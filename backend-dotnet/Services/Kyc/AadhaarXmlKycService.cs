@@ -39,7 +39,7 @@ public class AadhaarXmlKycService
     private sealed record PdfPage(IReadOnlyList<PdfSection> Sections, bool ShowPhoto);
     private sealed record PdfImage(byte[] Bytes, int Width, int Height);
 
-    public async Task<AadhaarXmlVerificationResult> VerifyAsync(IFormFile zipFile, string shareCode, string mobileNumber, Guid sessionId, CancellationToken ct)
+    public async Task<AadhaarXmlVerificationResult> VerifyAsync(IFormFile zipFile, string shareCode, string mobileNumber, Guid sessionId, string verificationUrl, CancellationToken ct)
     {
         if (zipFile is null || zipFile.Length <= 0)
             throw new InvalidOperationException("Aadhaar ZIP file is required.");
@@ -93,7 +93,8 @@ public class AadhaarXmlKycService
             ["processedAtUtc"] = processedAtUtc,
             ["trail"] = "aadhaar_xml_upload",
             ["status"] = verificationPassed ? "verified" : "failed",
-            ["failureReason"] = failureReason
+            ["failureReason"] = failureReason,
+            ["verificationUrl"] = verificationUrl
         };
 
         var reportPdf = BuildVerificationPdf(collected, trail, processedAtUtc);
@@ -321,6 +322,7 @@ public class AadhaarXmlKycService
             $"Processed At UTC: {processedAtUtc:yyyy-MM-dd HH:mm:ss} UTC",
             $"ZIP SHA256: {GetString(trail, "sourceZipSha256")}",
             $"XML SHA256: {GetString(trail, "sourceXmlSha256")}",
+            $"Verification URL: {GetString(trail, "verificationUrl")}",
             $"Mode: {GetString(trail, "trail")}",
             ]),
             new("Notes",

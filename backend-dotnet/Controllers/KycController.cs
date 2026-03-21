@@ -209,11 +209,13 @@ public class KycController(
 
         try
         {
+            var verificationUrl = $"{Request.Scheme}://{Request.Host}/api/kyc/sessions/{row.Id}";
             var verification = await aadhaarXmlKyc.VerifyAsync(
                 request.ZipFile ?? throw new InvalidOperationException("Aadhaar ZIP file is required."),
                 request.ShareCode,
                 request.MobileNumber,
                 row.Id,
+                verificationUrl,
                 ct);
 
             var resultPayload = new Dictionary<string, object?>
@@ -263,7 +265,8 @@ public class KycController(
                 {
                     ["verifiedAtUtc"] = verification.ProcessedAtUtc,
                     ["verificationMode"] = "aadhaar_xml_upload",
-                    ["sessionId"] = row.Id
+                    ["sessionId"] = row.Id,
+                    ["verificationUrl"] = verificationUrl
                 }
             };
 
@@ -357,20 +360,34 @@ public class KycController(
         return Ok(rows.Select(x =>
         {
             object? collected = null;
+            string? parsedStatus = null;
+            string? parsedFailureReason = null;
+            object? signature = null;
             if (includeParsed && !string.IsNullOrWhiteSpace(x.ResultJsonEncrypted))
             {
                 try
                 {
                     var raw = crypto.Decrypt(x.ResultJsonEncrypted);
                     using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(raw) ? "{}" : raw);
+                    if (doc.RootElement.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String)
+                        parsedStatus = s.GetString();
+                    if (doc.RootElement.TryGetProperty("failureReason", out var fr) && fr.ValueKind == JsonValueKind.String)
+                        parsedFailureReason = fr.GetString();
                     if (doc.RootElement.TryGetProperty("collected", out var c) && c.ValueKind == JsonValueKind.Object)
                     {
                         collected = JsonSerializer.Deserialize<object>(c.GetRawText());
+                    }
+                    if (doc.RootElement.TryGetProperty("signature", out var sig) && sig.ValueKind == JsonValueKind.Object)
+                    {
+                        signature = JsonSerializer.Deserialize<object>(sig.GetRawText());
                     }
                 }
                 catch
                 {
                     collected = null;
+                    parsedStatus = null;
+                    parsedFailureReason = null;
+                    signature = null;
                 }
             }
 
@@ -385,7 +402,10 @@ public class KycController(
                 createdAtUtc = x.CreatedAtUtc,
                 updatedAtUtc = x.UpdatedAtUtc,
                 completedAtUtc = x.CompletedAtUtc,
-                collected
+                collected,
+                resultStatus = parsedStatus,
+                resultFailureReason = parsedFailureReason,
+                signature
             };
         }));
     }
