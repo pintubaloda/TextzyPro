@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import * as signalR from "@microsoft/signalr";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -273,6 +274,7 @@ const InboundMediaPreview = ({ msg, onOpen }) => {
 };
 
 const InboxPage = () => {
+  const location = useLocation();
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -308,6 +310,14 @@ const InboxPage = () => {
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [pendingVoiceFile, setPendingVoiceFile] = useState(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const q = String(params.get("q") || "").trim();
+    const conversationId = String(params.get("conversationId") || "").trim();
+    if (q) setSearchQuery(q);
+    if (conversationId) setSelectedConversationId(conversationId);
+  }, [location.search]);
   const [voiceMimeType, setVoiceMimeType] = useState("");
   const [audioUnlocked, setAudioUnlocked] = useState(() => isNotificationAudioUnlocked());
   const [dndUntilUtc, setDndUntilUtc] = useState(() => {

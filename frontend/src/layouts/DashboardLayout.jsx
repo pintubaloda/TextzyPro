@@ -44,6 +44,7 @@ import {
   Send,
   GitBranch,
   Smartphone,
+  Activity,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import StepUpAuthHost from "@/components/security/StepUpAuthHost";
@@ -75,6 +76,7 @@ const DashboardLayout = () => {
   const [projects, setProjects] = useState([]);
   const [switchingProject, setSwitchingProject] = useState("");
   const [inboxUnreadCount, setInboxUnreadCount] = useState(0);
+  const [globalSearch, setGlobalSearch] = useState("");
   const [ownerMode, setOwnerMode] = useState(() => {
     try {
       return localStorage.getItem("textzy_owner_mode") || "self";
@@ -259,6 +261,7 @@ const DashboardLayout = () => {
       "/dashboard/sms-setup",
       "/dashboard/automations",
       "/dashboard/integrations",
+      "/dashboard/kyc-flow",
       "/dashboard/whatsapp-onboarding",
       "/dashboard/billing",
       "/dashboard/support",
@@ -450,6 +453,9 @@ const DashboardLayout = () => {
     canViewAutomations ? { name: "Automations", href: "/dashboard/automations", icon: Zap } : null,
     canViewAnalytics ? { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 } : null,
     canViewIntegrations ? { name: "Integrations", href: "/dashboard/integrations", icon: Plug } : null,
+    (canViewInbox || canViewBilling || canViewReports) ? { name: "Search", href: "/dashboard/search", icon: Search } : null,
+    canViewReports ? { name: "Health", href: "/dashboard/health", icon: Activity } : null,
+    canViewIntegrations ? { name: "KYC Flow", href: "/dashboard/kyc-flow/digilocker", icon: Shield } : null,
     canViewReports ? { name: "Reports", href: "/dashboard/reports", icon: ReceiptText } : null,
     canManageTeam ? { name: "Team", href: "/dashboard/team", icon: UsersRound } : null,
     canViewBilling ? { name: "Billing", href: "/dashboard/billing", icon: CreditCard } : null,
@@ -472,6 +478,12 @@ const DashboardLayout = () => {
   const isActive = (href) => {
     if (href === "/dashboard") {
       return location.pathname === "/dashboard";
+    }
+    if (href === "/dashboard/kyc-flow/digilocker") {
+      return location.pathname.startsWith("/dashboard/kyc-flow");
+    }
+    if (href === "/dashboard/search") {
+      return location.pathname.startsWith("/dashboard/search");
     }
     return location.pathname.startsWith(href);
   };
@@ -529,6 +541,14 @@ const DashboardLayout = () => {
                 placeholder="Search contacts, campaigns..."
                 className="pl-10 bg-slate-50 border-slate-200 h-9"
                 data-testid="global-search-input"
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  const q = String(globalSearch || "").trim();
+                  if (!q) return;
+                  navigate(`/dashboard/search?q=${encodeURIComponent(q)}`);
+                }}
               />
             </div>
           </div>
@@ -788,6 +808,43 @@ const DashboardLayout = () => {
                     >
                       <HelpCircle className="w-4 h-4 flex-shrink-0" />
                       <span className="flex-1 text-sm">Q&A</span>
+                    </Link>
+                  </div>
+                )}
+                {sidebarOpen && item.name === "KYC Flow" && (
+                  <div className="pt-2 pb-1">
+                    <Link
+                      to="/dashboard/kyc-flow/digilocker"
+                      className={`ml-4 flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                        location.pathname.startsWith("/dashboard/kyc-flow/digilocker")
+                          ? "bg-orange-50 text-orange-600 font-medium"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <span className="flex-1 text-sm">DigiLocker KYC</span>
+                    </Link>
+                    <Link
+                      to="/dashboard/kyc-flow/aadhaar-xml"
+                      className={`ml-4 flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                        location.pathname.startsWith("/dashboard/kyc-flow/aadhaar-xml")
+                          ? "bg-orange-50 text-orange-600 font-medium"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <span className="flex-1 text-sm">Aadhaar XML</span>
+                    </Link>
+                    <Link
+                      to="/dashboard/kyc-flow/gst"
+                      className={`ml-4 flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                        location.pathname.startsWith("/dashboard/kyc-flow/gst")
+                          ? "bg-orange-50 text-orange-600 font-medium"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      }`}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <span className="flex-1 text-sm">GST</span>
                     </Link>
                   </div>
                 )}

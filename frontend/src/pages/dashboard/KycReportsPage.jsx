@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { listKycSessions, getKycSession } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -247,13 +247,13 @@ function KycPreviewCard({ collected, active }) {
                 <div className="text-slate-500">Reference ID</div>
                 <div className="font-semibold text-slate-900">{referenceId}</div>
               </div>
-              <div>
+              <div className="col-span-2">
                 <div className="text-slate-500">XML Mobile Hash</div>
-                <div className="font-semibold text-slate-900">{mobile}</div>
+                <div className="break-all font-semibold text-slate-900">{mobile}</div>
               </div>
-              <div>
+              <div className="col-span-2">
                 <div className="text-slate-500">Entered Mobile</div>
-                <div className="font-semibold text-slate-900">{enteredMobile}</div>
+                <div className="break-all font-semibold text-slate-900">{enteredMobile}</div>
               </div>
               <div>
                 <div className="text-slate-500">Email</div>
@@ -300,6 +300,8 @@ function KycPreviewCard({ collected, active }) {
 
 export default function KycReportsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const openedFromQueryRef = useMemo(() => ({ done: false }), []);
   const [rows, setRows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -352,6 +354,16 @@ export default function KycReportsPage() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const sessionId = String(params.get("sessionId") || "").trim();
+    if (!sessionId) return;
+    if (openedFromQueryRef.done) return;
+    openedFromQueryRef.done = true;
+    openRow({ sessionId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   useEffect(() => {
     return () => {
@@ -678,7 +690,7 @@ export default function KycReportsPage() {
       </Card>
 
       <Dialog open={open} onOpenChange={(v) => setOpen(v)}>
-        <DialogContent className="h-[92vh] w-[96vw] max-w-[1500px] overflow-y-auto">
+        <DialogContent className="h-[94vh] w-[98vw] max-w-[1700px] overflow-hidden p-4 md:p-6">
           <DialogHeader>
             <DialogTitle>KYC Record</DialogTitle>
           </DialogHeader>
@@ -699,7 +711,7 @@ export default function KycReportsPage() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.25fr_1fr]">
+          <div className="grid h-[calc(94vh-220px)] grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div className="text-xs font-medium text-slate-500">Document preview</div>
@@ -735,7 +747,7 @@ export default function KycReportsPage() {
                 ) : null}
               </div>
               {previewBlobUrl ? (
-                <div className="relative h-[700px] w-full rounded-xl bg-white overflow-hidden">
+                <div className="relative h-full min-h-[520px] w-full overflow-hidden rounded-xl bg-white">
                   <iframe title="kyc-preview" src={`${previewBlobUrl}#toolbar=1&navpanes=0&page=${previewPage}&zoom=page-fit`} className="h-full w-full" />
                   {(() => {
                     const files = safeGet(activeDetail?.result, "files", []);
@@ -775,7 +787,7 @@ export default function KycReportsPage() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-3">
+            <div className="h-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3">
               <div className="mb-2 text-xs font-medium text-slate-500">Extracted fields</div>
 
               {(() => {
@@ -862,13 +874,13 @@ export default function KycReportsPage() {
                         <div className="text-slate-500">Father / Guardian</div>
                         <div className="font-medium text-slate-900">{fatherName}</div>
                       </div>
-                      <div>
+                      <div className="col-span-2">
                         <div className="text-slate-500">XML Mobile Hash</div>
-                        <div className="font-medium text-slate-900">{mobile}</div>
+                        <div className="break-all font-medium text-slate-900">{mobile}</div>
                       </div>
-                      <div>
+                      <div className="col-span-2">
                         <div className="text-slate-500">Entered Mobile</div>
-                        <div className="font-medium text-slate-900">{enteredMobile}</div>
+                        <div className="break-all font-medium text-slate-900">{enteredMobile}</div>
                       </div>
                       <div>
                         <div className="text-slate-500">Email</div>
@@ -900,7 +912,7 @@ export default function KycReportsPage() {
                       </div>
                       <div className="col-span-2">
                         <div className="text-slate-500">Mobile Hash Matched</div>
-                        <div className="font-medium text-slate-900">{String(safeGet(mobileVerification, "matched", "-"))}</div>
+                        <div className="break-all font-medium text-slate-900">{String(safeGet(mobileVerification, "matched", "-"))}</div>
                       </div>
                       {isAadhaar ? <div className="col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="mb-3 flex items-center justify-between gap-3">
@@ -937,6 +949,14 @@ export default function KycReportsPage() {
                           <div>
                             <div className="text-slate-500">UIDAI Certificate</div>
                             <div className="font-medium text-slate-900">{String(safeGet(signature, "uidaiCertificate", "-"))}</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500">Certificate Chain Valid</div>
+                            <div className="font-medium text-slate-900">{String(safeGet(signature, "certificateChainValid", "-"))}</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500">Certificate Not Expired</div>
+                            <div className="font-medium text-slate-900">{String(safeGet(signature, "certificateNotExpired", "-"))}</div>
                           </div>
                           <div className="col-span-2">
                             <div className="text-slate-500">Certificate Subject</div>

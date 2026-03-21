@@ -1161,10 +1161,12 @@ export async function createKycSession(payload) {
   return apiPost('/api/kyc/sessions', payload)
 }
 
-export async function uploadAadhaarXmlKyc(sessionId, { mobileNumber, shareCode, zipFile }) {
+export async function uploadAadhaarXmlKyc(sessionId, { mobileNumber, shareCode, zipFile, consentAccepted = true, consentText = "I consent to process Aadhaar XML for KYC verification." }) {
   const formData = new FormData()
   formData.append('mobileNumber', String(mobileNumber || '').trim())
   formData.append('shareCode', String(shareCode || '').trim())
+  formData.append('consentAccepted', String(!!consentAccepted))
+  formData.append('consentText', String(consentText || '').trim())
   if (zipFile) formData.append('zipFile', zipFile)
   return apiPostForm(`/api/kyc/sessions/${encodeURIComponent(sessionId)}/aadhaar-xml`, formData)
 }
@@ -1178,6 +1180,19 @@ export async function listKycSessions({ take = 50, includeParsed = true } = {}) 
   q.set("take", String(take))
   if (includeParsed) q.set("includeParsed", "true")
   return apiGet(`/api/kyc/sessions?${q.toString()}`)
+}
+
+export async function unifiedSearch({ q: query, take = 25 } = {}) {
+  const q = new URLSearchParams()
+  if (query) q.set("q", query)
+  q.set("take", String(take))
+  return apiGet(`/api/search?${q.toString()}`)
+}
+
+export async function getTenantHealth({ days = 7 } = {}) {
+  const q = new URLSearchParams()
+  q.set("days", String(days))
+  return apiGet(`/api/ops/health?${q.toString()}`)
 }
 
 export async function getPlatformQueueHealth() {

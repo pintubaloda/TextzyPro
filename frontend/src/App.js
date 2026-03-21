@@ -38,6 +38,9 @@ const TemplatesPage = lazy(() => import("@/pages/dashboard/TemplatesPage"));
 const AutomationsPage = lazy(() => import("@/pages/dashboard/AutomationsPage"));
 const AnalyticsPage = lazy(() => import("@/pages/dashboard/AnalyticsPage"));
 const IntegrationsPage = lazy(() => import("@/pages/dashboard/IntegrationsPage"));
+const KycDigilockerPage = lazy(() => import("@/pages/dashboard/KycDigilockerPage"));
+const KycAadhaarXmlPage = lazy(() => import("@/pages/dashboard/KycAadhaarXmlPage"));
+const KycGstPage = lazy(() => import("@/pages/dashboard/KycGstPage"));
 const BillingPage = lazy(() => import("@/pages/dashboard/BillingPage"));
 const SupportPage = lazy(() => import("@/pages/dashboard/SupportPage"));
 const SettingsPage = lazy(() => import("@/pages/dashboard/SettingsPage"));
@@ -55,6 +58,8 @@ const MobileDevicesPage = lazy(() => import("@/pages/dashboard/MobileDevicesPage
 const WhatsAppOnboardingPage = lazy(() => import("@/pages/dashboard/WhatsAppOnboardingPage"));
 const KycReportsPage = lazy(() => import("@/pages/dashboard/KycReportsPage"));
 const TenantReportsPage = lazy(() => import("@/pages/dashboard/TenantReportsPage"));
+const UnifiedSearchPage = lazy(() => import("@/pages/dashboard/UnifiedSearchPage"));
+const TenantHealthPage = lazy(() => import("@/pages/dashboard/TenantHealthPage"));
 
 function App() {
   const session = getSession();
@@ -127,6 +132,11 @@ function App() {
               <Route path="automations/qa" element={!isPlatformView && can("automation.read") ? <AutomationsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="analytics" element={canAnalytics ? <AnalyticsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="integrations" element={!isPlatformView && canIntegrations ? <IntegrationsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
+              <Route path="search" element={!isPlatformView && (can("api.read") || can("inbox.read") || can("billing.read")) ? <UnifiedSearchPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
+              <Route path="health" element={!isPlatformView && can("api.read") ? <TenantHealthPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
+              <Route path="kyc-flow/digilocker" element={!isPlatformView && canIntegrations ? <KycDigilockerPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
+              <Route path="kyc-flow/aadhaar-xml" element={!isPlatformView && canIntegrations ? <KycAadhaarXmlPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
+              <Route path="kyc-flow/gst" element={!isPlatformView && canIntegrations ? <KycGstPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="reports" element={!isPlatformView && canSettings ? <TenantReportsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="kyc-reports" element={!isPlatformView && canSettings ? <KycReportsPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
               <Route path="whatsapp-onboarding" element={!isPlatformView && can("inbox.read") ? <WhatsAppOnboardingPage /> : <Navigate to={isPlatformView ? "/dashboard" : firstTenantPath} replace />} />
