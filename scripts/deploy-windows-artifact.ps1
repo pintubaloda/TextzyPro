@@ -84,11 +84,17 @@ function Copy-ArtifactToRelease {
 function Deploy-Artifact {
     param(
         [string]$Source,
-        [string]$Target
+        [string]$Target,
+        [string[]]$ExcludedFiles = @()
     )
 
     # Copy new and changed files, but do not delete server-only files.
-    Invoke-Robocopy -Source $Source -Target $Target -AdditionalArgs @("/E")
+    $args = @("/E")
+    if ($ExcludedFiles -and $ExcludedFiles.Count -gt 0) {
+        $args += "/XF"
+        $args += $ExcludedFiles
+    }
+    Invoke-Robocopy -Source $Source -Target $Target -AdditionalArgs $args
 }
 
 function Write-AppOffline {
@@ -202,6 +208,11 @@ New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
 $releaseName = if ([string]::IsNullOrWhiteSpace($ReleaseTag)) { Get-Date -Format "yyyyMMddHHmmss" } else { $ReleaseTag.Replace(":", "-") }
 $frontendReleasePath = Join-Path $releaseRoot "frontend-$releaseName"
 $backendReleasePath = Join-Path $releaseRoot "backend-$releaseName"
+$protectedDeployFiles = @(
+    "web.config",
+    "*cors*.json",
+    "*CORS*.json"
+)
 
 New-Item -ItemType Directory -Path $frontendReleasePath -Force | Out-Null
 New-Item -ItemType Directory -Path $backendReleasePath -Force | Out-Null
@@ -218,7 +229,7 @@ $backendReleaseStamp = (Get-Item $backendReleaseDll).LastWriteTimeUtc
 
 $offlineFile = Write-AppOffline -Target $BackendTargetPath
 try {
-    Deploy-Artifact -Source $frontendReleasePath -Target $FrontendTargetPath
+    Deploy-Artifact -Source $frontendReleasePath -Target $FrontendTargetPath -ExcludedFiles $protectedDeployFiles
     Write-FrontendRuntimeConfig `
         -TargetPath $FrontendTargetPath `
         -ApiBase $FrontendApiBase `
@@ -226,7 +237,7 @@ try {
         -WabaEmbeddedConfigId $FrontendWabaEmbeddedConfigId
     Stop-IisTarget -SiteName $BackendSiteName -AppPool $BackendAppPool
     Start-Sleep -Seconds 5
-    Deploy-Artifact -Source $backendReleasePath -Target $BackendTargetPath
+    Deploy-Artifact -Source $backendReleasePath -Target $BackendTargetPath -ExcludedFiles $protectedDeployFiles
 
     $backendTargetDll = Join-Path $BackendTargetPath $backendDllName
     if (-not (Test-Path $backendTargetDll)) {
@@ -247,5 +258,6 @@ finally {
 Restart-IisTarget -SiteName $FrontendSiteName -AppPool $FrontendAppPool
 
 Write-Host "Frontend runtime config written to $(Join-Path $FrontendTargetPath 'env.js')."
+Write-Host "Protected deploy files (not overwritten): $($protectedDeployFiles -join ', ')"
 Write-Host "Textzy deployment completed."
 $global:LASTEXITCODE = 0
