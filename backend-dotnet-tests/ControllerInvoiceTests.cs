@@ -329,7 +329,7 @@ public class ControllerInvoiceTests
                 Id = tenantId,
                 Name = "Acme Workspace",
                 Slug = "acme",
-                DataConnectionString = "Data Source=:memory:"
+                DataConnectionString = "Host=127.0.0.1;Port=5432;Database=textzy_test;Username=postgres;Password=test;"
             });
             controlDb.TenantCompanyProfiles.Add(new TenantCompanyProfile
             {
@@ -461,7 +461,7 @@ public class ControllerInvoiceTests
             var auth = new AuthContext();
             auth.Set(userId, tenantId, "owner@acme.test", "owner", new[] { PermissionCatalog.BillingRead, PermissionCatalog.BillingWrite }, "Owner User");
             var tenancy = new TenancyContext();
-            tenancy.SetTenant(tenantId, "acme", "Data Source=:memory:");
+            tenancy.SetTenant(tenantId, "acme", "Host=127.0.0.1;Port=5432;Database=textzy_test;Username=postgres;Password=test;");
 
             var invoiceAttachmentService = new InvoiceAttachmentService(controlDb, crypto, config);
             var fixture = new TestBillingFixture(controlConnection, tenantConnection, controlDb, tenantDb, invoiceAttachmentService, crypto, config, httpContext, auth, tenancy, invoice)
@@ -615,11 +615,17 @@ public class ControllerInvoiceTests
         public Task SendVerificationActionAsync(string toEmail, string displayName, string purpose, string verifyLink, int linkExpiryMinutes, CancellationToken ct = default)
             => Task.CompletedTask;
 
+        public Task SendPasswordResetAsync(string toEmail, string displayName, string resetLink, int linkExpiryMinutes, CancellationToken ct = default)
+            => Task.CompletedTask;
+
         public Task SendBillingEventAsync(string toEmail, string displayName, string companyName, string eventTitle, string eventDescription, Dictionary<string, string>? details = null, CancellationToken ct = default, IReadOnlyCollection<EmailAttachment>? attachments = null)
         {
             BillingEvents.Add(new BillingEventRecord(toEmail, displayName, companyName, eventTitle, eventDescription, details ?? new Dictionary<string, string>(), attachments?.ToArray() ?? []));
             return Task.CompletedTask;
         }
+
+        public Task SendSupportTicketEventAsync(string toEmail, string displayName, string companyName, string ticketNo, string subject, string eventTitle, string eventDescription, Dictionary<string, string>? details = null, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 
     public sealed record BillingEventRecord(

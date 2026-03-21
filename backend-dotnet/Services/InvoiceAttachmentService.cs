@@ -12,7 +12,7 @@ public sealed class InvoiceAttachmentService(
 {
     public async Task<EmailAttachment[]> BuildInvoiceAttachmentsAsync(BillingInvoice invoice, HttpRequest? request, CancellationToken ct = default)
     {
-        var format = (config["Billing:InvoiceAttachmentFormat"] ?? config["INVOICE_ATTACHMENT_FORMAT"] ?? "html").Trim().ToLowerInvariant();
+        var format = (config["Billing:InvoiceAttachmentFormat"] ?? config["INVOICE_ATTACHMENT_FORMAT"] ?? "pdf").Trim().ToLowerInvariant();
         return format switch
         {
             "pdf" => [await BuildPdfAttachmentAsync(invoice, request, ct)],
