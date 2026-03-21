@@ -476,7 +476,7 @@ public class ControllerInvoiceTests
         public BillingController CreateBillingController()
         {
             var rbac = new RbacService(Auth);
-            var billingGuard = new BillingGuardService(ControlDb);
+            var billingGuard = new BillingGuardService(ControlDb, Crypto, EmailService, NullLogger<BillingGuardService>.Instance);
             var audit = new AuditLogService(ControlDb, Tenancy, Auth, new HttpContextAccessor { HttpContext = HttpContext });
 
             var controller = new BillingController(
@@ -533,7 +533,7 @@ public class ControllerInvoiceTests
 
         public PaymentWebhookController CreatePaymentWebhookController()
         {
-            var billingGuard = new BillingGuardService(ControlDb);
+            var billingGuard = new BillingGuardService(ControlDb, Crypto, EmailService, NullLogger<BillingGuardService>.Instance);
             var audit = new AuditLogService(ControlDb, Tenancy, Auth, new HttpContextAccessor { HttpContext = HttpContext });
 
             var controller = new PaymentWebhookController(

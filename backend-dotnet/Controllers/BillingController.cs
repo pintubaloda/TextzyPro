@@ -101,6 +101,45 @@ public class BillingController(
         });
     }
 
+    [HttpGet("credit-guardrails")]
+    public async Task<IActionResult> GetCreditGuardrails(CancellationToken ct)
+    {
+        if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
+        if (!rbac.HasPermission(BillingRead)) return Forbid();
+        var settings = await billingGuard.GetGuardrailsAsync(tenancy.TenantId, ct);
+        return Ok(MapCreditGuardrails(settings));
+    }
+
+    [HttpPut("credit-guardrails")]
+    public async Task<IActionResult> UpsertCreditGuardrails([FromBody] UpsertCreditGuardrailsRequest request, CancellationToken ct)
+    {
+        if (!auth.IsAuthenticated || !tenancy.IsSet) return Unauthorized();
+        if (!rbac.HasPermission(BillingWrite)) return Forbid();
+
+        var input = new CreditGuardrailSettings
+        {
+            LowBalanceAlertsEnabled = request.LowBalanceAlertsEnabled,
+            LowBalanceThresholds = new Dictionary<string, int>(request.LowBalanceThresholds ?? new(), StringComparer.OrdinalIgnoreCase),
+            AutoTopupEnabled = request.AutoTopupEnabled,
+            AutoTopupTriggerThresholds = new Dictionary<string, int>(request.AutoTopupTriggerThresholds ?? new(), StringComparer.OrdinalIgnoreCase),
+            AutoTopupUnits = new Dictionary<string, int>(request.AutoTopupUnits ?? new(), StringComparer.OrdinalIgnoreCase),
+            DailySpendCaps = new Dictionary<string, int>(request.DailySpendCaps ?? new(), StringComparer.OrdinalIgnoreCase),
+            ServiceCreditLimits = new Dictionary<string, int>(request.ServiceCreditLimits ?? new(), StringComparer.OrdinalIgnoreCase)
+        };
+
+        var saved = await billingGuard.UpsertGuardrailsAsync(tenancy.TenantId, input, auth.UserId, ct);
+        await audit.WriteAsync(
+            "billing.credit.guardrails.upsert",
+            JsonSerializer.Serialize(new
+            {
+                tenantId = tenancy.TenantId,
+                saved.LowBalanceAlertsEnabled,
+                saved.AutoTopupEnabled
+            }),
+            ct);
+        return Ok(MapCreditGuardrails(saved));
+    }
+
     [HttpGet("ledger")]
     public async Task<IActionResult> Ledger(
         [FromQuery] string service = "",
@@ -1240,6 +1279,17 @@ public class BillingController(
         public string RazorpaySignature { get; set; } = string.Empty;
     }
 
+    public sealed class UpsertCreditGuardrailsRequest
+    {
+        public bool LowBalanceAlertsEnabled { get; set; } = true;
+        public Dictionary<string, int> LowBalanceThresholds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool AutoTopupEnabled { get; set; }
+        public Dictionary<string, int> AutoTopupTriggerThresholds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, int> AutoTopupUnits { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, int> DailySpendCaps { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, int> ServiceCreditLimits { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
     private async Task<Dictionary<string, string>> ReadPaymentSettingsAsync(CancellationToken ct)
     {
         var scopeRows = await db.PlatformSettings.Where(x => x.Scope == "payment-gateway").ToListAsync(ct);
@@ -1305,6 +1355,17 @@ public class BillingController(
             .ToListAsync(ct);
         return rows.ToDictionary(x => x.MetricKey, x => x.UnitsRemaining, StringComparer.OrdinalIgnoreCase);
     }
+
+    private static object MapCreditGuardrails(CreditGuardrailSettings settings) => new
+    {
+        settings.LowBalanceAlertsEnabled,
+        settings.LowBalanceThresholds,
+        settings.AutoTopupEnabled,
+        settings.AutoTopupTriggerThresholds,
+        settings.AutoTopupUnits,
+        settings.DailySpendCaps,
+        settings.ServiceCreditLimits
+    };
 
     private static string ResolveKycApiName(string? providerCode)
         => string.Equals(providerCode, "gst", StringComparison.OrdinalIgnoreCase)
