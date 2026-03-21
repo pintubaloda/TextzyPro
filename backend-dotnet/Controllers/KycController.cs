@@ -221,7 +221,9 @@ public class KycController(
             var resultPayload = new Dictionary<string, object?>
             {
                 ["provider"] = "aadhaarxml",
-                ["status"] = verification.VerificationPassed ? "verified" : "failed",
+                // Business validation failures are reported in payload/PDF, but the hit is still processed successfully.
+                ["status"] = "verified",
+                ["validationStatus"] = verification.VerificationPassed ? "passed" : "failed",
                 ["failureReason"] = verification.FailureReason,
                 ["collected"] = verification.Collected,
                 ["files"] = new object[]
@@ -270,15 +272,15 @@ public class KycController(
                 }
             };
 
-            row.Status = verification.VerificationPassed ? "verified" : "failed";
+            // Charge-per-hit rule: business validation failure still remains a successful processed hit.
+            row.Status = "verified";
             row.FailureReason = verification.FailureReason;
             row.ResultJsonEncrypted = crypto.Encrypt(JsonSerializer.Serialize(resultPayload));
             row.UpdatedAtUtc = DateTime.UtcNow;
             row.CompletedAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
-            await audit.WriteAsync(
-                verification.VerificationPassed ? "kyc.session.verify" : "kyc.session.fail",
-                $"provider=aadhaarxml; tenant={tenancy.TenantSlug}; session={row.Id}; reason={verification.FailureReason}",
+            await audit.WriteAsync("kyc.session.verify",
+                $"provider=aadhaarxml; tenant={tenancy.TenantSlug}; session={row.Id}; validation={(verification.VerificationPassed ? "passed" : "failed")}; reason={verification.FailureReason}",
                 ct);
 
             return Ok(new
