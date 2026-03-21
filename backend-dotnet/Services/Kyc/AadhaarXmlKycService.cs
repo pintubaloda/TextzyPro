@@ -13,6 +13,7 @@ public sealed record AadhaarXmlVerificationResult(
     string FailureReason,
     Dictionary<string, object?> Collected,
     byte[] ReportPdf,
+    int ReportPageCount,
     string ReportFileName,
     string ReportMime,
     string RawXmlUtf8,
@@ -97,13 +98,14 @@ public class AadhaarXmlKycService
             ["verificationUrl"] = verificationUrl
         };
 
-        var reportPdf = BuildVerificationPdf(collected, trail, processedAtUtc);
+        var (reportPdf, reportPageCount) = BuildVerificationPdf(collected, trail, processedAtUtc);
 
         return new AadhaarXmlVerificationResult(
             VerificationPassed: verificationPassed,
             FailureReason: failureReason,
             Collected: collected,
             ReportPdf: reportPdf,
+            ReportPageCount: reportPageCount,
             ReportFileName: "aadhaar-xml-verification-report.pdf",
             ReportMime: "application/pdf",
             RawXmlUtf8: Encoding.UTF8.GetString(xmlBytes),
@@ -267,7 +269,7 @@ public class AadhaarXmlKycService
         };
     }
 
-    private static byte[] BuildVerificationPdf(Dictionary<string, object?> collected, Dictionary<string, object?> trail, DateTime processedAtUtc)
+    private static (byte[] PdfBytes, int PageCount) BuildVerificationPdf(Dictionary<string, object?> collected, Dictionary<string, object?> trail, DateTime processedAtUtc)
     {
         var verificationPassed = string.Equals(GetString(collected, "verificationStatus"), "verified", StringComparison.OrdinalIgnoreCase);
         var failureReason = GetString(collected, "failureReason");
@@ -336,7 +338,7 @@ public class AadhaarXmlKycService
         };
 
         var pages = PaginateSections(sections, showPhotoOnFirstPage: CanRenderPhoto(collected));
-        return BuildPdfDocument(pages, collected, processedAtUtc);
+        return (BuildPdfDocument(pages, collected, processedAtUtc), pages.Count);
     }
 
     private static IReadOnlyList<PdfPage> PaginateSections(IReadOnlyList<PdfSection> sections, bool showPhotoOnFirstPage)
@@ -459,6 +461,13 @@ public class AadhaarXmlKycService
                 DrawSection(builder, section.Title, section.Lines, 28, ref y, 524, "#FFFFFF");
         }
 
+        if (pageNumber == 1)
+        {
+            var signatureValid = GetStringFromSection(page, "Signature", "Signature Valid");
+            var signingAlgorithm = GetStringFromSection(page, "Signature", "Signing Algorithm");
+            DrawSignatureStamp(builder, signatureValid, signingAlgorithm, processedAtUtc, 352, 64, 215, 62);
+        }
+
         builder.Append("0.95 0.95 0.95 rg 20 18 555 20 re f\n");
         builder.Append("0.25 0.25 0.25 rg\n");
         AppendText(builder, 28, 28, "/F1", 8, $"Generated {processedAtUtc:yyyy-MM-dd HH:mm:ss} UTC  Page {pageNumber}/{totalPages}");
@@ -544,6 +553,21 @@ public class AadhaarXmlKycService
         var current = new StringBuilder();
         foreach (var word in words)
         {
+            if (word.Length > maxLineLength)
+            {
+                if (current.Length > 0)
+                {
+                    lines.Add(current.ToString());
+                    current.Clear();
+                }
+                for (var i = 0; i < word.Length; i += maxLineLength)
+                {
+                    var chunkLength = Math.Min(maxLineLength, word.Length - i);
+                    lines.Add(word.Substring(i, chunkLength));
+                }
+                continue;
+            }
+
             var candidate = current.Length == 0 ? word : $"{current} {word}";
             if (candidate.Length <= maxLineLength)
             {
@@ -774,6 +798,43 @@ public class AadhaarXmlKycService
         var text = NormalizeWhitespace(value);
         if (text.Length <= max) return text;
         return text[..Math.Max(0, max - 3)] + "...";
+    }
+
+    private static void DrawSignatureStamp(StringBuilder builder, string signatureValid, string signingAlgorithm, DateTime processedAtUtc, decimal x, decimal y, decimal width, decimal height)
+    {
+        var isValid = string.Equals(signatureValid, "true", StringComparison.OrdinalIgnoreCase);
+        var istTimestamp = ToIst(processedAtUtc).ToString("dd-MM-yyyy HH:mm:ss 'IST'");
+
+        builder.Append("0.98 0.98 0.98 rg\n");
+        builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} {3} re f\n", x, y, width, height);
+        builder.Append("0.45 0.45 0.45 RG 1 w\n");
+        builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} {2} {3} re S\n", x, y, width, height);
+        builder.Append("0.15 0.15 0.15 rg\n");
+        AppendText(builder, x + 10, y + 45, "/F2", 10, isValid ? "Signature valid" : "Signature review required");
+        AppendText(builder, x + 10, y + 30, "/F1", 9, $"Date: {istTimestamp}");
+        AppendText(builder, x + 10, y + 16, "/F1", 8, $"Aadhaar XML DSig ({Fallback(signingAlgorithm)})");
+
+        if (isValid)
+        {
+            builder.Append("0.0 0.62 0.21 RG 4 w\n");
+            builder.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "{0} {1} m {2} {3} l {4} {5} l S\n",
+                x + width - 52, y + 18,
+                x + width - 40, y + 8,
+                x + width - 14, y + 46);
+        }
+    }
+
+    private static DateTime ToIst(DateTime utc)
+    {
+        try
+        {
+            var ist = TimeZoneInfo.FindSystemTimeZoneById("India Standard Time");
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), ist);
+        }
+        catch
+        {
+            return utc;
+        }
     }
 }
 

@@ -305,8 +305,10 @@ export default function KycReportsPage() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
   const [activeDetail, setActiveDetail] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewBlobUrl, setPreviewBlobUrl] = useState("");
   const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewPageCount, setPreviewPageCount] = useState(1);
   const [filters, setFilters] = useState({ q: "", status: "all", api: "all", fromDate: "", toDate: "", pageSize: 10, page: 1 });
 
   function mapRequestedToDoctype(req) {
@@ -353,9 +355,9 @@ export default function KycReportsPage() {
 
   useEffect(() => {
     return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
     };
-  }, [previewUrl]);
+  }, [previewBlobUrl]);
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => String(b?.createdAtUtc || "").localeCompare(String(a?.createdAtUtc || "")));
@@ -427,8 +429,10 @@ export default function KycReportsPage() {
     setActive(r);
     setActiveDetail(null);
     setOpen(true);
-    setPreviewUrl("");
+    setPreviewBlobUrl("");
     setActiveFileIndex(0);
+    setPreviewPage(1);
+    setPreviewPageCount(1);
     try {
       const detail = await getKycSession(r.sessionId);
       setActiveDetail(detail);
@@ -438,7 +442,13 @@ export default function KycReportsPage() {
         setActiveFileIndex(idx);
         const f = files[idx];
         const url = decodeBase64ToBlobUrl(f?.fileBase64, f?.mime || "application/pdf");
-        setPreviewUrl(url);
+        setPreviewBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+        const count = Number(f?.pageCount || 1);
+        setPreviewPageCount(Number.isFinite(count) && count > 0 ? count : 1);
+        setPreviewPage(1);
       }
     } catch (e) {
       toast.error(e?.message || "Failed to load KYC record");
@@ -453,10 +463,13 @@ export default function KycReportsPage() {
     try {
       const f = files[activeFileIndex];
       const url = decodeBase64ToBlobUrl(f?.fileBase64, f?.mime || "application/pdf");
-      setPreviewUrl((prev) => {
+      setPreviewBlobUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return url;
       });
+      const count = Number(f?.pageCount || 1);
+      setPreviewPageCount(Number.isFinite(count) && count > 0 ? count : 1);
+      setPreviewPage(1);
     } catch {
       // ignore
     }
@@ -690,7 +703,7 @@ export default function KycReportsPage() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div className="text-xs font-medium text-slate-500">Document preview</div>
-                {previewUrl ? (
+                {previewBlobUrl ? (
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
@@ -698,7 +711,7 @@ export default function KycReportsPage() {
                       onClick={() => {
                         const files = safeGet(activeDetail?.result, "files", []);
                         const f = Array.isArray(files) ? files[activeFileIndex] : null;
-                        downloadBlobUrl(previewUrl, String(f?.fileName || "kyc-document.pdf"));
+                        downloadBlobUrl(previewBlobUrl, String(f?.fileName || "kyc-document.pdf"));
                       }}
                     >
                       Download
@@ -707,7 +720,7 @@ export default function KycReportsPage() {
                       variant="outline"
                       className="h-7 rounded-lg px-2 text-xs"
                       onClick={() => {
-                        const popup = window.open(previewUrl, "_blank");
+                        const popup = window.open(previewBlobUrl, "_blank");
                         if (popup) {
                           popup.focus();
                           setTimeout(() => {
@@ -721,9 +734,9 @@ export default function KycReportsPage() {
                   </div>
                 ) : null}
               </div>
-              {previewUrl ? (
+              {previewBlobUrl ? (
                 <div className="relative h-[700px] w-full rounded-xl bg-white overflow-hidden">
-                  <iframe title="kyc-preview" src={`${previewUrl}#toolbar=1&navpanes=0`} className="h-full w-full" />
+                  <iframe title="kyc-preview" src={`${previewBlobUrl}#toolbar=1&navpanes=0&page=${previewPage}&zoom=page-fit`} className="h-full w-full" />
                   {(() => {
                     const files = safeGet(activeDetail?.result, "files", []);
                     if (!Array.isArray(files) || files.length <= 1) return null;
@@ -745,6 +758,17 @@ export default function KycReportsPage() {
                       </div>
                     );
                   })()}
+                  {previewPageCount > 1 ? (
+                    <div className="absolute bottom-3 right-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-2 py-1 text-xs">
+                      <Button variant="outline" className="h-7 rounded-lg px-2" disabled={previewPage <= 1} onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}>
+                        Page Prev
+                      </Button>
+                      <span className="text-slate-700">{previewPage} / {previewPageCount}</span>
+                      <Button variant="outline" className="h-7 rounded-lg px-2" disabled={previewPage >= previewPageCount} onClick={() => setPreviewPage((p) => Math.min(previewPageCount, p + 1))}>
+                        Page Next
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <KycPreviewCard collected={activeDetail?.result?.collected || active?.collected || {}} active={activeDetail || active} />
@@ -826,6 +850,14 @@ export default function KycReportsPage() {
                     ) : null}
 
                     <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <div className="text-slate-500">Name</div>
+                        <div className="font-medium text-slate-900">{safeGet(collected, "name", "-")}</div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500">DOB</div>
+                        <div className="font-medium text-slate-900">{safeGet(collected, "dob", "-")}</div>
+                      </div>
                       <div className="col-span-2">
                         <div className="text-slate-500">Father / Guardian</div>
                         <div className="font-medium text-slate-900">{fatherName}</div>

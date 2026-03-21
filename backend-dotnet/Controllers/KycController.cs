@@ -234,7 +234,8 @@ public class KycController(
                         ["fileName"] = verification.ReportFileName,
                         ["mime"] = verification.ReportMime,
                         ["fileBase64"] = Convert.ToBase64String(verification.ReportPdf),
-                        ["generatedAtUtc"] = verification.ProcessedAtUtc
+                        ["generatedAtUtc"] = verification.ProcessedAtUtc,
+                        ["pageCount"] = verification.ReportPageCount
                     }
                 },
                 ["source"] = new Dictionary<string, object?>
